@@ -13,7 +13,10 @@ export interface NavGroup {
 export const NAV: NavGroup[] = [
   {
     title: "Overview",
-    items: [{ label: "Dashboard", href: "/dashboard" }],
+    items: [
+      { label: "Dashboard", href: "/dashboard" },
+      { label: "Notifications", href: "/notifications" },
+    ],
   },
   {
     title: "Operations",
@@ -24,6 +27,7 @@ export const NAV: NavGroup[] = [
       { label: "Energy", href: "/energy" },
       { label: "Vehicles", href: "/vehicles" },
       { label: "Assets & service", href: "/assets" },
+      { label: "Operations log", href: "/operations-log" },
     ],
   },
   {
@@ -35,6 +39,17 @@ export const NAV: NavGroup[] = [
     items: [
       { label: "Bar / liquor", href: "/bar" },
       { label: "Stock & purchases", href: "/stock" },
+    ],
+  },
+  {
+    title: "Reports",
+    items: [
+      { label: "Monthly report", href: "/reports" },
+      {
+        label: "Analytics",
+        href: "/analytics",
+        roles: ["super_admin", "general_manager"],
+      },
     ],
   },
   {

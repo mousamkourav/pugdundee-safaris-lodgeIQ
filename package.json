@@ -9,18 +9,20 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.5.2",
+    "@supabase/supabase-js": "^2.48.1",
     "next": "^15.1.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "@supabase/ssr": "^0.5.2",
-    "@supabase/supabase-js": "^2.48.1"
+    "resend": "^6.19.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "typescript": "^5.7.3",
+    "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.10.7",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",
     "tailwindcss": "^4.0.0",
-    "@tailwindcss/postcss": "^4.0.0"
+    "typescript": "^5.7.3"
   }
 }
