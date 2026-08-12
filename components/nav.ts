@@ -23,6 +23,7 @@ export const NAV: NavGroup[] = [
       { label: "Expenses", href: "/expenses" },
       { label: "Energy", href: "/energy" },
       { label: "Vehicles", href: "/vehicles" },
+      { label: "Assets & service", href: "/assets" },
     ],
   },
   {
