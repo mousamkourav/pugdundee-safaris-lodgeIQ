@@ -17,7 +17,13 @@ export const NAV: NavGroup[] = [
   },
   {
     title: "Operations",
-    items: [{ label: "Lodges", href: "/lodges" }],
+    items: [
+      { label: "Lodges", href: "/lodges" },
+      { label: "Occupancy", href: "/occupancy" },
+      { label: "Expenses", href: "/expenses" },
+      { label: "Energy", href: "/energy" },
+      { label: "Vehicles", href: "/vehicles" },
+    ],
   },
   {
     title: "Admin",
