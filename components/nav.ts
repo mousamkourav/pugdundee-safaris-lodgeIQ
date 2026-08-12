@@ -28,6 +28,8 @@ export const NAV: NavGroup[] = [
       { label: "Vehicles", href: "/vehicles" },
       { label: "Assets & service", href: "/assets" },
       { label: "Operations log", href: "/operations-log" },
+      { label: "Travel agents", href: "/travel-agents" },
+      { label: "Sustainability", href: "/sustainability" },
     ],
   },
   {
