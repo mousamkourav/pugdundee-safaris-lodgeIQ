@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+@theme {
+  --color-olive-50: #FAF8EC;
+  --color-olive-100: #F2EECB;
+  --color-olive-200: #E6DE9E;
+  --color-olive-300: #D3C766;
+  --color-olive-400: #B9A63A;
+  --color-olive-500: #9E8A20;
+  --color-olive-600: #907A17;
+  --color-olive-700: #756213;
+  --color-olive-800: #5A4B10;
+  --color-olive-900: #40360C;
+
+  --color-gold-50: #FDF8E3;
+  --color-gold-100: #FBEFB8;
+  --color-gold-200: #F6E27E;
+  --color-gold-300: #EFD23F;
+  --color-gold-400: #E4C316;
+  --color-gold-500: #DAB705;
+  --color-gold-600: #B89804;
+  --color-gold-700: #8F7503;
+  --color-gold-800: #6B5802;
+  --color-gold-900: #4A3D01;
+
+  --color-sand-50: #FAF9F6;
+  --color-sand-100: #F3F1EA;
+  --color-sand-200: #E7E3D8;
+  --color-sand-300: #D3CDBE;
+  --color-sand-400: #A9A290;
+  --color-sand-500: #837D6B;
+  --color-sand-600: #625D4F;
+  --color-sand-700: #48453A;
+  --color-sand-800: #2E2C25;
+  --color-sand-900: #1B1A15;
+
+  --color-success: #4E7A3A;
+  --color-success-bg: #EAF1E4;
+  --color-warning: #C2751A;
+  --color-warning-bg: #FBEFD9;
+  --color-error: #A83A2C;
+  --color-error-bg: #F7E3DF;
+  --color-info: #2F6E78;
+  --color-info-bg: #E1EEF0;
+}
+
+:root {
+  --radius: 0.625rem;
+}
+
+body {
+  background: var(--color-sand-50);
+  color: var(--color-sand-800);
+  font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-poppins), var(--font-inter), sans-serif;
+  color: var(--color-sand-900);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
