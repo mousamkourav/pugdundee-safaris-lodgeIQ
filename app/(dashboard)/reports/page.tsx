@@ -1,13 +1,12 @@
-import { requireUser, isAdmin } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 import { getAccessibleLodges, resolveLodge } from "@/lib/lodges";
-import { currentMonth, monthRange, inr } from "@/lib/format";
+import { currentMonth, inr } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
-import { getMonthlySummary } from "@/lib/report";
+import { getSubmissionSummary } from "@/lib/report-summary";
 import { PageHeader } from "@/components/page-header";
 import { LodgeMonthPicker } from "@/components/lodge-month-picker";
 import { NoLodge } from "@/components/no-lodge";
 import { PrintButton } from "@/components/print-button";
-import { generateReport, submitReport, reviewReport } from "./actions";
 
 function Row({ label, value }: { label: string; value: string | number }) {
   return (
@@ -23,33 +22,23 @@ export default async function ReportsPage({
 }: {
   searchParams: Promise<{ lodge?: string; month?: string }>;
 }) {
-  const { profile } = await requireUser();
+  await requireUser();
   const sp = await searchParams;
   const lodges = await getAccessibleLodges();
   const lodge = resolveLodge(sp.lodge, lodges);
   const month = sp.month || currentMonth();
-  if (!lodge) return <NoLodge title="Monthly report" />;
+  if (!lodge) return <NoLodge title="Monthly summary" />;
 
-  const { start } = monthRange(month);
   const s = await createClient();
-  const summary = await getMonthlySummary(s, lodge, month);
+  const summary = await getSubmissionSummary(s, lodge, month);
   const lodgeName = lodges.find((l) => l.id === lodge)?.name ?? "Lodge";
-  const { data: rep } = await s
-    .from("monthly_reports")
-    .select("*")
-    .eq("lodge_id", lodge)
-    .eq("month", start)
-    .maybeSingle();
-  const report = rep as Record<string, string> | null;
-  const admin = isAdmin(profile?.role);
-  const status = report?.status ?? "none";
 
   return (
     <div>
-      <style>{`@media print { aside { display: none !important; } main { padding: 0 !important; } .no-print { display: none !important; } }`}</style>
+      <style>{`@media print { aside, header { display: none !important; } main { padding: 0 !important; } .no-print { display: none !important; } }`}</style>
 
       <PageHeader
-        title="Monthly report"
+        title="Monthly summary"
         description={`${lodgeName} · ${summary.label}`}
         action={
           <div className="no-print flex flex-wrap gap-2">
@@ -68,55 +57,12 @@ export default async function ReportsPage({
         <LodgeMonthPicker lodges={lodges} lodge={lodge} month={month} />
       </div>
 
-      {/* Status + workflow */}
-      <div className="no-print mb-8 flex flex-wrap items-center gap-3 rounded-xl border border-sand-200 bg-white p-4">
-        <span className="text-sm text-sand-600">Status:</span>
-        <span
-          className={
-            "rounded-full px-3 py-1 text-xs capitalize " +
-            (status === "reviewed"
-              ? "bg-success-bg text-success"
-              : status === "submitted"
-              ? "bg-info-bg text-info"
-              : status === "draft"
-              ? "bg-warning-bg text-warning"
-              : "bg-sand-100 text-sand-600")
-          }
-        >
-          {status === "none" ? "Not generated" : status}
-        </span>
-        <div className="ml-auto flex gap-2">
-          <form action={generateReport}>
-            <input type="hidden" name="lodge_id" value={lodge} />
-            <input type="hidden" name="month" value={month} />
-            <button className="rounded-lg bg-olive-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-olive-700">
-              {status === "none" ? "Generate" : "Refresh"}
-            </button>
-          </form>
-          {report && status === "draft" && (
-            <form action={submitReport}>
-              <input type="hidden" name="id" value={report.id} />
-              <input type="hidden" name="lodge_id" value={lodge} />
-              <input type="hidden" name="month" value={month} />
-              <button className="rounded-lg border border-sand-200 px-3 py-1.5 text-sm text-sand-700 hover:bg-sand-50">
-                Submit
-              </button>
-            </form>
-          )}
-          {report && status === "submitted" && admin && (
-            <form action={reviewReport}>
-              <input type="hidden" name="id" value={report.id} />
-              <input type="hidden" name="lodge_id" value={lodge} />
-              <input type="hidden" name="month" value={month} />
-              <button className="rounded-lg border border-sand-200 px-3 py-1.5 text-sm text-sand-700 hover:bg-sand-50">
-                Mark reviewed
-              </button>
-            </form>
-          )}
+      {!summary.hasData && (
+        <div className="mb-6 rounded-xl border border-sand-200 bg-white p-6 text-center text-sand-500">
+          No monthly report submitted for {lodgeName} in {summary.label} yet.
         </div>
-      </div>
+      )}
 
-      {/* Compiled report */}
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-xl border border-sand-200 bg-white p-5">
           <h3 className="mb-2 text-base">Occupancy &amp; revenue</h3>
@@ -148,11 +94,12 @@ export default async function ReportsPage({
         </div>
 
         <div className="rounded-xl border border-sand-200 bg-white p-5">
-          <h3 className="mb-2 text-base">People, stock &amp; compliance</h3>
-          <Row label="Payroll (net)" value={inr(summary.payrollNet)} />
-          <Row label="Purchases" value={inr(summary.purchasesTotal)} />
-          <Row label="Low-stock items" value={summary.lowStock} />
-          <Row label="Overdue services" value={summary.overdue} />
+          <h3 className="mb-2 text-base">Safaris</h3>
+          <Row label="Total safaris" value={summary.safaris} />
+          <Row
+            label="Report status"
+            value={summary.status ? summary.status : "—"}
+          />
         </div>
       </div>
     </div>

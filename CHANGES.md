@@ -1,41 +1,25 @@
-# LodgeIQ — Excel export + column toggle + de-cluttered tables
+# LodgeIQ — Fix: Monthly summary now reads your real data
 
-No database changes. Uses the xlsx library you already have (same as /api/report).
-ALWAYS run `npm run build` and see "✓ Compiled successfully" BEFORE pushing.
+The Monthly summary page (/reports) was reading empty relational tables (a
+dormant second data system), which is why it showed all ₹0 and "Not generated".
+It now reads the SAME monthly_submissions JSONB as the dashboard, so it shows
+figures consistent with everything else. No database changes. Run `npm run build`
+(see "✓ Compiled successfully") before pushing.
 
 ## Files
-- app/api/compare/route.ts           NEW  Excel export of the lodge comparison.
-- lib/columns.ts                     NEW  column-group definitions (client-safe).
-- components/column-toggle.tsx       NEW  the Columns: chips (show/hide groups).
-- app/(dashboard)/analytics/page.tsx REBUILT  export button + toggle + lean cols.
-- app/(dashboard)/dashboard/page.tsx UPDATED  toggle + lean cols on the table.
-- components/charts.tsx              INCLUDED  (carries the tooltip fix so this
-                                     zip can't revert it).
-- lib/dashboard.ts                   INCLUDED  (perRoom + aggregate helpers).
+- lib/report-summary.ts               NEW  reads monthly_submissions -> summary.
+- app/(dashboard)/reports/page.tsx     REWRITTEN  uses it; drops the old
+                                       Generate/Submit/Refresh workflow (that
+                                       belonged to the empty relational system).
 
-## What changed (addresses the owner's notes)
-1. EXPORT: "Export Excel" button on Compare lodges downloads the current month's
-   comparison (all lodges, every metric incl. per-room) as a real .xlsx.
-2. LESS DENSE: both comparison tables now start LEAN — Core + Sales + Expenses
-   only. A "Columns:" chip row lets anyone switch on Per-room or Operations
-   detail when they want it. Default view is much cleaner.
-3. CLEARER LABELS: "Total cost" -> "Total expenses", "Extras" -> "Extra sales",
-   per-room labelled "Sales/room", "Exp/room", "F&B/room".
-
-## Column groups
-- Core (always on): Lodge, Room nights, Pax
-- Sales (on): Extra sales
-- Expenses (on): F&B, Misc, HK, Total expenses
-- Per-room (off): Sales/room, Exp/room, F&B/room
-- Operations (off): F&B/guest, Energy, Safaris, Rating
-The choice is saved in the URL (?cols=...), so a view can be bookmarked/shared.
-
-## Note on the bigger "make it easy for anyone" ask
-This ships the concrete wins (export, lean default, clearer labels). A broader
-navigation/onboarding polish is best done next as a focused pass once you and the
-owner react to this cleaner version — tell me what still feels hard to use.
+## What changed
+- Monthly summary shows Occupancy & revenue, Costs, Energy & vehicles, and Safaris
+  straight from the submitted monthly report — same numbers as the dashboard.
+- Export Excel and Print/Save PDF still work.
+- If a lodge/month has no submission, it shows a clear "No monthly report
+  submitted..." message instead of a wall of zeros.
+- The old lib/report.ts and reports/actions.ts are no longer used by this page
+  (left in place; harmless).
 
 ## Rollback
-git checkout -- "app/(dashboard)/analytics/page.tsx" "app/(dashboard)/dashboard/page.tsx" \
-  components/charts.tsx lib/dashboard.ts
-and delete app/api/compare/ lib/columns.ts components/column-toggle.tsx
+git checkout -- "app/(dashboard)/reports/page.tsx" and delete lib/report-summary.ts

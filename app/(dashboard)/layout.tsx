@@ -1,5 +1,5 @@
 import { requireUser, type Role } from "@/lib/auth";
-import { Sidebar } from "@/components/sidebar";
+import { AppShell } from "@/components/app-shell";
 
 export default async function DashboardLayout({
   children,
@@ -11,9 +11,8 @@ export default async function DashboardLayout({
   const name = profile?.full_name ?? "User";
 
   return (
-    <div className="flex min-h-screen">
-      <Sidebar role={role} name={name} />
-      <main className="min-w-0 flex-1 p-6 lg:p-8">{children}</main>
-    </div>
+    <AppShell role={role} name={name}>
+      {children}
+    </AppShell>
   );
 }
