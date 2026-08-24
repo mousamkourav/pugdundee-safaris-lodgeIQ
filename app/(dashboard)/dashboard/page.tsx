@@ -8,11 +8,13 @@ import {
   type Metrics,
 } from "@/lib/dashboard";
 import { resolveRange, inRange, DEFAULT_RANGE } from "@/lib/ranges";
+import { activeGroups } from "@/lib/columns";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { DataTable } from "@/components/data-table";
 import { BarCompare, LineTrend, DonutShare } from "@/components/charts";
 import { RangeSelect } from "@/components/range-select";
+import { ColumnToggle } from "@/components/column-toggle";
 
 const toYM = (iso: string) => iso.slice(0, 7); // YYYY-MM-01 -> YYYY-MM
 
@@ -24,7 +26,7 @@ function thisMonthYM(): string {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string; from?: string; to?: string }>;
+  searchParams: Promise<{ range?: string; from?: string; to?: string; cols?: string }>;
 }) {
   const { profile } = await requireUser();
   const sp = await searchParams;
@@ -89,6 +91,37 @@ export default async function DashboardPage({
     const totRoomNights = agg.reduce((t, m) => t + m.roomNights, 0);
     const totPax = agg.reduce((t, m) => t + m.pax, 0);
     const totCost = agg.reduce((t, m) => t + m.totalCost, 0);
+
+    const groups = activeGroups(sp.cols);
+    type Col = { key: string; label: string; className?: string };
+    const compareCols: Col[] = [{ key: "lodge", label: "Lodge" }];
+    if (groups.has("core"))
+      compareCols.push(
+        { key: "rn", label: "Room nights", className: "tabular" },
+        { key: "pax", label: "Pax", className: "tabular" }
+      );
+    if (groups.has("sales"))
+      compareCols.push({ key: "extras", label: "Extra sales", className: "text-right tabular" });
+    if (groups.has("expenses"))
+      compareCols.push(
+        { key: "fnb", label: "F&B", className: "text-right tabular" },
+        { key: "misc", label: "Misc", className: "text-right tabular" },
+        { key: "hk", label: "HK", className: "text-right tabular" },
+        { key: "cost", label: "Total expenses", className: "text-right tabular" }
+      );
+    if (groups.has("perroom"))
+      compareCols.push(
+        { key: "extrasPR", label: "Sales/room", className: "text-right tabular" },
+        { key: "costPR", label: "Exp/room", className: "text-right tabular" },
+        { key: "fnbPR", label: "F&B/room", className: "text-right tabular" }
+      );
+    if (groups.has("ops"))
+      compareCols.push(
+        { key: "perpax", label: "F&B/guest", className: "text-right tabular" },
+        { key: "energy", label: "Energy", className: "text-right tabular" },
+        { key: "safaris", label: "Safaris", className: "tabular" },
+        { key: "rating", label: "Rating", className: "tabular" }
+      );
 
     return (
       <div>
@@ -159,24 +192,12 @@ export default async function DashboardPage({
           />
         </div>
 
-        <h2 className="mb-3 text-lg">Lodge comparison — {rangeLabel}</h2>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg">Lodge comparison — {rangeLabel}</h2>
+          <ColumnToggle />
+        </div>
         <DataTable
-          columns={[
-            { key: "lodge", label: "Lodge" },
-            { key: "rn", label: "Room nights", className: "tabular" },
-            { key: "pax", label: "Pax", className: "tabular" },
-            { key: "extras", label: "Extras", className: "text-right tabular" },
-            { key: "fnb", label: "F&B", className: "text-right tabular" },
-            { key: "perpax", label: "F&B/guest", className: "text-right tabular" },
-            { key: "extrasPR", label: "Extras/room", className: "text-right tabular" },
-            { key: "cost", label: "Total exp", className: "text-right tabular" },
-            { key: "costPR", label: "Exp/room", className: "text-right tabular" },
-            { key: "fnbPR", label: "F&B/room", className: "text-right tabular" },
-            { key: "hkPR", label: "HK/room", className: "text-right tabular" },
-            { key: "miscPR", label: "Misc/room", className: "text-right tabular" },
-            { key: "safaris", label: "Safaris", className: "tabular" },
-            { key: "rating", label: "Rating", className: "tabular" },
-          ]}
+          columns={compareCols}
           rows={agg.map((m) => {
             const pr = perRoom(m);
             return {
@@ -185,13 +206,14 @@ export default async function DashboardPage({
               pax: m.pax,
               extras: inr(m.extras),
               fnb: inr(m.fnb),
-              perpax: m.fnbPerPax ? inr(Math.round(m.fnbPerPax)) : "—",
-              extrasPR: inr(pr.extrasPerRoom),
+              misc: inr(m.misc),
+              hk: inr(m.hk),
               cost: inr(pr.totalExpenses),
+              extrasPR: inr(pr.extrasPerRoom),
               costPR: inr(pr.totalExpPerRoom),
               fnbPR: inr(pr.fnbPerRoom),
-              hkPR: inr(pr.hkPerRoom),
-              miscPR: inr(pr.miscPerRoom),
+              perpax: m.fnbPerPax ? inr(Math.round(m.fnbPerPax)) : "—",
+              energy: inr(m.energyCost),
               safaris: m.safaris,
               rating: m.rating ?? "—",
             };

@@ -1,42 +1,41 @@
-# LodgeIQ — Section 1 subsections + per-room reporting
+# LodgeIQ — Excel export + column toggle + de-cluttered tables
 
-No database changes. Install via Expand-Archive, then ALWAYS run `npm run build`
-locally and confirm "✓ Compiled successfully" BEFORE pushing.
+No database changes. Uses the xlsx library you already have (same as /api/report).
+ALWAYS run `npm run build` and see "✓ Compiled successfully" BEFORE pushing.
 
-## Files (8)
-- lib/monthly.ts                              Section 1 split into 3 subsections;
-                                              total_rooms now auto (paid+comp).
-- components/monthly-form.tsx                 renders subsection headings.
-- lib/dashboard.ts                            adds perRoom() helper (+ earlier
-                                              aggregateByLodge, kept).
-- lib/ranges.ts                               (calendar presets, unchanged).
-- components/charts.tsx                        (donut, unchanged).
-- components/range-select.tsx                  (unchanged).
-- app/(dashboard)/dashboard/page.tsx          per-room bars + table columns.
-- app/(dashboard)/analytics/page.tsx          per-room bars + table columns.
+## Files
+- app/api/compare/route.ts           NEW  Excel export of the lodge comparison.
+- lib/columns.ts                     NEW  column-group definitions (client-safe).
+- components/column-toggle.tsx       NEW  the Columns: chips (show/hide groups).
+- app/(dashboard)/analytics/page.tsx REBUILT  export button + toggle + lean cols.
+- app/(dashboard)/dashboard/page.tsx UPDATED  toggle + lean cols on the table.
+- components/charts.tsx              INCLUDED  (carries the tooltip fix so this
+                                     zip can't revert it).
+- lib/dashboard.ts                   INCLUDED  (perRoom + aggregate helpers).
 
-## Section 1 — now three subsections
-(a) Accommodation: Paid rooms, Comp rooms, Total rooms (AUTO = paid+comp),
-    Adults, Children 5-12, Total pax (AUTO).
-(b) Extra sales: Nature shop, Alcohol, Soft drinks, Corkage, Laundry billed,
-    Extra food, Extra activities, Transport, Total extra sales (AUTO),
-    Per-room avg extra sale (AUTO).
-(c) Feedback: TripAdvisor rating/positive/poor, Google rating/positive/poor.
+## What changed (addresses the owner's notes)
+1. EXPORT: "Export Excel" button on Compare lodges downloads the current month's
+   comparison (all lodges, every metric incl. per-room) as a real .xlsx.
+2. LESS DENSE: both comparison tables now start LEAN — Core + Sales + Expenses
+   only. A "Columns:" chip row lets anyone switch on Per-room or Operations
+   detail when they want it. Default view is much cleaner.
+3. CLEARER LABELS: "Total cost" -> "Total expenses", "Extras" -> "Extra sales",
+   per-room labelled "Sales/room", "Exp/room", "F&B/room".
 
-Total rooms is now computed, so managers can't mistype it — it always equals
-paid + comp.
+## Column groups
+- Core (always on): Lodge, Room nights, Pax
+- Sales (on): Extra sales
+- Expenses (on): F&B, Misc, HK, Total expenses
+- Per-room (off): Sales/room, Exp/room, F&B/room
+- Operations (off): F&B/guest, Energy, Safaris, Rating
+The choice is saved in the URL (?cols=...), so a view can be bookmarked/shared.
 
-## Per-room reporting (Dashboard + Compare lodges)
-Because lodges have different room counts, absolute totals mislead. Added:
-- Charts: "Extra sales per room" and "Total expenses per room" by lodge.
-- Table columns: Extras/room, Total exp, Exp/room, F&B/room, HK/room, Misc/room.
-- All computed as value / room-nights (guards divide-by-zero). On the dashboard
-  these respect the calendar-range aggregation (sum ÷ sum room-nights).
-
-## IMPORTANT — build locally first
-Run `npm run build`. Only push if it says "✓ Compiled successfully". This avoids
-the failed Vercel deploys from before.
+## Note on the bigger "make it easy for anyone" ask
+This ships the concrete wins (export, lean default, clearer labels). A broader
+navigation/onboarding polish is best done next as a focused pass once you and the
+owner react to this cleaner version — tell me what still feels hard to use.
 
 ## Rollback
-git checkout -- lib/monthly.ts components/monthly-form.tsx lib/dashboard.ts \
-  "app/(dashboard)/dashboard/page.tsx" "app/(dashboard)/analytics/page.tsx"
+git checkout -- "app/(dashboard)/analytics/page.tsx" "app/(dashboard)/dashboard/page.tsx" \
+  components/charts.tsx lib/dashboard.ts
+and delete app/api/compare/ lib/columns.ts components/column-toggle.tsx
