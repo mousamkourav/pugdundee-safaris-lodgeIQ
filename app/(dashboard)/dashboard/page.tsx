@@ -4,6 +4,7 @@ import {
   fetchMetrics,
   monthLabel,
   aggregateByLodge,
+  perRoom,
   type Metrics,
 } from "@/lib/dashboard";
 import { resolveRange, inRange, DEFAULT_RANGE } from "@/lib/ranges";
@@ -104,7 +105,6 @@ export default async function DashboardPage({
             data={agg
               .filter((m) => m.extras > 0)
               .map((m) => ({ name: m.lodgeName, value: m.extras }))}
-            formatValue={(n) => inr(n)}
           />
         </div>
 
@@ -125,6 +125,23 @@ export default async function DashboardPage({
             data={agg.map((m) => ({
               name: m.lodgeName,
               value: Math.round(m.fnbPerPax),
+            }))}
+          />
+        </div>
+
+        <div className="mb-6 grid gap-4 lg:grid-cols-2">
+          <BarCompare
+            title={`Extra sales per room — ${rangeLabel}`}
+            data={agg.map((m) => ({
+              name: m.lodgeName,
+              value: perRoom(m).extrasPerRoom,
+            }))}
+          />
+          <BarCompare
+            title={`Total expenses per room — ${rangeLabel}`}
+            data={agg.map((m) => ({
+              name: m.lodgeName,
+              value: perRoom(m).totalExpPerRoom,
             }))}
           />
         </div>
@@ -151,23 +168,34 @@ export default async function DashboardPage({
             { key: "extras", label: "Extras", className: "text-right tabular" },
             { key: "fnb", label: "F&B", className: "text-right tabular" },
             { key: "perpax", label: "F&B/guest", className: "text-right tabular" },
-            { key: "cost", label: "Total cost", className: "text-right tabular" },
-            { key: "energy", label: "Energy", className: "text-right tabular" },
+            { key: "extrasPR", label: "Extras/room", className: "text-right tabular" },
+            { key: "cost", label: "Total exp", className: "text-right tabular" },
+            { key: "costPR", label: "Exp/room", className: "text-right tabular" },
+            { key: "fnbPR", label: "F&B/room", className: "text-right tabular" },
+            { key: "hkPR", label: "HK/room", className: "text-right tabular" },
+            { key: "miscPR", label: "Misc/room", className: "text-right tabular" },
             { key: "safaris", label: "Safaris", className: "tabular" },
             { key: "rating", label: "Rating", className: "tabular" },
           ]}
-          rows={agg.map((m) => ({
-            lodge: m.lodgeName,
-            rn: m.roomNights,
-            pax: m.pax,
-            extras: inr(m.extras),
-            fnb: inr(m.fnb),
-            perpax: m.fnbPerPax ? inr(Math.round(m.fnbPerPax)) : "—",
-            cost: inr(m.totalCost),
-            energy: inr(m.energyCost),
-            safaris: m.safaris,
-            rating: m.rating ?? "—",
-          }))}
+          rows={agg.map((m) => {
+            const pr = perRoom(m);
+            return {
+              lodge: m.lodgeName,
+              rn: m.roomNights,
+              pax: m.pax,
+              extras: inr(m.extras),
+              fnb: inr(m.fnb),
+              perpax: m.fnbPerPax ? inr(Math.round(m.fnbPerPax)) : "—",
+              extrasPR: inr(pr.extrasPerRoom),
+              cost: inr(pr.totalExpenses),
+              costPR: inr(pr.totalExpPerRoom),
+              fnbPR: inr(pr.fnbPerRoom),
+              hkPR: inr(pr.hkPerRoom),
+              miscPR: inr(pr.miscPerRoom),
+              safaris: m.safaris,
+              rating: m.rating ?? "—",
+            };
+          })}
           empty={`No data for ${rangeLabel}.`}
         />
       </div>

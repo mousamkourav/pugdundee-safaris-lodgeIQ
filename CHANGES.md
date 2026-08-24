@@ -1,35 +1,42 @@
-# LodgeIQ — Task 4: Revenue-share donut (headline) + Task 3 calendar presets
+# LodgeIQ — Section 1 subsections + per-room reporting
 
-This zip is self-contained: it includes Task 3 (calendar presets) AND Task 4
-(the donut), so you only install ONE dashboard file. No database changes.
-Install via Expand-Archive, then npm run dev.
+No database changes. Install via Expand-Archive, then ALWAYS run `npm run build`
+locally and confirm "✓ Compiled successfully" BEFORE pushing.
 
-## Files (5)
-- components/charts.tsx                      UPDATED  adds DonutShare (keeps
-                                             BarCompare + LineTrend unchanged).
-- app/(dashboard)/dashboard/page.tsx         REWRITTEN  headline donut + range
-                                             presets + "Management Dashboard".
-- lib/ranges.ts                              NEW   range preset helpers.
-- lib/dashboard.ts                           UPDATED  aggregateByLodge().
-- components/range-select.tsx                NEW   the date-range dropdown.
+## Files (8)
+- lib/monthly.ts                              Section 1 split into 3 subsections;
+                                              total_rooms now auto (paid+comp).
+- components/monthly-form.tsx                 renders subsection headings.
+- lib/dashboard.ts                            adds perRoom() helper (+ earlier
+                                              aggregateByLodge, kept).
+- lib/ranges.ts                               (calendar presets, unchanged).
+- components/charts.tsx                        (donut, unchanged).
+- components/range-select.tsx                  (unchanged).
+- app/(dashboard)/dashboard/page.tsx          per-room bars + table columns.
+- app/(dashboard)/analytics/page.tsx          per-room bars + table columns.
 
-## The donut
-- Sits at the TOP of the Management Dashboard as the headline visual.
-- Title "Revenue share by lodge", subtitle "Extra sales · <range>" — labelled so
-  it's clearly extra-sales share, not literal total revenue.
-- Donut + a legend list showing each lodge's %; tooltip shows ₹ and %.
-- Respects the calendar-range filter (aggregates extras across the range).
-- Shows "No data for this range" cleanly when the window is empty.
+## Section 1 — now three subsections
+(a) Accommodation: Paid rooms, Comp rooms, Total rooms (AUTO = paid+comp),
+    Adults, Children 5-12, Total pax (AUTO).
+(b) Extra sales: Nature shop, Alcohol, Soft drinks, Corkage, Laundry billed,
+    Extra food, Extra activities, Transport, Total extra sales (AUTO),
+    Per-room avg extra sale (AUTO).
+(c) Feedback: TripAdvisor rating/positive/poor, Google rating/positive/poor.
 
-## Everything from Task 3 is included
-- Date-range presets: This month / Last 3 / 6 / 12 / 24 months / Custom.
-- KPIs, bars, comparison table aggregate across the range; averages recomputed.
-- "Management Dashboard" title.
+Total rooms is now computed, so managers can't mistype it — it always equals
+paid + comp.
 
-## If you already installed Task 3
-That's fine — just install this; it overwrites the same files with the
-donut-included versions. Nothing else in the app is affected.
+## Per-room reporting (Dashboard + Compare lodges)
+Because lodges have different room counts, absolute totals mislead. Added:
+- Charts: "Extra sales per room" and "Total expenses per room" by lodge.
+- Table columns: Extras/room, Total exp, Exp/room, F&B/room, HK/room, Misc/room.
+- All computed as value / room-nights (guards divide-by-zero). On the dashboard
+  these respect the calendar-range aggregation (sum ÷ sum room-nights).
+
+## IMPORTANT — build locally first
+Run `npm run build`. Only push if it says "✓ Compiled successfully". This avoids
+the failed Vercel deploys from before.
 
 ## Rollback
-git checkout -- components/charts.tsx "app/(dashboard)/dashboard/page.tsx" \
-  lib/dashboard.ts && del lib\ranges.ts components\range-select.tsx
+git checkout -- lib/monthly.ts components/monthly-form.tsx lib/dashboard.ts \
+  "app/(dashboard)/dashboard/page.tsx" "app/(dashboard)/analytics/page.tsx"

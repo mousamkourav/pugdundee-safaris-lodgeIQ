@@ -110,3 +110,29 @@ export function aggregateByLodge(rows: Metrics[]): Metrics[] {
   }
   return out.sort((a, b) => b.extras - a.extras);
 }
+
+// ---- per-room normalisation (lodges differ in room count) ----
+// Given an (aggregated or single-month) metric row, compute per-room figures.
+// roomNights is the denominator; guards against divide-by-zero.
+export type PerRoom = {
+  extrasPerRoom: number;
+  fnbPerRoom: number;
+  miscPerRoom: number;
+  hkPerRoom: number;
+  totalExpenses: number; // = fnb + misc + hk (same as totalCost)
+  totalExpPerRoom: number;
+};
+
+export function perRoom(m: Metrics): PerRoom {
+  const rn = m.roomNights || 0;
+  const per = (v: number) => (rn ? Math.round(v / rn) : 0);
+  const totalExpenses = m.fnb + m.misc + m.hk;
+  return {
+    extrasPerRoom: per(m.extras),
+    fnbPerRoom: per(m.fnb),
+    miscPerRoom: per(m.misc),
+    hkPerRoom: per(m.hk),
+    totalExpenses,
+    totalExpPerRoom: per(totalExpenses),
+  };
+}

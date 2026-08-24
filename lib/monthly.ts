@@ -8,6 +8,7 @@ export interface Field {
   label: string;
   type: FieldType;
   computed?: boolean; // auto-calculated; shown read-only and recomputed on save
+  group?: string; // optional subsection heading within a section
 }
 export interface ArrayCol {
   key: string;
@@ -31,6 +32,8 @@ export interface Section {
 
 const N = (path: string, label: string): Field => ({ path, label, type: "number" });
 const T = (path: string, label: string): Field => ({ path, label, type: "text" });
+// group tag helper: attach a subsection heading to a field
+const g = (f: Field, group: string): Field => ({ ...f, group });
 // computed number field (read-only in the form, recomputed on save)
 const C = (path: string, label: string): Field => ({
   path,
@@ -44,28 +47,31 @@ export const SECTIONS: Section[] = [
     key: "front",
     title: "Section 1 — Front office",
     fields: [
-      N("front.paid_rooms", "Paid rooms"),
-      N("front.comp_rooms", "Comp rooms"),
-      N("front.total_rooms", "Total rooms"),
-      N("front.adults", "Adults"),
-      N("front.child_5_12", "Children 5–12"),
-      C("front.total_pax", "Total pax (auto)"),
-      N("front.extra_nature", "Nature shop sale"),
-      N("front.extra_alcohol", "Alcohol"),
-      N("front.extra_soft", "Soft drinks"),
-      N("front.extra_corkage", "Corkage"),
-      N("front.extra_laundry", "Laundry billed"),
-      N("front.extra_food", "Extra food sale"),
-      N("front.extra_activities", "Extra activities"),
-      N("front.extra_transport", "Transport"),
-      C("front.extra_total", "Total extra sales (auto)"),
-      C("front.extra_per_room", "Per-room avg extra sale (auto)"),
-      { path: "front.ta_rating", label: "TripAdvisor rating", type: "rating" },
-      N("front.ta_pos", "TA positive (4–5)"),
-      N("front.ta_poor", "TA poor (1–3)"),
-      { path: "front.google_rating", label: "Google rating", type: "rating" },
-      N("front.google_pos", "Google positive (4–5)"),
-      N("front.google_poor", "Google poor (1–3)"),
+      // (a) Accommodation
+      g(N("front.paid_rooms", "Paid rooms"), "Accommodation"),
+      g(N("front.comp_rooms", "Comp rooms"), "Accommodation"),
+      g(C("front.total_rooms", "Total rooms (auto)"), "Accommodation"),
+      g(N("front.adults", "Adults"), "Accommodation"),
+      g(N("front.child_5_12", "Children 5–12"), "Accommodation"),
+      g(C("front.total_pax", "Total pax (auto)"), "Accommodation"),
+      // (b) Extra sales
+      g(N("front.extra_nature", "Nature shop sale"), "Extra sales"),
+      g(N("front.extra_alcohol", "Alcohol"), "Extra sales"),
+      g(N("front.extra_soft", "Soft drinks"), "Extra sales"),
+      g(N("front.extra_corkage", "Corkage"), "Extra sales"),
+      g(N("front.extra_laundry", "Laundry billed"), "Extra sales"),
+      g(N("front.extra_food", "Extra food sale"), "Extra sales"),
+      g(N("front.extra_activities", "Extra activities"), "Extra sales"),
+      g(N("front.extra_transport", "Transport"), "Extra sales"),
+      g(C("front.extra_total", "Total extra sales (auto)"), "Extra sales"),
+      g(C("front.extra_per_room", "Per-room avg extra sale (auto)"), "Extra sales"),
+      // (c) Feedback
+      g({ path: "front.ta_rating", label: "TripAdvisor rating", type: "rating" }, "Feedback"),
+      g(N("front.ta_pos", "TA positive (4–5)"), "Feedback"),
+      g(N("front.ta_poor", "TA poor (1–3)"), "Feedback"),
+      g({ path: "front.google_rating", label: "Google rating", type: "rating" }, "Feedback"),
+      g(N("front.google_pos", "Google positive (4–5)"), "Feedback"),
+      g(N("front.google_poor", "Google poor (1–3)"), "Feedback"),
     ],
     arrays: [
       {
@@ -311,6 +317,7 @@ export function num(data: Record<string, unknown>, path: string): number {
    from their inputs both live in the form and again on save, so the two never
    drift. Anything listed here is rendered read-only in the form. */
 export const COMPUTED_PATHS = new Set<string>([
+  "front.total_rooms",
   "front.total_pax",
   "front.extra_total",
   "front.extra_per_room",
@@ -347,10 +354,9 @@ export function computeDerived(
   const misc = data.misc;
   const hk = data.housekeeping;
 
-  const roomNights =
-    toNum(f.total_rooms) || toNum(f.paid_rooms) + toNum(f.comp_rooms);
-
-  // Front — pax and extra sales
+  // Front — rooms and pax are auto
+  f.total_rooms = toNum(f.paid_rooms) + toNum(f.comp_rooms);
+  const roomNights = f.total_rooms;
   f.total_pax = toNum(f.adults) + toNum(f.child_5_12);
 
   const extraTotal =

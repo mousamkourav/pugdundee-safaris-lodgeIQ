@@ -43,6 +43,23 @@ function normalize(initial: Data): Data {
   return computeDerived(d);
 }
 
+type FieldGroup = { name: string | null; fields: Field[] };
+// Split a section's fields into ordered subsection groups by their `group` tag.
+// Fields with no group fall into a single unnamed group, preserving order.
+function groupFields(fields: Field[]): FieldGroup[] {
+  const groups: FieldGroup[] = [];
+  let current: FieldGroup | null = null;
+  for (const f of fields) {
+    const name = f.group ?? null;
+    if (!current || current.name !== name) {
+      current = { name, fields: [] };
+      groups.push(current);
+    }
+    current.fields.push(f);
+  }
+  return groups;
+}
+
 export function MonthlyForm({
   initialData,
   locked,
@@ -112,20 +129,31 @@ export function MonthlyForm({
             <h2 className="mb-4 text-base">{sec.title}</h2>
 
             {sec.fields && sec.fields.length > 0 && (
-              <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                {sec.fields.map((f) => (
-                  <ScalarField
-                    key={f.path}
-                    f={f}
-                    value={
-                      getPath(data, f.path) === undefined ||
-                      getPath(data, f.path) === null
-                        ? ""
-                        : String(getPath(data, f.path))
-                    }
-                    locked={locked}
-                    onChange={(v) => update(f.path, v)}
-                  />
+              <div className="mb-4 space-y-5">
+                {groupFields(sec.fields).map((grp) => (
+                  <div key={grp.name ?? "_"}>
+                    {grp.name && (
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-sand-500">
+                        {grp.name}
+                      </p>
+                    )}
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                      {grp.fields.map((f) => (
+                        <ScalarField
+                          key={f.path}
+                          f={f}
+                          value={
+                            getPath(data, f.path) === undefined ||
+                            getPath(data, f.path) === null
+                              ? ""
+                              : String(getPath(data, f.path))
+                          }
+                          locked={locked}
+                          onChange={(v) => update(f.path, v)}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             )}

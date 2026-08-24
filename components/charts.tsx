@@ -80,15 +80,14 @@ export function DonutShare({
   title,
   subtitle,
   data,
-  formatValue,
 }: {
   title: string;
   subtitle?: string;
   data: { name: string; value: number }[];
-  formatValue?: (n: number) => string;
 }) {
   const total = data.reduce((t, d) => t + (d.value || 0), 0);
-  const fmt = formatValue ?? ((n: number) => String(Math.round(n)));
+  const fmt = (n: number) =>
+    "₹" + Math.round(n).toLocaleString("en-IN");
   const hasData = total > 0;
   return (
     <div className="rounded-xl border border-sand-200 bg-white p-4">

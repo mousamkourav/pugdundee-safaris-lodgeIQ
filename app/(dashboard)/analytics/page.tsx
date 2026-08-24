@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireUser, isAdmin } from "@/lib/auth";
 import { inr } from "@/lib/format";
-import { fetchMetrics, monthLabel } from "@/lib/dashboard";
+import { fetchMetrics, monthLabel, perRoom } from "@/lib/dashboard";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table";
 import { BarCompare } from "@/components/charts";
@@ -60,6 +60,20 @@ export default async function AnalyticsPage({
           title="Total cost by lodge"
           data={rows.map((m) => ({ name: m.lodgeName, value: m.totalCost }))}
         />
+        <BarCompare
+          title="Extra sales per room"
+          data={rows.map((m) => ({
+            name: m.lodgeName,
+            value: perRoom(m).extrasPerRoom,
+          }))}
+        />
+        <BarCompare
+          title="Total expenses per room"
+          data={rows.map((m) => ({
+            name: m.lodgeName,
+            value: perRoom(m).totalExpPerRoom,
+          }))}
+        />
       </div>
 
       <DataTable
@@ -72,21 +86,34 @@ export default async function AnalyticsPage({
           { key: "perpax", label: "F&B/guest", className: "text-right tabular" },
           { key: "misc", label: "Misc", className: "text-right tabular" },
           { key: "hk", label: "HK", className: "text-right tabular" },
-          { key: "cost", label: "Total cost", className: "text-right tabular" },
+          { key: "cost", label: "Total exp", className: "text-right tabular" },
+          { key: "extrasPR", label: "Extras/room", className: "text-right tabular" },
+          { key: "costPR", label: "Exp/room", className: "text-right tabular" },
+          { key: "fnbPR", label: "F&B/room", className: "text-right tabular" },
+          { key: "hkPR", label: "HK/room", className: "text-right tabular" },
+          { key: "miscPR", label: "Misc/room", className: "text-right tabular" },
           { key: "safaris", label: "Safaris", className: "tabular" },
         ]}
-        rows={rows.map((m) => ({
-          lodge: m.lodgeName,
-          rn: m.roomNights,
-          pax: m.pax,
-          extras: inr(m.extras),
-          fnb: inr(m.fnb),
-          perpax: m.fnbPerPax ? inr(Math.round(m.fnbPerPax)) : "—",
-          misc: inr(m.misc),
-          hk: inr(m.hk),
-          cost: inr(m.totalCost),
-          safaris: m.safaris,
-        }))}
+        rows={rows.map((m) => {
+          const pr = perRoom(m);
+          return {
+            lodge: m.lodgeName,
+            rn: m.roomNights,
+            pax: m.pax,
+            extras: inr(m.extras),
+            fnb: inr(m.fnb),
+            perpax: m.fnbPerPax ? inr(Math.round(m.fnbPerPax)) : "—",
+            misc: inr(m.misc),
+            hk: inr(m.hk),
+            cost: inr(pr.totalExpenses),
+            extrasPR: inr(pr.extrasPerRoom),
+            costPR: inr(pr.totalExpPerRoom),
+            fnbPR: inr(pr.fnbPerRoom),
+            hkPR: inr(pr.hkPerRoom),
+            miscPR: inr(pr.miscPerRoom),
+            safaris: m.safaris,
+          };
+        })}
         empty="No data for this month."
       />
     </div>
