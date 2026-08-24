@@ -93,15 +93,8 @@ export default async function DashboardPage({
       <div>
         <PageHeader
           title="Management Dashboard"
-<<<<<<< HEAD
-          description="Compare lodges and track performance month over month."
-          action={
-            <MonthSelect months={monthsSet} selected={selected} labels={labels} />
-          }
-=======
           description="Compare lodges and track performance over time."
           action={rangeControl}
->>>>>>> dev
         />
 
         <div className="mb-6">
