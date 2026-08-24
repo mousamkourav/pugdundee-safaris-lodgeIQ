@@ -104,6 +104,7 @@ export default async function DashboardPage({
             data={agg
               .filter((m) => m.extras > 0)
               .map((m) => ({ name: m.lodgeName, value: m.extras }))}
+            formatValue={(n) => inr(n)}
           />
         </div>
 

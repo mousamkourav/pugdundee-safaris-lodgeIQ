@@ -42,8 +42,9 @@ export async function inviteUser(formData: FormData) {
   });
   if (error || !created?.user) {
     back({ error: error?.message ?? "Could not create user" });
+    return;
   }
-  const uid = created!.user.id;
+  const uid = created.user.id;
   // Always create the profile with an explicit active status.
   await admin
     .from("profiles")
@@ -119,3 +120,4 @@ export async function deleteUser(formData: FormData) {
   await admin.auth.admin.deleteUser(id);
   back({ ok: "User deleted." });
 }
+
