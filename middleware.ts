@@ -31,9 +31,16 @@ export async function middleware(request: NextRequest) {
     }
   );
 
+  // Middleware only decides where to ROUTE (login vs app). It is not the
+  // security boundary — every protected page calls requireUser() -> getUser()
+  // (which revalidates against the Auth server) and the database enforces RLS.
+  // So here we use getSession(), which reads/decodes the token from the cookie
+  // locally and only hits the network when the token actually needs refreshing.
+  // This removes a cross-region Auth API round-trip from every request.
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user ?? null;
 
   const path = request.nextUrl.pathname;
   const isAuthRoute = path.startsWith("/login");

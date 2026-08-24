@@ -4,6 +4,8 @@ import { sendEmail } from "./email";
 
 const DUE_SOON_DAYS = 14; // create alerts for services due within this window
 const DEDUPE_DAYS = 20; // don't recreate the same asset alert within this window
+const COMPLIANCE_DUE_SOON_DAYS = 30; // insurance/licence expiry lead time
+const COMPLIANCE_DEDUPE_DAYS = 20; // don't recreate the same doc alert within this window
 
 function daysUntil(iso: string | null): number | null {
   if (!iso) return null;
@@ -83,6 +85,60 @@ export async function runScan(): Promise<{ created: number; sent: number }> {
       channels: ["inapp", "email"],
       status: "pending",
       extra: { asset_id: a.id },
+    });
+    created++;
+  }
+
+  // ---- A2. Create insurance / licence expiry notifications ----
+  // Fires when a document expires within COMPLIANCE_DUE_SOON_DAYS (or is already
+  // expired). Uses the same notification shape + dedupe pattern as services, so
+  // these are emailed by step B automatically.
+  const { data: docs } = await admin
+    .from("compliance_documents")
+    .select("id,lodge_id,doc_type,title,expiry_date");
+
+  for (const doc of (docs ?? []) as Array<{
+    id: string;
+    lodge_id: string;
+    doc_type: string;
+    title: string;
+    expiry_date: string | null;
+  }>) {
+    const d = daysUntil(doc.expiry_date);
+    if (doc.expiry_date === null || d === null || d > COMPLIANCE_DUE_SOON_DAYS)
+      continue;
+
+    const sinceIso = new Date(
+      Date.now() - COMPLIANCE_DEDUPE_DAYS * 86400000
+    ).toISOString();
+    const { data: existing } = await admin
+      .from("notifications")
+      .select("id")
+      .eq("type", "compliance_expiry")
+      .eq("lodge_id", doc.lodge_id)
+      .gte("created_at", sinceIso)
+      .filter("extra->>doc_id", "eq", doc.id)
+      .limit(1);
+    if (existing && existing.length) continue;
+
+    const expired = d < 0;
+    const kind = doc.doc_type === "licence" ? "Licence" : "Insurance";
+    const where = lodgeName.get(doc.lodge_id) ?? "lodge";
+    const severity = expired ? "critical" : "warning";
+    const title = `${expired ? "Expired" : "Expiring soon"}: ${doc.title}`;
+    const body = expired
+      ? `${kind} "${doc.title}" at ${where} expired ${Math.abs(d)} day(s) ago (on ${doc.expiry_date}).`
+      : `${kind} "${doc.title}" at ${where} expires in ${d} day(s) (on ${doc.expiry_date}).`;
+
+    await admin.from("notifications").insert({
+      lodge_id: doc.lodge_id,
+      type: "compliance_expiry",
+      severity,
+      title,
+      body,
+      channels: ["inapp", "email"],
+      status: "pending",
+      extra: { doc_id: doc.id },
     });
     created++;
   }
