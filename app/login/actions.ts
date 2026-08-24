@@ -8,11 +8,35 @@ export async function login(formData: FormData) {
   const password = String(formData.get("password") ?? "");
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
 
   if (error) {
     redirect("/login?error=" + encodeURIComponent(error.message));
   }
+
+  // Block deactivated accounts at the door: sign the session back out and
+  // show a clear message instead of letting them into the app.
+  const uid = data.user?.id;
+  if (uid) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("status")
+      .eq("id", uid)
+      .single();
+    if (profile && profile.status && profile.status !== "active") {
+      await supabase.auth.signOut();
+      redirect(
+        "/login?error=" +
+          encodeURIComponent(
+            "This account has been deactivated. Contact an administrator."
+          )
+      );
+    }
+  }
+
   redirect("/dashboard");
 }
 

@@ -1,33 +1,43 @@
-# LodgeIQ — Performance fixes (Fix 1 + Fix 2)
+# LodgeIQ — Task 2: Users & Access (full CRUD + real deactivation)
 
-Cuts the number of cross-region Supabase round-trips per page load and per action.
-No behavior or security change. Install via your usual Expand-Archive flow, then
-`npm run dev`. These help BOTH local and production.
+No database changes needed (profiles.status already exists; user_lodge_access
+RLS is already correct). Install via Expand-Archive, then npm run dev.
 
-## Files (2)
-- lib/auth.ts      Fix 1: getCurrentUser wrapped in React cache() — the 3-5
-                   requireUser() calls per render now share ONE auth lookup.
-- middleware.ts    Fix 2: routing decision uses getSession() (local cookie read)
-                   instead of getUser() (network call to Supabase Auth) on every
-                   request. Real auth is still enforced by requireUser()+RLS.
+## Files (5)
+- lib/auth.ts                                  UPDATED  keeps the cache() perf fix
+                                               AND enforces account status
+                                               (inactive -> /account-inactive).
+- middleware.ts                                UPDATED  perf getSession() + treats
+                                               /account-inactive as public (no loop).
+- app/login/actions.ts                         UPDATED  refuses deactivated accounts
+                                               at sign-in with a clear message.
+- app/account-inactive/page.tsx                NEW      public "account deactivated"
+                                               notice with a sign-out button.
+- app/(dashboard)/admin/users/page.tsx         REBUILT  management UI (see below).
+- app/(dashboard)/admin/users/actions.ts       REBUILT  full CRUD server actions.
 
-## Why this is safe
-- Fix 1 uses request-scoped caching; it never leaks between users/requests.
-- Fix 2 only changes the login-redirect decision. Every protected page still
-  calls requireUser() -> getUser() (revalidates against Auth), and the database
-  still enforces RLS. Worst case for a stale cookie: one page load that
-  immediately redirects to /login. No data exposure.
+## What admins can now do (Users & access page)
+- See every user with email, role, status (Active/Inactive) and assigned lodges.
+- Edit role (super_admin option only visible to super admins).
+- Add/remove lodge access via checkboxes (Save lodge access).
+- Activate / Deactivate an account.
+- Delete a user (super admin only) — removes access rows, profile, and auth user.
 
-## Also do (no code): redeploy so the Vercel Singapore region takes effect
-You already switched Vercel to Singapore (sin1). It applies on the NEXT deploy.
-Ship these fixes + redeploy together and production latency should drop sharply
-(Supabase is in ap-southeast-1 / Singapore, so app and DB will be co-located).
+## Deactivation now actually blocks login (was cosmetic before)
+- At login: a deactivated user is signed back out with a clear message.
+- On any protected page: requireUser() redirects an inactive session to the
+  public /account-inactive page (excluded from the middleware redirect, so it
+  can't loop), where they can sign out.
 
-## Expected result
-- Local (India -> Singapore): noticeably snappier from Fix 1 + 2.
-- Production: snappier from Fix 1 + 2, and a big drop once the Singapore
-  deploy is live (co-located with Supabase).
+## Guardrails
+- You can't change your own role, deactivate yourself, or delete yourself.
+- Only a super admin can grant super_admin or delete users.
+
+## IMPORTANT — auth.ts note
+This lib/auth.ts INCLUDES the earlier cache() performance fix, so installing it
+will not regress speed even if your repo's copy differed. Safe to overwrite.
 
 ## Rollback
-If anything looks off, restore your previous lib/auth.ts and middleware.ts from
-git (git checkout -- lib/auth.ts middleware.ts). No DB changes were made.
+git checkout -- lib/auth.ts middleware.ts app/login/actions.ts \
+  "app/(dashboard)/admin/users/page.tsx" "app/(dashboard)/admin/users/actions.ts"
+and delete app/account-inactive/.

@@ -31,26 +31,28 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // Middleware only decides where to ROUTE (login vs app). It is not the
-  // security boundary — every protected page calls requireUser() -> getUser()
-  // (which revalidates against the Auth server) and the database enforces RLS.
-  // So here we use getSession(), which reads/decodes the token from the cookie
-  // locally and only hits the network when the token actually needs refreshing.
-  // This removes a cross-region Auth API round-trip from every request.
+  // Routing only — not the security boundary. Every protected page calls
+  // requireUser() -> getUser() (revalidates) and enforces account status, and
+  // the DB enforces RLS. getSession() reads the cookie locally (no network in
+  // the common case), removing an Auth API round-trip from every request.
   const {
     data: { session },
   } = await supabase.auth.getSession();
   const user = session?.user ?? null;
 
   const path = request.nextUrl.pathname;
-  const isAuthRoute = path.startsWith("/login");
+  // Public routes: login and the deactivated-account notice. Excluding
+  // /account-inactive here is what prevents a redirect loop — requireUser sends
+  // deactivated users there, and middleware must let them stay.
+  const isPublicRoute =
+    path.startsWith("/login") || path.startsWith("/account-inactive");
 
-  if (!user && !isAuthRoute) {
+  if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
-  if (user && isAuthRoute) {
+  if (user && path.startsWith("/login")) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);

@@ -10,11 +10,9 @@ export type Role =
   | "accounts"
   | "viewer";
 
-// Wrapped in React's cache() so that multiple calls within a single server
-// render (middleware already validated the session; then layout.tsx AND the
-// page body each call requireUser) share ONE result instead of each doing a
-// fresh auth.getUser() + profiles query. Cache is per-request, so it never
-// leaks between users. This removes several cross-region round-trips per page.
+// Wrapped in React's cache() so the multiple requireUser() calls in one render
+// (layout + page body) share ONE auth lookup instead of each doing a fresh
+// getUser() + profiles query. Per-request; never leaks between users.
 export const getCurrentUser = cache(async () => {
   const supabase = await createClient();
   const {
@@ -32,6 +30,12 @@ export const getCurrentUser = cache(async () => {
 export async function requireUser() {
   const res = await getCurrentUser();
   if (!res?.user) redirect("/login");
+  // Enforce account status: a deactivated user keeps their session cookie but
+  // may not use the app. Send them to the public /account-inactive page (which
+  // is excluded from the middleware auth redirect, so this cannot loop).
+  if (res.profile && res.profile.status && res.profile.status !== "active") {
+    redirect("/account-inactive");
+  }
   return res;
 }
 
