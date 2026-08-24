@@ -118,9 +118,10 @@ export function DonutShare({
                 ))}
               </Pie>
               <Tooltip
-                formatter={(value: number, name: string) => {
-                  const pct = total ? Math.round((value / total) * 100) : 0;
-                  return [`${fmt(value)} (${pct}%)`, name];
+                formatter={(value, name) => {
+                  const v = Number(value) || 0;
+                  const pct = total ? Math.round((v / total) * 100) : 0;
+                  return [`${fmt(v)} (${pct}%)`, String(name)];
                 }}
               />
             </PieChart>
@@ -152,3 +153,4 @@ export function DonutShare({
     </div>
   );
 }
+
