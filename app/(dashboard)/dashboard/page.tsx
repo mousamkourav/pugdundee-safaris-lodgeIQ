@@ -1,18 +1,29 @@
 import { requireUser, isAdmin } from "@/lib/auth";
 import { inr } from "@/lib/format";
-import { fetchMetrics, monthLabel, type Metrics } from "@/lib/dashboard";
+import {
+  fetchMetrics,
+  monthLabel,
+  aggregateByLodge,
+  type Metrics,
+} from "@/lib/dashboard";
+import { resolveRange, inRange, DEFAULT_RANGE } from "@/lib/ranges";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { DataTable } from "@/components/data-table";
-import { BarCompare, LineTrend } from "@/components/charts";
-import { MonthSelect } from "@/components/month-select";
+import { BarCompare, LineTrend, DonutShare } from "@/components/charts";
+import { RangeSelect } from "@/components/range-select";
 
 const toYM = (iso: string) => iso.slice(0, 7); // YYYY-MM-01 -> YYYY-MM
+
+function thisMonthYM(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
 
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string }>;
+  searchParams: Promise<{ range?: string; from?: string; to?: string }>;
 }) {
   const { profile } = await requireUser();
   const sp = await searchParams;
@@ -31,26 +42,36 @@ export default async function DashboardPage({
     );
   }
 
-  // month options (desc), with labels
-  const monthsSet = Array.from(new Set(metrics.map((m) => toYM(m.month)))).sort(
-    (a, b) => b.localeCompare(a)
+  const range = resolveRange(
+    sp.range ?? DEFAULT_RANGE,
+    thisMonthYM(),
+    sp.from,
+    sp.to
   );
-  const labels: Record<string, string> = {};
-  for (const m of monthsSet) labels[m] = monthLabel(m + "-01");
-  const selected = sp.month && monthsSet.includes(sp.month) ? sp.month : monthsSet[0];
+  const rangeLabel =
+    range.start === range.end
+      ? monthLabel(range.start + "-01")
+      : `${monthLabel(range.start + "-01")} – ${monthLabel(range.end + "-01")}`;
 
-  const monthMetrics = metrics.filter((m) => toYM(m.month) === selected);
+  // rows within the selected range
+  const inWindow = metrics.filter((m) => inRange(toYM(m.month), range));
 
-  // ordered months asc for trends
-  const monthsAsc = [...monthsSet].sort();
+  // months present in range, ascending, for trend charts
+  const monthsAsc = Array.from(
+    new Set(inWindow.map((m) => toYM(m.month)))
+  ).sort();
   const lodges = Array.from(new Set(metrics.map((m) => m.lodgeName))).sort();
 
-  // ---- trend datasets (one line per lodge) ----
+  // one aggregated row per lodge across the range
+  const agg = aggregateByLodge(inWindow);
+
   const buildTrend = (pick: (m: Metrics) => number) =>
     monthsAsc.map((ym) => {
-      const row: Record<string, string | number> = { label: monthLabel(ym + "-01") };
+      const row: Record<string, string | number> = {
+        label: monthLabel(ym + "-01"),
+      };
       for (const ln of lodges) {
-        const found = metrics.find(
+        const found = inWindow.find(
           (m) => toYM(m.month) === ym && m.lodgeName === ln
         );
         if (found) row[ln] = pick(found);
@@ -58,25 +79,36 @@ export default async function DashboardPage({
       return row;
     });
 
+  const rangeControl = (
+    <RangeSelect preset={range.key} from={sp.from} to={sp.to} />
+  );
+
   if (admin) {
-    // cross-lodge view
-    const totExtras = monthMetrics.reduce((t, m) => t + m.extras, 0);
-    const totRoomNights = monthMetrics.reduce((t, m) => t + m.roomNights, 0);
-    const totPax = monthMetrics.reduce((t, m) => t + m.pax, 0);
-    const totCost = monthMetrics.reduce((t, m) => t + m.totalCost, 0);
+    const totExtras = agg.reduce((t, m) => t + m.extras, 0);
+    const totRoomNights = agg.reduce((t, m) => t + m.roomNights, 0);
+    const totPax = agg.reduce((t, m) => t + m.pax, 0);
+    const totCost = agg.reduce((t, m) => t + m.totalCost, 0);
 
     return (
       <div>
         <PageHeader
-          title="Owner dashboard"
-          description="Compare lodges and track performance month over month."
-          action={
-            <MonthSelect months={monthsSet} selected={selected} labels={labels} />
-          }
+          title="Management Dashboard"
+          description="Compare lodges and track performance over time."
+          action={rangeControl}
         />
 
+        <div className="mb-6">
+          <DonutShare
+            title="Revenue share by lodge"
+            subtitle={`Extra sales · ${rangeLabel}`}
+            data={agg
+              .filter((m) => m.extras > 0)
+              .map((m) => ({ name: m.lodgeName, value: m.extras }))}
+          />
+        </div>
+
         <div className="mb-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <KpiCard label={`Room nights (${labels[selected]})`} value={totRoomNights} />
+          <KpiCard label={`Room nights (${rangeLabel})`} value={totRoomNights} />
           <KpiCard label="Total pax" value={totPax} />
           <KpiCard label="Extra sales" value={inr(totExtras)} />
           <KpiCard label="F&B + Misc + HK" value={inr(totCost)} />
@@ -84,12 +116,12 @@ export default async function DashboardPage({
 
         <div className="mb-6 grid gap-4 lg:grid-cols-2">
           <BarCompare
-            title={`Extra sales by lodge — ${labels[selected]}`}
-            data={monthMetrics.map((m) => ({ name: m.lodgeName, value: m.extras }))}
+            title={`Extra sales by lodge — ${rangeLabel}`}
+            data={agg.map((m) => ({ name: m.lodgeName, value: m.extras }))}
           />
           <BarCompare
-            title={`F&B cost per guest — ${labels[selected]}`}
-            data={monthMetrics.map((m) => ({
+            title={`F&B cost per guest — ${rangeLabel}`}
+            data={agg.map((m) => ({
               name: m.lodgeName,
               value: Math.round(m.fnbPerPax),
             }))}
@@ -109,7 +141,7 @@ export default async function DashboardPage({
           />
         </div>
 
-        <h2 className="mb-3 text-lg">Lodge comparison — {labels[selected]}</h2>
+        <h2 className="mb-3 text-lg">Lodge comparison — {rangeLabel}</h2>
         <DataTable
           columns={[
             { key: "lodge", label: "Lodge" },
@@ -123,44 +155,43 @@ export default async function DashboardPage({
             { key: "safaris", label: "Safaris", className: "tabular" },
             { key: "rating", label: "Rating", className: "tabular" },
           ]}
-          rows={monthMetrics
-            .sort((a, b) => b.extras - a.extras)
-            .map((m) => ({
-              lodge: m.lodgeName,
-              rn: m.roomNights,
-              pax: m.pax,
-              extras: inr(m.extras),
-              fnb: inr(m.fnb),
-              perpax: m.fnbPerPax ? inr(Math.round(m.fnbPerPax)) : "—",
-              cost: inr(m.totalCost),
-              energy: inr(m.energyCost),
-              safaris: m.safaris,
-              rating: m.rating ?? "—",
-            }))}
-          empty="No data for this month."
+          rows={agg.map((m) => ({
+            lodge: m.lodgeName,
+            rn: m.roomNights,
+            pax: m.pax,
+            extras: inr(m.extras),
+            fnb: inr(m.fnb),
+            perpax: m.fnbPerPax ? inr(Math.round(m.fnbPerPax)) : "—",
+            cost: inr(m.totalCost),
+            energy: inr(m.energyCost),
+            safaris: m.safaris,
+            rating: m.rating ?? "—",
+          }))}
+          empty={`No data for ${rangeLabel}.`}
         />
       </div>
     );
   }
 
-  // ---- manager view: their own lodge over time ----
+  // ---- manager view: their own lodge over the range ----
   const myName = metrics[0]?.lodgeName ?? "Your lodge";
-  const latest = monthMetrics[0] ?? metrics[metrics.length - 1];
+  const mine = agg.find((m) => m.lodgeName === myName) ?? null;
   return (
     <div>
       <PageHeader
         title={`${myName} — dashboard`}
         description="Your lodge's performance over time."
-        action={
-          <MonthSelect months={monthsSet} selected={selected} labels={labels} />
-        }
+        action={rangeControl}
       />
 
       <div className="mb-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard label={`Room nights (${labels[selected]})`} value={latest?.roomNights ?? 0} />
-        <KpiCard label="Pax" value={latest?.pax ?? 0} />
-        <KpiCard label="Extra sales" value={inr(latest?.extras ?? 0)} />
-        <KpiCard label="F&B per guest" value={latest?.fnbPerPax ? inr(Math.round(latest.fnbPerPax)) : "—"} />
+        <KpiCard label={`Room nights (${rangeLabel})`} value={mine?.roomNights ?? 0} />
+        <KpiCard label="Pax" value={mine?.pax ?? 0} />
+        <KpiCard label="Extra sales" value={inr(mine?.extras ?? 0)} />
+        <KpiCard
+          label="F&B per guest"
+          value={mine?.fnbPerPax ? inr(Math.round(mine.fnbPerPax)) : "—"}
+        />
       </div>
 
       <div className="mb-6 grid gap-4 lg:grid-cols-2">
@@ -176,7 +207,7 @@ export default async function DashboardPage({
         />
       </div>
 
-      <h2 className="mb-3 text-lg">Monthly figures</h2>
+      <h2 className="mb-3 text-lg">Monthly figures — {rangeLabel}</h2>
       <DataTable
         columns={[
           { key: "month", label: "Month" },
@@ -187,7 +218,7 @@ export default async function DashboardPage({
           { key: "cost", label: "Total cost", className: "text-right tabular" },
           { key: "safaris", label: "Safaris", className: "tabular" },
         ]}
-        rows={[...metrics]
+        rows={[...inWindow]
           .sort((a, b) => b.month.localeCompare(a.month))
           .map((m) => ({
             month: monthLabel(m.month),
@@ -198,7 +229,7 @@ export default async function DashboardPage({
             cost: inr(m.totalCost),
             safaris: m.safaris,
           }))}
-        empty="No data yet."
+        empty={`No data for ${rangeLabel}.`}
       />
     </div>
   );

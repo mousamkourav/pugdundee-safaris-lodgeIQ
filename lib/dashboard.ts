@@ -73,3 +73,40 @@ export function monthLabel(iso: string): string {
     timeZone: "UTC",
   });
 }
+
+// ---- range aggregation (used by the dashboard calendar presets) ----
+// Collapse many monthly rows into one row per lodge: totals are summed, and
+// averages are recomputed from the summed inputs (not averaged) so they stay
+// correct over a range. `rating` uses the most recent month's value in the set.
+export function aggregateByLodge(rows: Metrics[]): Metrics[] {
+  const byLodge = new Map<string, Metrics[]>();
+  for (const m of rows) {
+    if (!byLodge.has(m.lodgeName)) byLodge.set(m.lodgeName, []);
+    byLodge.get(m.lodgeName)!.push(m);
+  }
+  const out: Metrics[] = [];
+  for (const [lodgeName, list] of byLodge) {
+    const sum = (pick: (x: Metrics) => number) =>
+      list.reduce((t, x) => t + pick(x), 0);
+    const pax = sum((x) => x.pax);
+    const fnb = sum((x) => x.fnb);
+    const latest = [...list].sort((a, b) => b.month.localeCompare(a.month))[0];
+    out.push({
+      lodgeId: latest.lodgeId,
+      lodgeName,
+      month: latest.month,
+      roomNights: sum((x) => x.roomNights),
+      pax,
+      extras: sum((x) => x.extras),
+      fnb,
+      fnbPerPax: pax ? Math.round(fnb / pax) : 0,
+      misc: sum((x) => x.misc),
+      hk: sum((x) => x.hk),
+      totalCost: sum((x) => x.totalCost),
+      energyCost: sum((x) => x.energyCost),
+      safaris: sum((x) => x.safaris),
+      rating: latest.rating,
+    });
+  }
+  return out.sort((a, b) => b.extras - a.extras);
+}
