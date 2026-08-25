@@ -1,22 +1,31 @@
-# LodgeIQ — Short lodge codes on charts, donut & tables
+# LodgeIQ — Compliance feature (insurances & licences)
 
-Adds short codes (WEL, THH, KL, KEL, DBE, PTL) wherever lodge names render on the
-dashboard and Compare lodges — chart bars, donut, and comparison tables — so the
-labels stay legible. No database changes.
+New feature to track licenses, insurances, AMCs, and fitness/pollution certs per
+lodge, with expiry status badges. Two parts: SQL (run in Supabase) + app code.
 
-## Files
-- lib/dashboard.ts                       adds shortCode() helper + mapping.
-- app/(dashboard)/dashboard/page.tsx      uses shortCode on charts/donut/table.
-- app/(dashboard)/analytics/page.tsx      uses shortCode on charts/table.
+## STEP 1 — Supabase (run in this order)
+1. compliance_schema.sql   creates the compliance_documents table + RLS.
+2. seed_compliance.sql      loads 124 documents across all 6 lodges from your CSV.
+(Both are in the outputs alongside this zip. seed is idempotent per lodge.)
 
-## Mapping
-Waghoba Eco Lodge=WEL, Tree House Hideaway=THH, Kings Lodge=KL,
-Kanha Earth Lodge=KEL, Denwa Backwater Escape=DBE, Pench Tree Lodge=PTL.
-Any other lodge auto-abbreviates to its initials.
+## STEP 2 — App code (this zip)
+- app/(dashboard)/compliance/page.tsx   NEW  the Insurances & licences page.
+- components/nav.ts                     adds the nav link under Assets & compliance.
 
-## Note
-This zip also carries the export + column-toggle + per-room work (t7 base), so
-installing it is consistent with everything shipped this session.
+## The page
+- Lodge picker; admins see any lodge, managers see theirs (RLS).
+- Documents grouped by category (License / Insurance / AMC / Fitness / Pollution).
+- Status badge per row: Expired (red), <30d / <90d left (red/amber), Valid (green).
+- Summary chips at top: "N expired", "N expiring within 30 days".
+- Sorted so the most urgent items surface first.
+
+## Notes
+- Some documents have no dates in the CSV (e.g. Medical Insurance "All to take
+  Govt", Fire NOC "pending") — shown with a neutral "No date" badge, remarks kept.
+- Dates were normalised from mixed formats (dd-mm-yyyy, dd/mm/yyyy, dd.mm.yyyy).
+
+## Build
+npm run build  (must say "✓ Compiled successfully" before pushing)
 
 ## Rollback
-git checkout -- lib/dashboard.ts "app/(dashboard)/dashboard/page.tsx" "app/(dashboard)/analytics/page.tsx"
+git checkout -- components/nav.ts and delete app/(dashboard)/compliance/

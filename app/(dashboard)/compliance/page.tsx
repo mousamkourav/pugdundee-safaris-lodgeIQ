@@ -2,22 +2,18 @@ import { requireUser } from "@/lib/auth";
 import { getAccessibleLodges, resolveLodge } from "@/lib/lodges";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
-import { KpiCard } from "@/components/kpi-card";
-import { DataTable } from "@/components/data-table";
 import { LodgePicker } from "@/components/lodge-picker";
 import { NoLodge } from "@/components/no-lodge";
-import { inp, btn, L } from "@/components/form-bits";
-import { addDocument, deleteDocument, renewDocument } from "./actions";
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 type Doc = {
   id: string;
-  doc_type: string;
-  title: string;
-  authority: string | null;
-  reference_no: string | null;
-  issue_date: string | null;
-  expiry_date: string;
-  notes: string | null;
+  category: string;
+  name: string;
+  valid_from: string | null;
+  valid_to: string | null;
+  remarks: string | null;
 };
 
 function daysUntil(iso: string | null): number | null {
@@ -26,48 +22,19 @@ function daysUntil(iso: string | null): number | null {
   return Math.round((Date.parse(iso) - Date.parse(today)) / 86400000);
 }
 
-const STATUS_META: Record<string, { t: string; cls: string }> = {
-  expired: { t: "Expired", cls: "bg-error-bg text-error" },
-  due_soon: { t: "Expiring soon", cls: "bg-warning-bg text-warning" },
-  ok: { t: "Valid", cls: "bg-success-bg text-success" },
-};
-
-function StatusBadge({ status }: { status: string }) {
-  const s = STATUS_META[status];
-  return (
-    <span className={`rounded-full px-2.5 py-0.5 text-xs ${s.cls}`}>{s.t}</span>
-  );
+function status(valid_to: string | null): { t: string; cls: string; rank: number } {
+  const d = daysUntil(valid_to);
+  if (d === null) return { t: "No date", cls: "bg-sand-100 text-sand-600", rank: 3 };
+  if (d < 0) return { t: "Expired", cls: "bg-error-bg text-error", rank: 0 };
+  if (d <= 30) return { t: `${d}d left`, cls: "bg-error-bg text-error", rank: 1 };
+  if (d <= 90) return { t: `${d}d left`, cls: "bg-warning-bg text-warning", rank: 2 };
+  return { t: "Valid", cls: "bg-success-bg text-success", rank: 4 };
 }
 
-function RowActions({
-  id,
-  lodge,
-  expiry,
-}: {
-  id: string;
-  lodge: string;
-  expiry: string;
-}) {
-  return (
-    <div className="flex items-center justify-end gap-3">
-      <form action={renewDocument} className="flex items-center gap-1">
-        <input type="hidden" name="id" value={id} />
-        <input type="hidden" name="lodge_id" value={lodge} />
-        <input
-          type="date"
-          name="expiry_date"
-          defaultValue={expiry}
-          className="rounded-lg border border-sand-300 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-gold-500"
-        />
-        <button className="text-xs text-olive-700 hover:underline">Renew</button>
-      </form>
-      <form action={deleteDocument} className="inline">
-        <input type="hidden" name="id" value={id} />
-        <input type="hidden" name="lodge_id" value={lodge} />
-        <button className="text-xs text-error hover:underline">Delete</button>
-      </form>
-    </div>
-  );
+function fmtDate(iso: string | null): string {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
 }
 
 export default async function CompliancePage({
@@ -81,120 +48,114 @@ export default async function CompliancePage({
   const lodge = resolveLodge(sp.lodge, lodges);
   if (!lodge) return <NoLodge title="Insurances & licences" />;
 
-  const supabase = await createClient();
-  const { data } = await supabase
+  const s = await createClient();
+  const { data: rows } = await s
     .from("compliance_documents")
-    .select("*")
+    .select("id, category, name, valid_from, valid_to, remarks")
     .eq("lodge_id", lodge)
-    .order("expiry_date", { ascending: true });
+    .order("valid_to", { ascending: true, nullsFirst: false });
 
-  const docs = (data ?? []) as Doc[];
+  const docs = (rows as Doc[]) ?? [];
+  const lodgeName = lodges.find((l) => l.id === lodge)?.name ?? "Lodge";
 
-  const rank: Record<string, number> = { expired: 0, due_soon: 1, ok: 2 };
-  const withStatus = docs.map((d) => {
-    const days = daysUntil(d.expiry_date);
-    let key: string;
-    if ((days as number) < 0) key = "expired";
-    else if ((days as number) <= 30) key = "due_soon";
-    else key = "ok";
-    return { d, days, key };
-  });
-  withStatus.sort((x, y) =>
-    rank[x.key] !== rank[y.key]
-      ? rank[x.key] - rank[y.key]
-      : (x.days ?? 99999) - (y.days ?? 99999)
-  );
+  // summary counts
+  const expired = docs.filter((d) => {
+    const n = daysUntil(d.valid_to);
+    return n !== null && n < 0;
+  }).length;
+  const soon = docs.filter((d) => {
+    const n = daysUntil(d.valid_to);
+    return n !== null && n >= 0 && n <= 30;
+  }).length;
 
-  const expired = withStatus.filter((s) => s.key === "expired").length;
-  const dueSoon = withStatus.filter((s) => s.key === "due_soon").length;
+  // group by category
+  const cats = Array.from(new Set(docs.map((d) => d.category)));
+  const order = ["License", "Insurance", "AMC", "Fitness", "Pollution", "Other"];
+  cats.sort((a, b) => (order.indexOf(a) + 100) - (order.indexOf(b) + 100));
 
   return (
     <div>
       <PageHeader
         title="Insurances & licences"
-        description="Track policy and licence expiry per lodge. Alerts fire 30 days before expiry."
+        description={`${lodgeName} · ${docs.length} documents`}
       />
-      <LodgePicker lodges={lodges} lodge={lodge} />
 
-      <div className="mb-8 grid gap-3 sm:grid-cols-3">
-        <KpiCard label="Expired" value={expired} />
-        <KpiCard label="Expiring soon (≤30d)" value={dueSoon} />
-        <KpiCard label="Documents tracked" value={docs.length} />
+      <div className="mb-6">
+        <LodgePicker lodges={lodges} lodge={lodge} />
       </div>
 
-      <section className="mb-10">
-        <h2 className="mb-3 text-lg">Add a document</h2>
-        <form
-          action={addDocument}
-          className="grid grid-cols-2 gap-3 rounded-xl border border-sand-200 bg-white p-4 sm:grid-cols-3 lg:grid-cols-4"
-        >
-          <input type="hidden" name="lodge_id" value={lodge} />
-          <L label="Type">
-            <select name="doc_type" className={inp}>
-              <option value="insurance">Insurance</option>
-              <option value="licence">Licence</option>
-            </select>
-          </L>
-          <L label="Title">
-            <input
-              required
-              name="title"
-              placeholder="Fire safety licence"
-              className={inp}
-            />
-          </L>
-          <L label="Issuer / authority">
-            <input name="authority" placeholder="State fire dept." className={inp} />
-          </L>
-          <L label="Policy / licence no.">
-            <input name="reference_no" placeholder="Optional" className={inp} />
-          </L>
-          <L label="Issue date">
-            <input type="date" name="issue_date" className={inp} />
-          </L>
-          <L label="Expiry date">
-            <input required type="date" name="expiry_date" className={inp} />
-          </L>
-          <L label="Notes">
-            <input name="notes" placeholder="Optional" className={inp} />
-          </L>
-          <div className="flex items-end">
-            <button className={btn}>Add document</button>
-          </div>
-        </form>
-      </section>
+      {(expired > 0 || soon > 0) && (
+        <div className="mb-6 flex flex-wrap gap-3">
+          {expired > 0 && (
+            <span className="rounded-lg bg-error-bg px-4 py-2 text-sm text-error">
+              {expired} expired
+            </span>
+          )}
+          {soon > 0 && (
+            <span className="rounded-lg bg-warning-bg px-4 py-2 text-sm text-warning">
+              {soon} expiring within 30 days
+            </span>
+          )}
+        </div>
+      )}
 
-      <section>
-        <h2 className="mb-3 text-lg">Documents</h2>
-        <DataTable
-          columns={[
-            { key: "type", label: "Type" },
-            { key: "title", label: "Title" },
-            { key: "authority", label: "Issuer" },
-            { key: "ref", label: "Ref no." },
-            { key: "expiry", label: "Expiry" },
-            { key: "days", label: "Days", className: "tabular" },
-            { key: "status", label: "Status" },
-            { key: "act", label: "", className: "text-right" },
-          ]}
-          rows={withStatus.map((s) => ({
-            type: s.d.doc_type === "licence" ? "Licence" : "Insurance",
-            title: s.d.title,
-            authority: s.d.authority ?? "—",
-            ref: s.d.reference_no ?? "—",
-            expiry: s.d.expiry_date,
-            days:
-              s.days === null
-                ? "—"
-                : s.days < 0
-                ? `${Math.abs(s.days)} over`
-                : s.days,
-            status: <StatusBadge status={s.key} />,
-            act: <RowActions id={s.d.id} lodge={lodge} expiry={s.d.expiry_date} />,
-          }))}
-          empty="No documents yet. Add insurances and licences above to track expiry."
-        />
-      </section>
+      {docs.length === 0 ? (
+        <div className="rounded-xl border border-sand-200 bg-white p-6 text-center text-sand-500">
+          No documents recorded for {lodgeName} yet.
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {cats.map((cat) => {
+            const items = docs
+              .filter((d) => d.category === cat)
+              .sort((a, b) => status(a.valid_to).rank - status(b.valid_to).rank);
+            return (
+              <section
+                key={cat}
+                className="overflow-hidden rounded-xl border border-sand-200 bg-white"
+              >
+                <h3 className="border-b border-sand-200 bg-sand-50 px-5 py-3 text-sm font-semibold text-sand-800">
+                  {cat}
+                  <span className="ml-2 text-xs font-normal text-sand-400">
+                    {items.length}
+                  </span>
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-sand-200 text-left text-xs text-sand-500">
+                        <th className="px-5 py-2 font-medium">Document</th>
+                        <th className="px-3 py-2 font-medium">Valid from</th>
+                        <th className="px-3 py-2 font-medium">Valid to</th>
+                        <th className="px-3 py-2 font-medium">Status</th>
+                        <th className="px-5 py-2 font-medium">Remarks</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((d) => {
+                        const st = status(d.valid_to);
+                        return (
+                          <tr key={d.id} className="border-b border-sand-100 last:border-0">
+                            <td className="px-5 py-2 text-sand-800">{d.name}</td>
+                            <td className="px-3 py-2 text-sand-600">{fmtDate(d.valid_from)}</td>
+                            <td className="px-3 py-2 text-sand-600">{fmtDate(d.valid_to)}</td>
+                            <td className="px-3 py-2">
+                              <span className={`rounded-full px-2.5 py-0.5 text-xs ${st.cls}`}>
+                                {st.t}
+                              </span>
+                            </td>
+                            <td className="px-5 py-2 text-sand-500">{d.remarks ?? "—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
