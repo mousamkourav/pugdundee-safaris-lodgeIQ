@@ -9,12 +9,19 @@ import { NoLodge } from "@/components/no-lodge";
 
 type Doc = {
   id: string;
-  category: string;
-  name: string;
-  valid_from: string | null;
-  valid_to: string | null;
-  remarks: string | null;
+  doc_type: string | null;
+  title: string;
+  issue_date: string | null;
+  expiry_date: string | null;
+  notes: string | null;
 };
+
+function splitNotes(notes: string | null): { cat: string; text: string | null } {
+  if (!notes) return { cat: "Other", text: null };
+  const m = notes.match(/^\[([^\]]+)\]\s?(.*)$/);
+  if (m) return { cat: m[1], text: m[2] || null };
+  return { cat: "Other", text: notes };
+}
 
 function daysUntil(iso: string | null): number | null {
   if (!iso) return null;
@@ -51,25 +58,25 @@ export default async function CompliancePage({
   const s = await createClient();
   const { data: rows } = await s
     .from("compliance_documents")
-    .select("id, category, name, valid_from, valid_to, remarks")
+    .select("id, doc_type, title, issue_date, expiry_date, notes")
     .eq("lodge_id", lodge)
-    .order("valid_to", { ascending: true, nullsFirst: false });
+    .order("expiry_date", { ascending: true, nullsFirst: false });
 
   const docs = (rows as Doc[]) ?? [];
   const lodgeName = lodges.find((l) => l.id === lodge)?.name ?? "Lodge";
 
   // summary counts
   const expired = docs.filter((d) => {
-    const n = daysUntil(d.valid_to);
+    const n = daysUntil(d.expiry_date);
     return n !== null && n < 0;
   }).length;
   const soon = docs.filter((d) => {
-    const n = daysUntil(d.valid_to);
+    const n = daysUntil(d.expiry_date);
     return n !== null && n >= 0 && n <= 30;
   }).length;
 
   // group by category
-  const cats = Array.from(new Set(docs.map((d) => d.category)));
+  const cats = Array.from(new Set(docs.map((d) => splitNotes(d.notes).cat)));
   const order = ["License", "Insurance", "AMC", "Fitness", "Pollution", "Other"];
   cats.sort((a, b) => (order.indexOf(a) + 100) - (order.indexOf(b) + 100));
 
@@ -107,8 +114,8 @@ export default async function CompliancePage({
         <div className="space-y-6">
           {cats.map((cat) => {
             const items = docs
-              .filter((d) => d.category === cat)
-              .sort((a, b) => status(a.valid_to).rank - status(b.valid_to).rank);
+              .filter((d) => splitNotes(d.notes).cat === cat)
+              .sort((a, b) => status(a.expiry_date).rank - status(b.expiry_date).rank);
             return (
               <section
                 key={cat}
@@ -133,18 +140,18 @@ export default async function CompliancePage({
                     </thead>
                     <tbody>
                       {items.map((d) => {
-                        const st = status(d.valid_to);
+                        const st = status(d.expiry_date);
                         return (
                           <tr key={d.id} className="border-b border-sand-100 last:border-0">
-                            <td className="px-5 py-2 text-sand-800">{d.name}</td>
-                            <td className="px-3 py-2 text-sand-600">{fmtDate(d.valid_from)}</td>
-                            <td className="px-3 py-2 text-sand-600">{fmtDate(d.valid_to)}</td>
+                            <td className="px-5 py-2 text-sand-800">{d.title}</td>
+                            <td className="px-3 py-2 text-sand-600">{fmtDate(d.issue_date)}</td>
+                            <td className="px-3 py-2 text-sand-600">{fmtDate(d.expiry_date)}</td>
                             <td className="px-3 py-2">
                               <span className={`rounded-full px-2.5 py-0.5 text-xs ${st.cls}`}>
                                 {st.t}
                               </span>
                             </td>
-                            <td className="px-5 py-2 text-sand-500">{d.remarks ?? "—"}</td>
+                            <td className="px-5 py-2 text-sand-500">{splitNotes(d.notes).text ?? "—"}</td>
                           </tr>
                         );
                       })}
