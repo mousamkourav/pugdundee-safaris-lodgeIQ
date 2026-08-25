@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireUser, isAdmin } from "@/lib/auth";
 import { inr } from "@/lib/format";
-import { fetchMetrics, monthLabel, perRoom } from "@/lib/dashboard";
+import { fetchMetrics, monthLabel, perRoom, shortCode } from "@/lib/dashboard";
 import { activeGroups } from "@/lib/columns";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table";
@@ -126,26 +126,26 @@ export default async function AnalyticsPage({
       <div className="mb-6 grid gap-4 lg:grid-cols-2">
         <BarCompare
           title="Extra sales by lodge"
-          data={rows.map((m) => ({ name: m.lodgeName, value: m.extras }))}
+          data={rows.map((m) => ({ name: shortCode(m.lodgeName), value: m.extras }))}
         />
         <BarCompare
           title="Total expenses by lodge"
           data={rows.map((m) => ({
-            name: m.lodgeName,
+            name: shortCode(m.lodgeName),
             value: perRoom(m).totalExpenses,
           }))}
         />
         <BarCompare
           title="Extra sales per room"
           data={rows.map((m) => ({
-            name: m.lodgeName,
+            name: shortCode(m.lodgeName),
             value: perRoom(m).extrasPerRoom,
           }))}
         />
         <BarCompare
           title="Expenses per room"
           data={rows.map((m) => ({
-            name: m.lodgeName,
+            name: shortCode(m.lodgeName),
             value: perRoom(m).totalExpPerRoom,
           }))}
         />

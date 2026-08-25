@@ -136,3 +136,24 @@ export function perRoom(m: Metrics): PerRoom {
     totalExpPerRoom: per(totalExpenses),
   };
 }
+
+// Short display codes for lodges (used on charts, donut, and compare tables where
+// the full name is too long). Falls back to an auto-abbreviation, then the name.
+const LODGE_SHORT: Record<string, string> = {
+  "Waghoba Eco Lodge": "WEL",
+  "Tree House Hideaway": "THH",
+  "Kings Lodge": "KL",
+  "Kanha Earth Lodge": "KEL",
+  "Denwa Backwater Escape": "DBE",
+  "Pench Tree Lodge": "PTL",
+};
+
+export function shortCode(name: string): string {
+  if (LODGE_SHORT[name]) return LODGE_SHORT[name];
+  const initials = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0]?.toUpperCase())
+    .join("");
+  return initials || name;
+}

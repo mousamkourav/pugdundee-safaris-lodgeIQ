@@ -5,6 +5,7 @@ import {
   monthLabel,
   aggregateByLodge,
   perRoom,
+  shortCode,
   type Metrics,
 } from "@/lib/dashboard";
 import { resolveRange, inRange, DEFAULT_RANGE } from "@/lib/ranges";
@@ -137,7 +138,7 @@ export default async function DashboardPage({
             subtitle={`Extra sales · ${rangeLabel}`}
             data={agg
               .filter((m) => m.extras > 0)
-              .map((m) => ({ name: m.lodgeName, value: m.extras }))}
+              .map((m) => ({ name: shortCode(m.lodgeName), value: m.extras }))}
           />
         </div>
 
@@ -151,12 +152,12 @@ export default async function DashboardPage({
         <div className="mb-6 grid gap-4 lg:grid-cols-2">
           <BarCompare
             title={`Extra sales by lodge — ${rangeLabel}`}
-            data={agg.map((m) => ({ name: m.lodgeName, value: m.extras }))}
+            data={agg.map((m) => ({ name: shortCode(m.lodgeName), value: m.extras }))}
           />
           <BarCompare
             title={`F&B cost per guest — ${rangeLabel}`}
             data={agg.map((m) => ({
-              name: m.lodgeName,
+              name: shortCode(m.lodgeName),
               value: Math.round(m.fnbPerPax),
             }))}
           />
@@ -166,14 +167,14 @@ export default async function DashboardPage({
           <BarCompare
             title={`Extra sales per room — ${rangeLabel}`}
             data={agg.map((m) => ({
-              name: m.lodgeName,
+              name: shortCode(m.lodgeName),
               value: perRoom(m).extrasPerRoom,
             }))}
           />
           <BarCompare
             title={`Total expenses per room — ${rangeLabel}`}
             data={agg.map((m) => ({
-              name: m.lodgeName,
+              name: shortCode(m.lodgeName),
               value: perRoom(m).totalExpPerRoom,
             }))}
           />
@@ -201,7 +202,7 @@ export default async function DashboardPage({
           rows={agg.map((m) => {
             const pr = perRoom(m);
             return {
-              lodge: m.lodgeName,
+              lodge: shortCode(m.lodgeName),
               rn: m.roomNights,
               pax: m.pax,
               extras: inr(m.extras),

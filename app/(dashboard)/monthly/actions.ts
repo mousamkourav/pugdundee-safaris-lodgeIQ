@@ -12,7 +12,6 @@ function back(lodge: string, month: string) {
   redirect(`/monthly?lodge=${lodge}&month=${month}`);
 }
 
-// Load existing row + whether the current user may edit it.
 async function loadRow(lodge: string, monthStart: string) {
   const s = await createClient();
   const { data } = await s
@@ -24,6 +23,23 @@ async function loadRow(lodge: string, monthStart: string) {
   return data as Record<string, unknown> | null;
 }
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// Deep-merge submitted values onto the existing stored data so a save can NEVER
+// wipe fields the form didn't include. Arrays are replaced wholesale (they are
+// edited as complete blocks); plain objects merge key-by-key.
+function deepMerge(base: any, patch: any): any {
+  if (Array.isArray(patch)) return patch;
+  if (patch && typeof patch === "object") {
+    const out: Record<string, any> =
+      base && typeof base === "object" && !Array.isArray(base) ? { ...base } : {};
+    for (const k of Object.keys(patch)) {
+      out[k] = deepMerge(out[k], patch[k]);
+    }
+    return out;
+  }
+  return patch;
+}
+
 async function saveInternal(fd: FormData, submit: boolean) {
   const cu = await getCurrentUser();
   if (!cu?.user) throw new Error("Not authorized");
@@ -33,22 +49,22 @@ async function saveInternal(fd: FormData, submit: boolean) {
   const admin = isAdmin(cu.profile?.role);
 
   const existing = await loadRow(lodge_id, start);
-  // Lock: once submitted, only an admin may change it.
   if (existing && existing.status === "submitted" && !admin) {
-    // Manager cannot edit a submitted report.
     back(lodge_id, month);
+    return;
   }
 
-  // Parse inputs, then recompute all derived totals/averages server-side so the
-  // stored numbers are authoritative and always match the form's live values.
-  const data = computeDerived(parseMonthlyForm(fd));
-  const s = await createClient();
+  // Merge submitted fields onto whatever is already stored, THEN recompute
+  // totals from the merged result. This preserves any field not present in the
+  // submitted form and prevents blank overwrites.
+  const submitted = parseMonthlyForm(fd);
+  const existingData =
+    (existing?.data as Record<string, unknown> | undefined) ?? {};
+  const merged = deepMerge(existingData, submitted);
+  const data = computeDerived(merged);
 
-  const payload: Record<string, unknown> = {
-    lodge_id,
-    month: start,
-    data,
-  };
+  const s = await createClient();
+  const payload: Record<string, unknown> = { lodge_id, month: start, data };
   if (submit) {
     payload.status = "submitted";
     payload.submitted_by = cu.user.id;
@@ -57,7 +73,6 @@ async function saveInternal(fd: FormData, submit: boolean) {
     payload.status = "draft";
     payload.created_by = cu.user.id;
   } else if (admin) {
-    // admin editing keeps existing status unless they explicitly submit
     payload.status = existing.status;
   } else {
     payload.status = "draft";
@@ -76,7 +91,6 @@ export async function submitReport(fd: FormData) {
   await saveInternal(fd, true);
 }
 
-// Admin-only: reopen a submitted report back to draft (so a manager can fix it).
 export async function reopenReport(fd: FormData) {
   const cu = await getCurrentUser();
   if (!cu?.user || !isAdmin(cu.profile?.role)) throw new Error("Not authorized");
@@ -88,7 +102,6 @@ export async function reopenReport(fd: FormData) {
   back(String(fd.get("lodge_id")), String(fd.get("month")));
 }
 
-// Super-admin only (enforced also by RLS): delete a report.
 export async function deleteReport(fd: FormData) {
   const cu = await getCurrentUser();
   if (!cu?.user || cu.profile?.role !== "super_admin")
