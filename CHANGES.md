@@ -1,23 +1,22 @@
-# LodgeIQ — Compliance feature (mapped to your EXISTING table)
+# LodgeIQ — Fix monthly report picker + readable lodge URLs (v2)
 
-Your database already has a compliance_documents table, so DO NOT run the schema
-file. Column mapping used:
-  doc_type=category, title=name, issue_date=valid_from, expiry_date=valid_to, notes=remarks
+Fixes the "all zeros when picking a past month" bug and switches lodge URLs to
+readable slugs. v2 fixes a build error: lodgeSlug now lives in its own file with
+no server imports, so client components can use it.
 
-## Supabase — run ONE file only
-- seed_compliance.sql   loads 124 documents (idempotent per lodge).
-  (Do NOT run compliance_schema.sql — the table already exists.)
+## Files
+- lib/lodge-slug.ts                    NEW  standalone lodgeSlug() (no server code).
+- lib/lodges.ts                        re-exports lodgeSlug; resolveLodge takes id OR slug.
+- components/lodge-month-picker.tsx    slugs + router.refresh(); imports lodge-slug.
+- components/lodge-picker.tsx          same.
 
-## App code (this zip)
-- app/(dashboard)/compliance/page.tsx   Insurances & licences page (reads existing cols).
-- components/nav.ts                      nav link under Assets & compliance.
-
-## Page
-- Grouped by doc_type; expiry badges (Expired / <30d / <90d / Valid); summary chips.
-- Admins any lodge, managers theirs (RLS via has_lodge_access).
+## What it fixes
+- Picking a lodge/past month now reliably loads the report (router.refresh()).
+- URLs read /monthly?lodge=kanha-earth-lodge&month=2026-03. Old UUID URLs still work.
 
 ## Build
-npm run build  -> "✓ Compiled successfully" before pushing.
+npm run build  ->  "✓ Compiled successfully" before pushing.
 
 ## Rollback
-git checkout -- components/nav.ts and delete app/(dashboard)/compliance/
+git checkout -- lib/lodges.ts components/lodge-month-picker.tsx components/lodge-picker.tsx
+del lib\lodge-slug.ts

@@ -2,6 +2,7 @@
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import type { LodgeLite } from "@/lib/lodges";
+import { lodgeSlug } from "@/lib/lodge-slug";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -28,31 +29,31 @@ export function LodgeMonthPicker({
   const year = Number(yStr) || new Date().getFullYear();
   const mon = Number(mStr) || 1;
 
-  // Year range: a few years back through next year, so any report is reachable.
   const nowY = new Date().getFullYear();
   const years: number[] = [];
   for (let y = nowY + 1; y >= 2024; y--) years.push(y);
 
-  function setMonth(newYear: number, newMon: number) {
+  // Current lodge as a slug for the URL (falls back to the raw value).
+  const current = lodges.find((l) => l.id === lodge);
+  const currentSlug = current ? lodgeSlug(current.name) : (lodge ?? "");
+
+  function go(nextLodgeSlug: string, nextYear: number, nextMon: number) {
     const params = new URLSearchParams(sp.toString());
-    params.set("month", `${newYear}-${String(newMon).padStart(2, "0")}`);
+    if (nextLodgeSlug) params.set("lodge", nextLodgeSlug);
+    params.set("month", `${nextYear}-${String(nextMon).padStart(2, "0")}`);
     router.push(`${pathname}?${params.toString()}`);
-  }
-  function setLodge(value: string) {
-    const params = new URLSearchParams(sp.toString());
-    params.set("lodge", value);
-    router.push(`${pathname}?${params.toString()}`);
+    router.refresh(); // ensure the server component re-queries for the new params
   }
 
   return (
     <div className="mb-6 flex flex-wrap items-center gap-3">
       <select
-        value={lodge ?? ""}
-        onChange={(e) => setLodge(e.target.value)}
+        value={currentSlug}
+        onChange={(e) => go(e.target.value, year, mon)}
         className={selCls}
       >
         {lodges.map((l) => (
-          <option key={l.id} value={l.id}>
+          <option key={l.id} value={lodgeSlug(l.name)}>
             {l.name}
           </option>
         ))}
@@ -60,7 +61,7 @@ export function LodgeMonthPicker({
 
       <select
         value={mon}
-        onChange={(e) => setMonth(year, Number(e.target.value))}
+        onChange={(e) => go(currentSlug, year, Number(e.target.value))}
         className={selCls}
       >
         {MONTHS.map((label, i) => (
@@ -72,7 +73,7 @@ export function LodgeMonthPicker({
 
       <select
         value={year}
-        onChange={(e) => setMonth(Number(e.target.value), mon)}
+        onChange={(e) => go(currentSlug, Number(e.target.value), mon)}
         className={selCls}
       >
         {years.map((y) => (
