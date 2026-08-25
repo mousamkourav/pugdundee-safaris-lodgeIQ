@@ -11,7 +11,7 @@ export interface NavGroup {
   items: NavItem[];
 }
 
-const ADMIN: Role[] = ["super_admin", "general_manager"];
+const ADMIN: Role[] = ["super_admin", "senior_manager", "delhi_accounts"];
 
 export const NAV: NavGroup[] = [
   {

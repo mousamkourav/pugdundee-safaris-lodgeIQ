@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentUser, isAdmin } from "@/lib/auth";
+import { getCurrentUser, isAdmin, isSuperAdmin } from "@/lib/auth";
 import { monthRange } from "@/lib/format";
 import { parseMonthlyForm, computeDerived } from "@/lib/monthly";
 
@@ -104,7 +104,7 @@ export async function reopenReport(fd: FormData) {
 
 export async function deleteReport(fd: FormData) {
   const cu = await getCurrentUser();
-  if (!cu?.user || cu.profile?.role !== "super_admin")
+  if (!cu?.user || !isSuperAdmin(cu.profile?.role))
     throw new Error("Not authorized");
   const s = await createClient();
   await s.from("monthly_submissions").delete().eq("id", String(fd.get("id")));
