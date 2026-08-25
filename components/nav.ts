@@ -26,6 +26,7 @@ export const NAV: NavGroup[] = [
     items: [
       { label: "Enter monthly report", href: "/monthly", icon: "clipboard" },
       { label: "Monthly summary", href: "/reports", icon: "fileText" },
+      { label: "Detailed report", href: "/report-detail", icon: "clipboard" },
       { label: "Compare lodges", href: "/analytics", icon: "barChart", roles: ADMIN },
     ],
   },
