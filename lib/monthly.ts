@@ -389,6 +389,9 @@ export function computeDerived(
   fnb.per_room = roomNights ? round2(fnbTotal / roomNights) : 0;
 
   // Misc — total
+  const miscExtra = Array.isArray(data.misc_extra)
+    ? data.misc_extra.reduce((acc: number, r: any) => acc + toNum(r?.amount), 0)
+    : 0;
   misc.total =
     toNum(misc.petrol) +
     toNum(misc.diesel) +
@@ -397,7 +400,8 @@ export function computeDerived(
     toNum(misc.maint_plumbing) +
     toNum(misc.maint_construction) +
     toNum(misc.maint_misc) +
-    toNum(misc.gypsy_repair);
+    toNum(misc.gypsy_repair) +
+    miscExtra;
 
   // Housekeeping — total and averages
   const hkTotal =
