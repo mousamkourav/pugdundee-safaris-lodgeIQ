@@ -122,6 +122,19 @@ export const SECTIONS: Section[] = [
       N("misc.gypsy_repair", "Gypsy repairing"),
       C("misc.total", "Total misc (auto)"),
     ],
+    arrays: [
+      {
+        path: "misc_extra",
+        label: "Other misc items (added to total)",
+        rows: 1,
+        dynamic: true,
+        minRows: 1,
+        columns: [
+          { key: "name", label: "Item", type: "text" },
+          { key: "amount", label: "Amount", type: "number" },
+        ],
+      },
+    ],
   },
   {
     key: "housekeeping",
@@ -242,6 +255,19 @@ export const SECTIONS: Section[] = [
       N("sustainability.tds_kitchen", "TDS kitchen"),
       N("sustainability.tds_dining", "TDS dining"),
       T("sustainability.notes", "Notes"),
+    ],
+    arrays: [
+      {
+        path: "sustainability_items",
+        label: "Other readings / initiatives",
+        rows: 1,
+        dynamic: true,
+        minRows: 1,
+        columns: [
+          { key: "name", label: "Reading / item", type: "text" },
+          { key: "value", label: "Value", type: "text" },
+        ],
+      },
     ],
   },
   {
