@@ -14,7 +14,7 @@ export async function requestReset(formData: FormData) {
 
   // Supabase sends an email with a link to /reset-password where the user sets a new password.
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${origin}/reset-password`,
+    redirectTo: `${origin}/auth/callback?next=/reset-password`,
   });
 
   // Always show success (don't reveal whether an email exists — privacy best practice).

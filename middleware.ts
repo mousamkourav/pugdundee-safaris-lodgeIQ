@@ -48,7 +48,8 @@ export async function middleware(request: NextRequest) {
     path.startsWith("/login") ||
     path.startsWith("/account-inactive") ||
     path.startsWith("/forgot-password") ||
-    path.startsWith("/reset-password");
+    path.startsWith("/reset-password") ||
+    path.startsWith("/auth/callback");
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();
