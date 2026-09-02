@@ -14,6 +14,7 @@ export interface ArrayCol {
   key: string;
   label: string;
   type: FieldType;
+  computed?: boolean;
 }
 export interface ArrayBlock {
   path: string; // e.g. "vehicles"
@@ -160,7 +161,7 @@ export const SECTIONS: Section[] = [
           { key: "asset", label: "Asset (DG 125 / DG 30 / Electricity / Solar)", type: "text" },
           { key: "opening", label: "Opening", type: "number" },
           { key: "closing", label: "Closing", type: "number" },
-          { key: "net", label: "Net usage", type: "number" },
+          { key: "net", label: "Net usage (auto)", type: "number", computed: true },
           { key: "diesel_l", label: "Diesel (L)", type: "number" },
           { key: "cost", label: "Cost ₹", type: "number" },
           { key: "rate", label: "Rate/L", type: "number" },
@@ -182,7 +183,7 @@ export const SECTIONS: Section[] = [
           { key: "vehicle_no", label: "Vehicle no.", type: "text" },
           { key: "opening_km", label: "Opening km", type: "number" },
           { key: "closing_km", label: "Closing km", type: "number" },
-          { key: "total_run", label: "Total run", type: "number" },
+          { key: "total_run", label: "Total run (auto)", type: "number", computed: true },
           { key: "fuel", label: "Fuel (L)", type: "number" },
           { key: "cost", label: "Cost ₹", type: "number" },
           { key: "rate", label: "Rate/L", type: "number" },
@@ -435,6 +436,23 @@ export function computeDerived(
   hk.total = hkTotal;
   hk.per_pax = f.total_pax ? round2(hkTotal / f.total_pax) : 0;
   hk.per_room = roomNights ? round2(hkTotal / roomNights) : 0;
+
+  // Per-row array calculations (vehicles, energy)
+  if (Array.isArray(data.vehicles)) {
+    data.vehicles = data.vehicles.map((r: any) => {
+      const row = { ...r };
+      row.total_run = toNum(row.closing_km) - toNum(row.opening_km);
+      row.cost = round2(toNum(row.fuel) * toNum(row.rate));
+      return row;
+    });
+  }
+  if (Array.isArray(data.energy)) {
+    data.energy = data.energy.map((r: any) => {
+      const row = { ...r };
+      row.net = round2(toNum(row.closing) - toNum(row.opening));
+      return row;
+    });
+  }
 
   return data;
 }

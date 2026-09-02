@@ -179,11 +179,15 @@ export function MonthlyForm({
                               step={c.type === "number" ? "0.01" : undefined}
                               placeholder={c.label}
                               value={cellVal(b.path, i, c.key)}
-                              disabled={locked}
-                              onChange={(e) =>
-                                update(`${b.path}[${i}].${c.key}`, e.target.value)
+                              readOnly={c.computed === true}
+                              disabled={locked && c.computed !== true}
+                              onChange={
+                                c.computed === true
+                                  ? undefined
+                                  : (e) =>
+                                      update(`${b.path}[${i}].${c.key}`, e.target.value)
                               }
-                              className={inputCls}
+                              className={c.computed === true ? computedCls : inputCls}
                             />
                           ))}
                         </div>
