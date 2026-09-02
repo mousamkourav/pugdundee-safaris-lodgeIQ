@@ -1,4 +1,4 @@
-import { type NextRequest, NextResponse } from "next/server";
+﻿import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
 type CookieToSet = {
@@ -31,7 +31,7 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // Routing only — not the security boundary. Every protected page calls
+  // Routing only â€” not the security boundary. Every protected page calls
   // requireUser() -> getUser() (revalidates) and enforces account status, and
   // the DB enforces RLS. getSession() reads the cookie locally (no network in
   // the common case), removing an Auth API round-trip from every request.
@@ -42,10 +42,13 @@ export async function middleware(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   // Public routes: login and the deactivated-account notice. Excluding
-  // /account-inactive here is what prevents a redirect loop — requireUser sends
+  // /account-inactive here is what prevents a redirect loop â€” requireUser sends
   // deactivated users there, and middleware must let them stay.
   const isPublicRoute =
-    path.startsWith("/login") || path.startsWith("/account-inactive");
+    path.startsWith("/login") ||
+    path.startsWith("/account-inactive") ||
+    path.startsWith("/forgot-password") ||
+    path.startsWith("/reset-password");
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();
@@ -63,7 +66,7 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Exclude API routes (they handle their own auth — e.g. the cron endpoint),
+    // Exclude API routes (they handle their own auth â€” e.g. the cron endpoint),
     // Next internals, and static image files.
     "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
