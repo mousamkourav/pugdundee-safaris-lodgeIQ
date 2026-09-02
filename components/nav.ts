@@ -11,7 +11,7 @@ export interface NavGroup {
   items: NavItem[];
 }
 
-const ADMIN: Role[] = ["super_admin", "senior_manager", "delhi_accounts"];
+const ADMIN: Role[] = ["super_admin", "general_manager"];
 
 export const NAV: NavGroup[] = [
   {
@@ -19,6 +19,7 @@ export const NAV: NavGroup[] = [
     items: [
       { label: "Dashboard", href: "/dashboard", icon: "grid" },
       { label: "Notifications", href: "/notifications", icon: "bell" },
+      { label: "My account", href: "/account", icon: "userCog" },
     ],
   },
   {
