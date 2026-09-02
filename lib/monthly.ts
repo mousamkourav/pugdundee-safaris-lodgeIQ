@@ -448,6 +448,17 @@ export function computeDerived(
       return row;
     });
   }
+  if (Array.isArray(data.denwa_delhi)) {
+    const groupSums: Record<string, number> = {};
+    for (const r of data.denwa_delhi as any[]) {
+      const key = String(r?.detail ?? '');
+      groupSums[key] = (groupSums[key] ?? 0) + toNum(r?.dec);
+    }
+    data.denwa_delhi = (data.denwa_delhi as any[]).map((r) => ({
+      ...r,
+      total: groupSums[String(r?.detail ?? '')] ?? 0,
+    }));
+  }
   if (Array.isArray(data.energy)) {
     data.energy = data.energy.map((r: any) => {
       const row = { ...r };
