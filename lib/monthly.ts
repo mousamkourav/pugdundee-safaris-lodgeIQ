@@ -21,6 +21,7 @@ export interface ArrayBlock {
   label: string;
   columns: ArrayCol[];
   rows: number; // starting number of rows
+  seed?: Array<Record<string, unknown>>; // prefilled label rows
   dynamic?: boolean; // if true, managers can add/remove rows with + / −
   minRows?: number; // minimum kept rows for dynamic blocks
 }
@@ -29,6 +30,7 @@ export interface Section {
   title: string;
   fields?: Field[];
   arrays?: ArrayBlock[];
+  lodges?: string[]; // if set, section only shows for these lodge names
 }
 
 const N = (path: string, label: string): Field => ({ path, label, type: "number" });

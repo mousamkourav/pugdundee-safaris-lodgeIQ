@@ -94,6 +94,7 @@ export default async function MonthlyPage({
         locked={locked}
         admin={admin}
         lodge={lodge}
+        lodgeName={lodgeName}
         month={month}
         saveDraft={saveDraft}
         submitReport={submitReport}

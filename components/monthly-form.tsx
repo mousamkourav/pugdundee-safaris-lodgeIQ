@@ -35,7 +35,11 @@ function normalize(initial: Data): Data {
   for (const sec of SECTIONS) {
     for (const b of sec.arrays ?? []) {
       if (!b.dynamic) continue;
-      const arr = (d[b.path] as unknown[]) ?? [];
+      let arr = (d[b.path] as unknown[]) ?? [];
+      // Prefill from seed rows (labels) when the block is empty.
+      if (arr.length === 0 && Array.isArray(b.seed)) {
+        arr = b.seed.map((r) => ({ ...r }));
+      }
       const min = b.minRows ?? 1;
       while (arr.length < min) arr.push({});
       d[b.path] = arr;
@@ -66,6 +70,7 @@ export function MonthlyForm({
   locked,
   admin,
   lodge,
+  lodgeName,
   month,
   saveDraft,
   submitReport,
@@ -74,6 +79,7 @@ export function MonthlyForm({
   locked: boolean;
   admin: boolean;
   lodge: string;
+  lodgeName: string;
   month: string;
   saveDraft: (fd: FormData) => Promise<void>;
   submitReport: (fd: FormData) => Promise<void>;
@@ -122,7 +128,7 @@ export function MonthlyForm({
       <input type="hidden" name="month" value={month} />
 
       <div className="space-y-6">
-        {SECTIONS.map((sec) => (
+        {SECTIONS.filter((sec) => !sec.lodges || sec.lodges.includes(lodgeName)).map((sec) => (
           <section
             key={sec.key}
             className="rounded-xl border border-sand-200 bg-white p-5"
