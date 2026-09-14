@@ -253,6 +253,18 @@ export const SECTIONS: Section[] = [
           { key: "salary", label: "Salary", type: "number" },
         ],
       },
+      {
+        path: "staff_leave",
+        label: "Staff leave report",
+        rows: 2,
+        dynamic: true,
+        minRows: 1,
+        columns: [
+          { key: "name", label: "Name", type: "text" },
+          { key: "designation", label: "Designation", type: "text" },
+          { key: "leaves", label: "No. of leaves", type: "number" },
+        ],
+      },
     ],
   },
   {
