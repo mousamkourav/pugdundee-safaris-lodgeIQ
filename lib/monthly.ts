@@ -422,6 +422,29 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
+    key: "comp_liquor",
+    title: "Section 14 - Complimentary liquor report",
+    fields: [
+      C("comp_liquor_total", "Total complimentary value (auto)"),
+    ],
+    arrays: [
+      {
+        path: "comp_liquor",
+        label: "Complimentary liquor",
+        rows: 1,
+        dynamic: true,
+        minRows: 1,
+        columns: [
+          { key: "date", label: "Date", type: "date" },
+          { key: "guest", label: "Guest name", type: "text" },
+          { key: "item", label: "Item", type: "text" },
+          { key: "value", label: "Value", type: "number" },
+          { key: "remark", label: "Remark", type: "text" },
+        ],
+      },
+    ],
+  },
+  {
     key: "accounts",
     title: "Section 12 - Accounts (Tally)",
     fields: [
@@ -586,6 +609,11 @@ export function computeDerived(
       return row;
     });
   }
+
+  const compLiquor = Array.isArray(data.comp_liquor)
+    ? data.comp_liquor.reduce((acc: number, r: any) => acc + toNum(r?.value), 0)
+    : 0;
+  data.comp_liquor_total = compLiquor;
 
   return data;
 }
