@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
 import { LodgePicker } from "@/components/lodge-picker";
 import { NoLodge } from "@/components/no-lodge";
+import { addDoc, updateDoc, deleteDoc } from "./actions";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -16,10 +17,12 @@ type Doc = {
   notes: string | null;
 };
 
-function splitNotes(notes: string | null): { cat: string; text: string | null } {
-  if (!notes) return { cat: "Other", text: null };
+const CATEGORIES = ["License", "Insurance", "AMC", "Fitness", "Pollution", "Other"];
+
+function splitNotes(notes: string | null): { cat: string; text: string } {
+  if (!notes) return { cat: "Other", text: "" };
   const m = notes.match(/^\[([^\]]+)\]\s?(.*)$/);
-  if (m) return { cat: m[1], text: m[2] || null };
+  if (m) return { cat: m[1], text: m[2] || "" };
   return { cat: "Other", text: notes };
 }
 
@@ -32,17 +35,21 @@ function daysUntil(iso: string | null): number | null {
 function status(valid_to: string | null): { t: string; cls: string; rank: number } {
   const d = daysUntil(valid_to);
   if (d === null) return { t: "No date", cls: "bg-sand-100 text-sand-600", rank: 3 };
+  // treat the far-future placeholder as "no deadline"
+  if (valid_to === "2099-12-31") return { t: "No expiry", cls: "bg-sand-100 text-sand-600", rank: 3 };
   if (d < 0) return { t: "Expired", cls: "bg-error-bg text-error", rank: 0 };
   if (d <= 30) return { t: `${d}d left`, cls: "bg-error-bg text-error", rank: 1 };
   if (d <= 90) return { t: `${d}d left`, cls: "bg-warning-bg text-warning", rank: 2 };
   return { t: "Valid", cls: "bg-success-bg text-success", rank: 4 };
 }
 
-function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  const [y, m, d] = iso.split("-");
-  return `${d}/${m}/${y}`;
+function forInput(iso: string | null): string {
+  if (!iso || iso === "2099-12-31") return "";
+  return iso;
 }
+
+const inputCls =
+  "w-full rounded-lg border border-sand-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-gold-500";
 
 export default async function CompliancePage({
   searchParams,
@@ -65,20 +72,18 @@ export default async function CompliancePage({
   const docs = (rows as Doc[]) ?? [];
   const lodgeName = lodges.find((l) => l.id === lodge)?.name ?? "Lodge";
 
-  // summary counts
   const expired = docs.filter((d) => {
     const n = daysUntil(d.expiry_date);
-    return n !== null && n < 0;
+    return n !== null && n < 0 && d.expiry_date !== "2099-12-31";
   }).length;
   const soon = docs.filter((d) => {
     const n = daysUntil(d.expiry_date);
     return n !== null && n >= 0 && n <= 30;
   }).length;
 
-  // group by category
-  const cats = Array.from(new Set(docs.map((d) => splitNotes(d.notes).cat)));
-  const order = ["License", "Insurance", "AMC", "Fitness", "Pollution", "Other"];
-  cats.sort((a, b) => (order.indexOf(a) + 100) - (order.indexOf(b) + 100));
+  const sorted = [...docs].sort(
+    (a, b) => status(a.expiry_date).rank - status(b.expiry_date).rank
+  );
 
   return (
     <div>
@@ -106,59 +111,72 @@ export default async function CompliancePage({
         </div>
       )}
 
+      {/* Add new document */}
+      <section className="mb-6 rounded-xl border border-sand-200 bg-white p-5">
+        <h3 className="mb-3 text-sm font-semibold text-sand-800">Add document</h3>
+        <form action={addDoc} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          <input type="hidden" name="lodge" value={lodge} />
+          <select name="category" className={inputCls} defaultValue="License">
+            {CATEGORIES.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+          <input name="title" placeholder="Document name" required className={inputCls + " lg:col-span-2"} />
+          <input name="issue_date" type="date" title="Valid from" className={inputCls} />
+          <input name="expiry_date" type="date" title="Valid to" className={inputCls} />
+          <input name="remark" placeholder="Remark / policy no." className={inputCls} />
+          <button className="rounded-lg bg-olive-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-olive-700 sm:col-span-2 lg:col-span-6">
+            Add document
+          </button>
+        </form>
+      </section>
+
       {docs.length === 0 ? (
         <div className="rounded-xl border border-sand-200 bg-white p-6 text-center text-sand-500">
           No documents recorded for {lodgeName} yet.
         </div>
       ) : (
-        <div className="space-y-6">
-          {cats.map((cat) => {
-            const items = docs
-              .filter((d) => splitNotes(d.notes).cat === cat)
-              .sort((a, b) => status(a.expiry_date).rank - status(b.expiry_date).rank);
+        <div className="space-y-3">
+          {sorted.map((d) => {
+            const st = status(d.expiry_date);
+            const { cat, text } = splitNotes(d.notes);
             return (
-              <section
-                key={cat}
-                className="overflow-hidden rounded-xl border border-sand-200 bg-white"
+              <form
+                key={d.id}
+                action={updateDoc}
+                className="rounded-xl border border-sand-200 bg-white p-4"
               >
-                <h3 className="border-b border-sand-200 bg-sand-50 px-5 py-3 text-sm font-semibold text-sand-800">
-                  {cat}
-                  <span className="ml-2 text-xs font-normal text-sand-400">
-                    {items.length}
-                  </span>
-                </h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-sand-200 text-left text-xs text-sand-500">
-                        <th className="px-5 py-2 font-medium">Document</th>
-                        <th className="px-3 py-2 font-medium">Valid from</th>
-                        <th className="px-3 py-2 font-medium">Valid to</th>
-                        <th className="px-3 py-2 font-medium">Status</th>
-                        <th className="px-5 py-2 font-medium">Remarks</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.map((d) => {
-                        const st = status(d.expiry_date);
-                        return (
-                          <tr key={d.id} className="border-b border-sand-100 last:border-0">
-                            <td className="px-5 py-2 text-sand-800">{d.title}</td>
-                            <td className="px-3 py-2 text-sand-600">{fmtDate(d.issue_date)}</td>
-                            <td className="px-3 py-2 text-sand-600">{fmtDate(d.expiry_date)}</td>
-                            <td className="px-3 py-2">
-                              <span className={`rounded-full px-2.5 py-0.5 text-xs ${st.cls}`}>
-                                {st.t}
-                              </span>
-                            </td>
-                            <td className="px-5 py-2 text-sand-500">{splitNotes(d.notes).text ?? "—"}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                <input type="hidden" name="id" value={d.id} />
+                <input type="hidden" name="lodge" value={lodge} />
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
+                  <select name="category" defaultValue={cat} className={inputCls}>
+                    {CATEGORIES.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                  <input name="title" defaultValue={d.title} className={inputCls + " lg:col-span-2"} />
+                  <input name="issue_date" type="date" defaultValue={forInput(d.issue_date)} className={inputCls} />
+                  <input name="expiry_date" type="date" defaultValue={forInput(d.expiry_date)} className={inputCls} />
+                  <input name="remark" defaultValue={text} placeholder="Remark" className={inputCls} />
                 </div>
-              </section>
+                <div className="mt-3 flex items-center gap-3">
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs ${st.cls}`}>{st.t}</span>
+                  <div className="ml-auto flex gap-2">
+                    <button
+                      formAction={updateDoc}
+                      className="rounded-lg border border-sand-200 px-3 py-1.5 text-sm text-sand-700 hover:bg-sand-50"
+                    >
+                      Save
+                    </button>
+                    <button
+                      formAction={deleteDoc}
+                      className="rounded-lg border border-error/30 px-3 py-1.5 text-sm text-error hover:bg-error-bg"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </form>
             );
           })}
         </div>

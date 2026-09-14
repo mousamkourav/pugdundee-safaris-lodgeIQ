@@ -1,21 +1,19 @@
-# LodgeIQ — Fix "Auth session missing" on password reset
+# LodgeIQ — Editable Insurances & Licences
 
-The reset link now goes through an auth callback that exchanges the code for a
-session BEFORE the reset form loads. Fixes the "Auth session missing!" error.
+The compliance page is now fully editable: add new documents, edit any field
+inline, delete. Permissions handled by existing RLS (admins + the lodge's own
+manager via has_lodge_access). No database changes.
 
-## Files
-- app/auth/callback/route.ts          NEW  exchanges ?code=... for a session,
-                                      then redirects to /reset-password.
-- app/forgot-password/actions.ts      redirect now targets /auth/callback.
+## Files (overwrite existing)
+- app/(dashboard)/compliance/page.tsx    add form + per-row edit/delete + status badges.
+- app/(dashboard)/compliance/actions.ts  NEW  addDoc / updateDoc / deleteDoc.
 
-## ALSO REQUIRED — two manual steps
-
-### 1. middleware.ts — allow /auth/callback (public)
-Add `/auth/callback` to the public routes (run the PowerShell below).
-
-### 2. Supabase Redirect URLs
-Add this to Supabase > Auth > URL Configuration > Redirect URLs:
-  https://pugdundee-safaris-lodge-iq.vercel.app/auth/callback
+## Notes
+- Category (License/Insurance/AMC/Fitness/Pollution/Other) is stored as a
+  [Category] prefix in notes; doc_type maps to insurance|licence (the DB constraint).
+- Blank expiry stored as 2099-12-31 (NOT NULL column) and shown as "No expiry".
+- Existing seeded documents keep working; their [Category] prefixes are read back
+  into the category dropdown.
 
 ## Build
-npm run build -> "✓ Compiled successfully" before pushing.
+npm run build -> "✓ Compiled successfully"

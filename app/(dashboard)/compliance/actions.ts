@@ -5,57 +5,83 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth";
 
+// doc_type is constrained to 'insurance' | 'licence'. We keep the human category
+// (License/Insurance/AMC/Fitness/Pollution) as a [Category] prefix in notes.
+const CAT_TO_DOCTYPE: Record<string, string> = {
+  License: "licence",
+  AMC: "licence",
+  Insurance: "insurance",
+  Fitness: "insurance",
+  Pollution: "insurance",
+  Other: "licence",
+};
+
+function buildNotes(category: string, remark: string): string {
+  const c = category.trim() || "Other";
+  const r = remark.trim();
+  return r ? `[${c}] ${r}` : `[${c}]`;
+}
+
 function back(lodge: string) {
   revalidatePath("/compliance");
   redirect(`/compliance?lodge=${lodge}`);
 }
 
-function orNull(v: FormDataEntryValue | null): string | null {
-  const s = v == null ? "" : String(v).trim();
-  return s === "" ? null : s;
-}
-
-export async function addDocument(formData: FormData) {
+export async function addDoc(fd: FormData) {
   const cu = await getCurrentUser();
   if (!cu?.user) throw new Error("Not authorized");
-  const lodge_id = String(formData.get("lodge_id"));
-  const supabase = await createClient();
-  await supabase.from("compliance_documents").insert({
-    lodge_id,
-    doc_type: String(formData.get("doc_type") ?? "insurance"),
-    title: String(formData.get("title")),
-    authority: orNull(formData.get("authority")),
-    reference_no: orNull(formData.get("reference_no")),
-    issue_date: orNull(formData.get("issue_date")),
-    expiry_date: String(formData.get("expiry_date")),
-    notes: orNull(formData.get("notes")),
-    created_by: cu.user.id,
+  const lodge = String(fd.get("lodge") ?? "");
+  const category = String(fd.get("category") ?? "Other");
+  const title = String(fd.get("title") ?? "").trim();
+  const issue = String(fd.get("issue_date") ?? "") || null;
+  const expiry = String(fd.get("expiry_date") ?? "") || null;
+  const remark = String(fd.get("remark") ?? "");
+  if (!title) back(lodge);
+
+  const s = await createClient();
+  await s.from("compliance_documents").insert({
+    lodge_id: lodge,
+    doc_type: CAT_TO_DOCTYPE[category] ?? "licence",
+    title,
+    issue_date: issue,
+    // expiry_date is NOT NULL in the table; use far-future placeholder when blank.
+    expiry_date: expiry ?? "2099-12-31",
+    notes: buildNotes(category, remark),
   });
-  back(lodge_id);
+  back(lodge);
 }
 
-export async function deleteDocument(formData: FormData) {
+export async function updateDoc(fd: FormData) {
   const cu = await getCurrentUser();
   if (!cu?.user) throw new Error("Not authorized");
-  const supabase = await createClient();
-  await supabase
+  const id = String(fd.get("id") ?? "");
+  const lodge = String(fd.get("lodge") ?? "");
+  const category = String(fd.get("category") ?? "Other");
+  const title = String(fd.get("title") ?? "").trim();
+  const issue = String(fd.get("issue_date") ?? "") || null;
+  const expiry = String(fd.get("expiry_date") ?? "") || null;
+  const remark = String(fd.get("remark") ?? "");
+
+  const s = await createClient();
+  await s
     .from("compliance_documents")
-    .delete()
-    .eq("id", String(formData.get("id")));
-  back(String(formData.get("lodge_id")));
+    .update({
+      doc_type: CAT_TO_DOCTYPE[category] ?? "licence",
+      title,
+      issue_date: issue,
+      expiry_date: expiry ?? "2099-12-31",
+      notes: buildNotes(category, remark),
+    })
+    .eq("id", id);
+  back(lodge);
 }
 
-// Renewal: push the expiry date forward (and clear any prior "sent" alerts is
-// handled by dedupe window in the scanner). Keeps the same document row.
-export async function renewDocument(formData: FormData) {
+export async function deleteDoc(fd: FormData) {
   const cu = await getCurrentUser();
   if (!cu?.user) throw new Error("Not authorized");
-  const expiry = orNull(formData.get("expiry_date"));
-  if (!expiry) back(String(formData.get("lodge_id")));
-  const supabase = await createClient();
-  await supabase
-    .from("compliance_documents")
-    .update({ expiry_date: expiry })
-    .eq("id", String(formData.get("id")));
-  back(String(formData.get("lodge_id")));
+  const id = String(fd.get("id") ?? "");
+  const lodge = String(fd.get("lodge") ?? "");
+  const s = await createClient();
+  await s.from("compliance_documents").delete().eq("id", id);
+  back(lodge);
 }
