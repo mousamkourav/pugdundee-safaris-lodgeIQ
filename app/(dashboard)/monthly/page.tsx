@@ -32,6 +32,37 @@ export default async function MonthlyPage({
 
   const row = rowData as Record<string, unknown> | null;
   const data = (row?.data as Record<string, unknown>) ?? {};
+
+  // Energy carry-forward: prefill this month's opening from last month's closing
+  // (matched by asset name). Only fills blanks; the manager can still edit.
+  {
+    const [yy, mm] = start.split("-").map(Number);
+    const prevDate = new Date(Date.UTC(yy, mm - 2, 1));
+    const prevStart = `${prevDate.getUTCFullYear()}-${String(prevDate.getUTCMonth() + 1).padStart(2, "0")}-01`;
+    const { data: prevRow } = await s
+      .from("monthly_submissions")
+      .select("data")
+      .eq("lodge_id", lodge)
+      .eq("month", prevStart)
+      .maybeSingle();
+    const prevEnergy = ((prevRow as { data?: { energy?: Array<Record<string, unknown>> } } | null)?.data?.energy) ?? [];
+    if (prevEnergy.length > 0) {
+      const closingByAsset = new Map<string, unknown>();
+      for (const e of prevEnergy) {
+        const name = String(e?.asset ?? "").trim();
+        if (name) closingByAsset.set(name, e?.closing);
+      }
+      const cur = (data.energy as Array<Record<string, unknown>> | undefined) ?? [];
+      data.energy = cur.map((e) => {
+        const name = String(e?.asset ?? "").trim();
+        const openBlank = e?.opening === undefined || e?.opening === null || e?.opening === "";
+        if (openBlank && closingByAsset.has(name)) {
+          return { ...e, opening: closingByAsset.get(name) };
+        }
+        return e;
+      });
+    }
+  }
   const status = (row?.status as string) ?? "none";
   const submitted = status === "submitted";
   // Managers get read-only once submitted; admins can always edit.
