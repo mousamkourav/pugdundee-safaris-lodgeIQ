@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { runChecks, markRead } from "./actions";
+import { approveEdit, declineEdit } from "../monthly/edit-requests";
 
 const SEV: Record<string, { t: string; cls: string }> = {
   critical: { t: "Critical", cls: "bg-error-bg text-error" },
@@ -94,14 +95,36 @@ export default async function NotificationsPage({
                     {r.status}
                   </p>
                 </div>
-                {!read && (
-                  <form action={markRead}>
-                    <input type="hidden" name="id" value={String(r.id)} />
-                    <button className="whitespace-nowrap text-xs text-olive-700 hover:underline">
-                      Mark read
-                    </button>
-                  </form>
-                )}
+                <div className="flex flex-col items-end gap-2">
+                  {admin && r.type === "edit_request" && r.status !== "read" && (
+                    <div className="flex gap-2">
+                      <form action={approveEdit}>
+                        <input type="hidden" name="lodge_id" value={String(r.lodge_id)} />
+                        <input type="hidden" name="month" value={String((r.extra as any)?.month ?? "")} />
+                        <input type="hidden" name="back" value="/notifications" />
+                        <button className="whitespace-nowrap rounded-lg bg-olive-600 px-3 py-1 text-xs text-white hover:bg-olive-700">
+                          Approve
+                        </button>
+                      </form>
+                      <form action={declineEdit}>
+                        <input type="hidden" name="lodge_id" value={String(r.lodge_id)} />
+                        <input type="hidden" name="month" value={String((r.extra as any)?.month ?? "")} />
+                        <input type="hidden" name="back" value="/notifications" />
+                        <button className="whitespace-nowrap rounded-lg border border-error/30 px-3 py-1 text-xs text-error hover:bg-error-bg">
+                          Decline
+                        </button>
+                      </form>
+                    </div>
+                  )}
+                  {!read && (
+                    <form action={markRead}>
+                      <input type="hidden" name="id" value={String(r.id)} />
+                      <button className="whitespace-nowrap text-xs text-olive-700 hover:underline">
+                        Mark read
+                      </button>
+                    </form>
+                  )}
+                </div>
               </div>
             );
           })

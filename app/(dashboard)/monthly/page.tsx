@@ -7,6 +7,7 @@ import { LodgeMonthPicker } from "@/components/lodge-month-picker";
 import { NoLodge } from "@/components/no-lodge";
 import { MonthlyForm } from "@/components/monthly-form";
 import { saveDraft, submitReport, reopenReport, deleteReport } from "./actions";
+import { requestEdit, approveEdit, declineEdit } from "./edit-requests";
 
 export default async function MonthlyPage({
   searchParams,
@@ -65,6 +66,18 @@ export default async function MonthlyPage({
   }
   const status = (row?.status as string) ?? "none";
   const submitted = status === "submitted";
+
+  // Edit-request state for this lodge+month (latest pending/approved).
+  const { data: erRows } = await s
+    .from("edit_requests")
+    .select("status")
+    .eq("lodge_id", lodge)
+    .eq("month", start)
+    .in("status", ["pending", "approved"])
+    .order("created_at", { ascending: false })
+    .limit(1);
+  const editReq = (erRows as Array<{ status: string }> | null)?.[0] ?? null;
+  const editPending = editReq?.status === "pending";
   // Managers get read-only once submitted; admins can always edit.
   const locked = submitted && !admin;
   const lodgeName = lodges.find((l) => l.id === lodge)?.name ?? "Lodge";
@@ -91,8 +104,42 @@ export default async function MonthlyPage({
         </span>
         {locked && (
           <span className="text-sm text-sand-500">
-            Submitted and locked. Contact an administrator to make changes.
+            Submitted and locked.
           </span>
+        )}
+        {locked && !editPending && (
+          <form action={requestEdit}>
+            <input type="hidden" name="lodge_id" value={lodge} />
+            <input type="hidden" name="month" value={month} />
+            <button className="rounded-lg border border-olive-600 px-3 py-1.5 text-sm text-olive-700 hover:bg-olive-50">
+              Request edit access
+            </button>
+          </form>
+        )}
+        {locked && editPending && (
+          <span className="rounded-full bg-warning-bg px-3 py-1 text-xs text-warning">
+            Edit request pending approval
+          </span>
+        )}
+        {admin && editPending && (
+          <div className="flex gap-2">
+            <form action={approveEdit}>
+              <input type="hidden" name="lodge_id" value={lodge} />
+              <input type="hidden" name="month" value={month} />
+              <input type="hidden" name="back" value={`/monthly?lodge=${lodge}&month=${month}`} />
+              <button className="rounded-lg bg-olive-600 px-3 py-1.5 text-sm text-white hover:bg-olive-700">
+                Approve edit
+              </button>
+            </form>
+            <form action={declineEdit}>
+              <input type="hidden" name="lodge_id" value={lodge} />
+              <input type="hidden" name="month" value={month} />
+              <input type="hidden" name="back" value={`/monthly?lodge=${lodge}&month=${month}`} />
+              <button className="rounded-lg border border-error/30 px-3 py-1.5 text-sm text-error hover:bg-error-bg">
+                Decline
+              </button>
+            </form>
+          </div>
         )}
         {admin && row && (
           <div className="ml-auto flex gap-2">
