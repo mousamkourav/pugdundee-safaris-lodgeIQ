@@ -56,6 +56,7 @@ export const SECTIONS: Section[] = [
       g(C("front.total_rooms", "Total rooms (auto)"), "Accommodation"),
       g(N("front.adults", "Adults"), "Accommodation"),
       g(N("front.child_5_12", "Children 5--Rs12"), "Accommodation"),
+      g(N("front.child_below_5", "Infant (under 5)"), "Accommodation"),
       g(C("front.total_pax", "Total pax (auto)"), "Accommodation"),
       // (b) Extra sales
       g(N("front.extra_nature", "Nature shop sale"), "Extra sales"),
@@ -123,6 +124,7 @@ export const SECTIONS: Section[] = [
       N("misc.maint_construction", "Maintenance construction"),
       N("misc.maint_misc", "Maintenance misc"),
       N("misc.gypsy_repair", "Gypsy repairing"),
+      N("misc.maint_labour", "Lodge maintenance (labour)"),
       C("misc.total", "Total misc (auto)"),
     ],
     arrays: [
@@ -165,7 +167,7 @@ export const SECTIONS: Section[] = [
           { key: "closing", label: "Closing", type: "number" },
           { key: "net", label: "Net usage (auto)", type: "number", computed: true },
           { key: "diesel_l", label: "Diesel (L)", type: "number" },
-          { key: "cost", label: "Cost Rs", type: "number" },
+          { key: "cost", label: "Cost Rs (auto)", type: "number", computed: true },
           { key: "rate", label: "Rate/L", type: "number" },
         ],
       },
@@ -216,6 +218,7 @@ export const SECTIONS: Section[] = [
         minRows: 1,
         columns: [
           { key: "note", label: "Breakdown / issue", type: "text" },
+          { key: "remark", label: "Remark", type: "text" },
           { key: "date", label: "Date", type: "date" },
         ],
       },
@@ -533,6 +536,7 @@ export function computeDerived(
     toNum(misc.maint_construction) +
     toNum(misc.maint_misc) +
     toNum(misc.gypsy_repair) +
+    toNum(misc.maint_labour) +
     miscExtra;
 
   // Housekeeping --Rs total and averages
@@ -566,6 +570,7 @@ export function computeDerived(
     data.energy = data.energy.map((r: any) => {
       const row = { ...r };
       row.net = round2(toNum(row.closing) - toNum(row.opening));
+      row.cost = round2(toNum(row.diesel_l) * toNum(row.rate));
       return row;
     });
   }
