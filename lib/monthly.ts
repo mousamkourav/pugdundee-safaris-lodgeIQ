@@ -422,6 +422,27 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
+    key: "accounts",
+    title: "Section 12 - Accounts (Tally)",
+    fields: [
+      T("accounts.sales_date", "Sales bill entered (date)"),
+      T("accounts.petty_date", "Petty cash entered (date)"),
+      T("accounts.expenses_date", "Expenses entered (date)"),
+    ],
+  },
+  {
+    key: "guest",
+    title: "Section 13 - Guest experiences & steel bottles",
+    fields: [
+      T("guest.experience_dinners", "Experience dinners"),
+      T("guest.presentations", "Presentations"),
+      T("guest.private_dinners", "Private dinners"),
+      N("steel.opening", "Steel bottles --Rs opening"),
+      N("steel.use", "Steel bottles --Rs use"),
+      N("steel.closing", "Steel bottles --Rs closing"),
+    ],
+  },
+  {
     key: "comp_liquor",
     title: "Section 14 - Complimentary liquor report",
     fields: [
@@ -442,27 +463,6 @@ export const SECTIONS: Section[] = [
           { key: "remark", label: "Remark", type: "text" },
         ],
       },
-    ],
-  },
-  {
-    key: "accounts",
-    title: "Section 12 - Accounts (Tally)",
-    fields: [
-      T("accounts.sales_date", "Sales bill entered (date)"),
-      T("accounts.petty_date", "Petty cash entered (date)"),
-      T("accounts.expenses_date", "Expenses entered (date)"),
-    ],
-  },
-  {
-    key: "guest",
-    title: "Section 13 - Guest experiences & steel bottles",
-    fields: [
-      T("guest.experience_dinners", "Experience dinners"),
-      T("guest.presentations", "Presentations"),
-      T("guest.private_dinners", "Private dinners"),
-      N("steel.opening", "Steel bottles --Rs opening"),
-      N("steel.use", "Steel bottles --Rs use"),
-      N("steel.closing", "Steel bottles --Rs closing"),
     ],
   },
 ];
