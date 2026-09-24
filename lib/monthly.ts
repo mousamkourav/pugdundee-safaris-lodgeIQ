@@ -1,12 +1,24 @@
 // Field configuration for the monthly report form, derived from the Pugdundee
 // Manager's Report sheet. Drives both the entry form and the dashboards.
+//
+// NOTE: every `path` and every ArrayCol `key` below is a live jsonb key inside
+// monthly_submissions.data. Labels, order, titles and section order are free to
+// change; renaming a path or key orphans historical reports.
+//
+// This file is deliberately pure ASCII. A past encoding accident turned every
+// em dash into "--Rs" and every rupee sign into "Rs"; currency signs now come
+// from formatValue(), never from a label string.
+
+import type { Unit } from "@/lib/format";
 
 export type FieldType = "number" | "text" | "date" | "rating" | "bool";
+export type { Unit };
 
 export interface Field {
   path: string; // dot path within `data`, e.g. "fnb.meat"
   label: string;
   type: FieldType;
+  unit?: Unit; // how to render the number: money, count, litres, km, reading
   computed?: boolean; // auto-calculated; shown read-only and recomputed on save
   group?: string; // optional subsection heading within a section
 }
@@ -14,6 +26,7 @@ export interface ArrayCol {
   key: string;
   label: string;
   type: FieldType;
+  unit?: Unit;
   computed?: boolean;
 }
 export interface ArrayBlock {
@@ -22,7 +35,7 @@ export interface ArrayBlock {
   columns: ArrayCol[];
   rows: number; // starting number of rows
   seed?: Array<Record<string, unknown>>; // prefilled label rows
-  dynamic?: boolean; // if true, managers can add/remove rows with + / RsRsRs--Rs
+  dynamic?: boolean; // if true, managers can add/remove rows with + / -
   minRows?: number; // minimum kept rows for dynamic blocks
 }
 export interface Section {
@@ -33,15 +46,38 @@ export interface Section {
   lodges?: string[]; // if set, section only shows for these lodge names
 }
 
-const N = (path: string, label: string): Field => ({ path, label, type: "number" });
-const T = (path: string, label: string): Field => ({ path, label, type: "text" });
-// group tag helper: attach a subsection heading to a field
-const g = (f: Field, group: string): Field => ({ ...f, group });
-// computed number field (read-only in the form, recomputed on save)
-const C = (path: string, label: string): Field => ({
+// Counting number. This is the default on purpose: a missing currency sign is
+// cosmetic, a rupee sign on a room count destroys trust in the report.
+const N = (path: string, label: string): Field => ({
   path,
   label,
   type: "number",
+  unit: "count",
+});
+// Money number (rendered with a rupee sign by formatValue).
+const M = (path: string, label: string): Field => ({
+  path,
+  label,
+  type: "number",
+  unit: "money",
+});
+// Number in some other unit: litres, km, or a meter/TDS reading.
+const U = (path: string, label: string, unit: Unit): Field => ({
+  path,
+  label,
+  type: "number",
+  unit,
+});
+const T = (path: string, label: string): Field => ({ path, label, type: "text" });
+// group tag helper: attach a subsection heading to a field
+const g = (f: Field, group: string): Field => ({ ...f, group });
+// Computed number field (read-only in the form, recomputed on save). The unit is
+// required so a derived value can never inherit the wrong formatting silently.
+const C = (path: string, label: string, unit: Unit): Field => ({
+  path,
+  label,
+  type: "number",
+  unit,
   computed: true,
 });
 
@@ -53,29 +89,29 @@ export const SECTIONS: Section[] = [
       // (a) Accommodation
       g(N("front.paid_rooms", "Paid rooms"), "Accommodation"),
       g(N("front.comp_rooms", "Comp rooms"), "Accommodation"),
-      g(C("front.total_rooms", "Total rooms (auto)"), "Accommodation"),
+      g(C("front.total_rooms", "Total room nights (auto)", "count"), "Accommodation"),
       g(N("front.adults", "Adults"), "Accommodation"),
-      g(N("front.child_5_12", "Children 5--Rs12"), "Accommodation"),
+      g(N("front.child_5_12", "Children 5-12"), "Accommodation"),
       g(N("front.child_below_5", "Infant (under 5)"), "Accommodation"),
-      g(C("front.total_pax", "Total pax (auto)"), "Accommodation"),
+      g(C("front.total_pax", "Total pax (auto)", "count"), "Accommodation"),
       // (b) Extra sales
-      g(N("front.extra_nature", "Nature shop sale"), "Extra sales"),
-      g(N("front.extra_alcohol", "Alcohol"), "Extra sales"),
-      g(N("front.extra_soft", "Soft drinks"), "Extra sales"),
-      g(N("front.extra_corkage", "Corkage"), "Extra sales"),
-      g(N("front.extra_laundry", "Laundry billed"), "Extra sales"),
-      g(N("front.extra_food", "Extra food sale"), "Extra sales"),
-      g(N("front.extra_activities", "Extra activities"), "Extra sales"),
-      g(N("front.extra_transport", "Transport"), "Extra sales"),
-      g(C("front.extra_total", "Total extra sales (auto)"), "Extra sales"),
-      g(C("front.extra_per_room", "Per-room avg extra sale (auto)"), "Extra sales"),
+      g(M("front.extra_nature", "Nature shop sale"), "Extra sales"),
+      g(M("front.extra_alcohol", "Alcohol"), "Extra sales"),
+      g(M("front.extra_soft", "Soft drinks"), "Extra sales"),
+      g(M("front.extra_corkage", "Corkage"), "Extra sales"),
+      g(M("front.extra_laundry", "Laundry billed"), "Extra sales"),
+      g(M("front.extra_food", "Extra food sale"), "Extra sales"),
+      g(M("front.extra_activities", "Extra activities"), "Extra sales"),
+      g(M("front.extra_transport", "Transport"), "Extra sales"),
+      g(C("front.extra_total", "Total extra sales (auto)", "money"), "Extra sales"),
+      g(C("front.extra_per_room", "Per-room avg extra sale (auto)", "money"), "Extra sales"),
       // (c) Feedback
-      g({ path: "front.ta_rating", label: "TripAdvisor rating", type: "rating" }, "Feedback"),
-      g(N("front.ta_pos", "TA positive (4--Rs5)"), "Feedback"),
-      g(N("front.ta_poor", "TA poor (1--Rs3)"), "Feedback"),
-      g({ path: "front.google_rating", label: "Google rating", type: "rating" }, "Feedback"),
-      g(N("front.google_pos", "Google positive (4--Rs5)"), "Feedback"),
-      g(N("front.google_poor", "Google poor (1--Rs3)"), "Feedback"),
+      g({ path: "front.ta_rating", label: "TripAdvisor rating", type: "rating", unit: "rating" }, "Feedback"),
+      g(N("front.ta_pos", "TA positive (4-5)"), "Feedback"),
+      g(N("front.ta_poor", "TA poor (1-3)"), "Feedback"),
+      g({ path: "front.google_rating", label: "Google rating", type: "rating", unit: "rating" }, "Feedback"),
+      g(N("front.google_pos", "Google positive (4-5)"), "Feedback"),
+      g(N("front.google_poor", "Google poor (1-3)"), "Feedback"),
     ],
     arrays: [
       {
@@ -96,36 +132,36 @@ export const SECTIONS: Section[] = [
     key: "fnb",
     title: "Section 2 - F&B expenditure",
     fields: [
-      N("fnb.meat", "Meat products"),
-      N("fnb.dairy", "Dairy products"),
-      N("fnb.bakery", "Bakery"),
-      N("fnb.fruits", "Fruits"),
-      N("fnb.vegetables", "Vegetables"),
-      N("fnb.lpg", "LPG"),
-      N("fnb.wood", "Wood"),
-      N("fnb.grocery", "Grocery (guest & staff)"),
-      N("fnb.store_issue", "F&B issued from store"),
-      N("fnb.steel_bottles", "Guest steel bottles"),
-      N("fnb.misc_hardware", "Misc hardware"),
-      C("fnb.total", "Total F&B (auto)"),
-      C("fnb.per_pax", "Avg per pax (auto)"),
-      C("fnb.per_room", "Avg per room (auto)"),
+      M("fnb.meat", "Meat products"),
+      M("fnb.dairy", "Dairy products"),
+      M("fnb.bakery", "Bakery"),
+      M("fnb.fruits", "Fruits"),
+      M("fnb.vegetables", "Vegetables"),
+      M("fnb.lpg", "LPG"),
+      M("fnb.wood", "Wood"),
+      M("fnb.grocery", "Grocery (guest & staff)"),
+      M("fnb.store_issue", "F&B issued from store"),
+      M("fnb.steel_bottles", "Guest steel bottles"),
+      M("fnb.misc_hardware", "Misc hardware"),
+      C("fnb.total", "Total F&B (auto)", "money"),
+      C("fnb.per_pax", "Avg per pax (auto)", "money"),
+      C("fnb.per_room", "Avg per room (auto)", "money"),
     ],
   },
   {
     key: "misc",
     title: "Section 3 - Misc expenditure",
     fields: [
-      N("misc.petrol", "Petrol"),
-      N("misc.diesel", "Diesel"),
-      N("misc.maint_wood", "Maintenance wood"),
-      N("misc.maint_electric", "Maintenance electric"),
-      N("misc.maint_plumbing", "Maintenance plumbing/painting"),
-      N("misc.maint_construction", "Maintenance construction"),
-      N("misc.maint_misc", "Maintenance misc"),
-      N("misc.gypsy_repair", "Gypsy repairing"),
-      N("misc.maint_labour", "Lodge maintenance (labour)"),
-      C("misc.total", "Total misc (auto)"),
+      M("misc.petrol", "Petrol"),
+      M("misc.diesel", "Diesel"),
+      M("misc.maint_wood", "Maintenance wood"),
+      M("misc.maint_electric", "Maintenance electric"),
+      M("misc.maint_plumbing", "Maintenance plumbing/painting"),
+      M("misc.maint_construction", "Maintenance construction"),
+      M("misc.maint_misc", "Maintenance misc"),
+      M("misc.gypsy_repair", "Gypsy repairing"),
+      M("misc.maint_labour", "Lodge maintenance (labour)"),
+      C("misc.total", "Total misc (auto)", "money"),
     ],
     arrays: [
       {
@@ -136,7 +172,7 @@ export const SECTIONS: Section[] = [
         minRows: 1,
         columns: [
           { key: "name", label: "Item", type: "text" },
-          { key: "amount", label: "Amount", type: "number" },
+          { key: "amount", label: "Amount", type: "number", unit: "money" },
         ],
       },
     ],
@@ -145,12 +181,12 @@ export const SECTIONS: Section[] = [
     key: "housekeeping",
     title: "Section 4 - Housekeeping",
     fields: [
-      N("housekeeping.hk_store", "HK items from store"),
-      N("housekeeping.laundry", "Laundry expense"),
-      N("housekeeping.lantern_diesel", "Diesel for lantern"),
-      C("housekeeping.total", "Total housekeeping (auto)"),
-      C("housekeeping.per_pax", "Avg per pax (auto)"),
-      C("housekeeping.per_room", "Avg per room (auto)"),
+      M("housekeeping.hk_store", "HK items from store"),
+      M("housekeeping.laundry", "Laundry expense"),
+      M("housekeeping.lantern_diesel", "Diesel for lantern"),
+      C("housekeeping.total", "Total housekeeping (auto)", "money"),
+      C("housekeeping.per_pax", "Avg per pax (auto)", "money"),
+      C("housekeeping.per_room", "Avg per room (auto)", "money"),
     ],
   },
   {
@@ -163,12 +199,12 @@ export const SECTIONS: Section[] = [
         rows: 5,
         columns: [
           { key: "asset", label: "Asset (DG 125 / DG 30 / Electricity / Solar)", type: "text" },
-          { key: "opening", label: "Opening", type: "number" },
-          { key: "closing", label: "Closing", type: "number" },
-          { key: "net", label: "Net usage (auto)", type: "number", computed: true },
-          { key: "diesel_l", label: "Diesel (L)", type: "number" },
-          { key: "cost", label: "Cost Rs (auto)", type: "number", computed: true },
-          { key: "rate", label: "Rate/L", type: "number" },
+          { key: "opening", label: "Opening", type: "number", unit: "reading" },
+          { key: "closing", label: "Closing", type: "number", unit: "reading" },
+          { key: "net", label: "Net usage (auto)", type: "number", unit: "reading", computed: true },
+          { key: "diesel_l", label: "Diesel (litres)", type: "number", unit: "litres" },
+          { key: "rate", label: "Rate per litre", type: "number", unit: "money" },
+          { key: "cost", label: "Total amount (auto)", type: "number", unit: "money", computed: true },
         ],
       },
     ],
@@ -185,12 +221,12 @@ export const SECTIONS: Section[] = [
         minRows: 4,
         columns: [
           { key: "vehicle_no", label: "Vehicle no.", type: "text" },
-          { key: "opening_km", label: "Opening km", type: "number" },
-          { key: "closing_km", label: "Closing km", type: "number" },
-          { key: "total_run", label: "Total run (auto)", type: "number", computed: true },
-          { key: "fuel", label: "Fuel (L)", type: "number" },
-          { key: "cost", label: "Cost Rs", type: "number" },
-          { key: "rate", label: "Rate/L", type: "number" },
+          { key: "opening_km", label: "Opening km", type: "number", unit: "km" },
+          { key: "closing_km", label: "Closing km", type: "number", unit: "km" },
+          { key: "total_run", label: "Total run (auto)", type: "number", unit: "km", computed: true },
+          { key: "fuel", label: "Fuel (litres)", type: "number", unit: "litres" },
+          { key: "rate", label: "Rate per litre", type: "number", unit: "money" },
+          { key: "cost", label: "Total amount (auto)", type: "number", unit: "money", computed: true },
         ],
       },
     ],
@@ -250,7 +286,7 @@ export const SECTIONS: Section[] = [
         columns: [
           { key: "name", label: "Name", type: "text" },
           { key: "role", label: "Designation", type: "text" },
-          { key: "salary", label: "Salary", type: "number" },
+          { key: "salary", label: "Salary", type: "number", unit: "money" },
         ],
       },
       {
@@ -262,7 +298,7 @@ export const SECTIONS: Section[] = [
         columns: [
           { key: "name", label: "Name", type: "text" },
           { key: "designation", label: "Designation", type: "text" },
-          { key: "leaves", label: "No. of leaves", type: "number" },
+          { key: "leaves", label: "No. of leaves", type: "number", unit: "count" },
         ],
       },
     ],
@@ -271,9 +307,9 @@ export const SECTIONS: Section[] = [
     key: "sustainability",
     title: "Section 9 - Sustainability (TDS)",
     fields: [
-      N("sustainability.tds_station", "TDS refilling station"),
-      N("sustainability.tds_kitchen", "TDS kitchen"),
-      N("sustainability.tds_dining", "TDS dining"),
+      U("sustainability.tds_station", "TDS refilling station", "reading"),
+      U("sustainability.tds_kitchen", "TDS kitchen", "reading"),
+      U("sustainability.tds_dining", "TDS dining", "reading"),
       T("sustainability.notes", "Notes"),
     ],
     arrays: [
@@ -314,8 +350,8 @@ export const SECTIONS: Section[] = [
       N("tickets.boat", "Boat safari"),
       N("tickets.by_guest", "By guest"),
       N("tickets.delhi_unused", "Delhi unused"),
-      N("tickets.guide_regular", "Guide fees (regular)"),
-      N("tickets.guide_fullday", "Guide fees (full day)"),
+      M("tickets.guide_regular", "Guide fees (regular)"),
+      M("tickets.guide_fullday", "Guide fees (full day)"),
       T("tickets.bans", "Park bans/issues"),
       N("tickets.total_used", "Total tickets used"),
     ],
@@ -356,7 +392,7 @@ export const SECTIONS: Section[] = [
         columns: [
           { key: "category", label: "Category", type: "text" },
           { key: "subtype", label: "Type", type: "text" },
-          { key: "count", label: "No.", type: "number" },
+          { key: "count", label: "No.", type: "number", unit: "count" },
         ],
       },
     ],
@@ -380,10 +416,10 @@ export const SECTIONS: Section[] = [
         ],
         columns: [
           { key: "naturalist", label: "Naturalist", type: "text" },
-          { key: "jeep", label: "Jeep Safari", type: "number" },
-          { key: "boat", label: "Boat Safari", type: "number" },
-          { key: "canoe", label: "Canoe", type: "number" },
-          { key: "buffer_walk", label: "Buffer Walk", type: "number" },
+          { key: "jeep", label: "Jeep Safari", type: "number", unit: "count" },
+          { key: "boat", label: "Boat Safari", type: "number", unit: "count" },
+          { key: "canoe", label: "Canoe", type: "number", unit: "count" },
+          { key: "buffer_walk", label: "Buffer Walk", type: "number", unit: "count" },
         ],
       },
     ],
@@ -415,8 +451,8 @@ export const SECTIONS: Section[] = [
         columns: [
           { key: "detail", label: "Detail", type: "text" },
           { key: "category", label: "Category", type: "text" },
-          { key: "dec", label: "Dec 2025", type: "number" },
-          { key: "total", label: "Total (auto)", type: "number", computed: true },
+          { key: "dec", label: "Dec 2025", type: "number", unit: "count" },
+          { key: "total", label: "Total (auto)", type: "number", unit: "count", computed: true },
         ],
       },
     ],
@@ -437,16 +473,16 @@ export const SECTIONS: Section[] = [
       T("guest.experience_dinners", "Experience dinners"),
       T("guest.presentations", "Presentations"),
       T("guest.private_dinners", "Private dinners"),
-      N("steel.opening", "Steel bottles --Rs opening"),
-      N("steel.use", "Steel bottles --Rs use"),
-      N("steel.closing", "Steel bottles --Rs closing"),
+      N("steel.opening", "Steel bottles - opening"),
+      N("steel.use", "Steel bottles - use"),
+      N("steel.closing", "Steel bottles - closing"),
     ],
   },
   {
     key: "comp_liquor",
     title: "Section 14 - Complimentary liquor report",
     fields: [
-      C("comp_liquor_total", "Total complimentary value (auto)"),
+      C("comp_liquor_total", "Total complimentary value (auto)", "money"),
     ],
     arrays: [
       {
@@ -459,7 +495,7 @@ export const SECTIONS: Section[] = [
           { key: "date", label: "Date", type: "date" },
           { key: "guest", label: "Guest name", type: "text" },
           { key: "item", label: "Item", type: "text" },
-          { key: "value", label: "Value", type: "number" },
+          { key: "value", label: "Value", type: "number", unit: "money" },
           { key: "remark", label: "Remark", type: "text" },
         ],
       },
@@ -468,6 +504,39 @@ export const SECTIONS: Section[] = [
 ];
 
 /* ---------- helpers shared by the form, actions and dashboards ---------- */
+
+export type FieldGroup = { name: string | null; fields: Field[] };
+
+// Split a section's fields into ordered subsection groups by their `group` tag.
+// Fields with no group fall into a single unnamed group, preserving order.
+// Shared by the entry form and the read-only detail report so the two can never
+// group differently.
+export function groupFields(fields: Field[]): FieldGroup[] {
+  const groups: FieldGroup[] = [];
+  let current: FieldGroup | null = null;
+  for (const f of fields) {
+    const name = f.group ?? null;
+    if (!current || current.name !== name) {
+      current = { name, fields: [] };
+      groups.push(current);
+    }
+    current.fields.push(f);
+  }
+  return groups;
+}
+
+// Sections visible for a given lodge (some sections are lodge-specific).
+export function sectionsForLodge(lodgeName: string): Section[] {
+  return SECTIONS.filter((s) => !s.lodges || s.lodges.includes(lodgeName));
+}
+
+// "Section 5 - Maintenance / energy" -> { number: "5", name: "Maintenance / energy" }
+// Falls back to the whole title when it does not follow that shape.
+export function splitTitle(title: string): { number: string | null; name: string } {
+  const m = title.match(/^Section\s+(\S+)\s+-\s+(.*)$/);
+  if (!m) return { number: null, name: title };
+  return { number: m[1], name: m[2] };
+}
 
 export function getPath(data: Record<string, unknown>, path: string): unknown {
   return path.split(".").reduce<unknown>((acc, k) => {
@@ -483,22 +552,10 @@ export function num(data: Record<string, unknown>, path: string): number {
 }
 
 /* ---------- auto-calculated (derived) fields ----------
-   The set of paths the dashboard treats as totals/averages. These are computed
-   from their inputs both live in the form and again on save, so the two never
-   drift. Anything listed here is rendered read-only in the form. */
-export const COMPUTED_PATHS = new Set<string>([
-  "front.total_rooms",
-  "front.total_pax",
-  "front.extra_total",
-  "front.extra_per_room",
-  "fnb.total",
-  "fnb.per_pax",
-  "fnb.per_room",
-  "misc.total",
-  "housekeeping.total",
-  "housekeeping.per_pax",
-  "housekeeping.per_room",
-]);
+   Derived values are computed from their inputs both live in the form and again
+   on save, so the two never drift. A field is derived when its config carries
+   `computed: true` (see the C() helper) -- that flag is the single source of
+   truth for read-only rendering; there is no parallel list to keep in sync. */
 
 function toNum(v: unknown): number {
   const n = Number(v);
@@ -524,7 +581,7 @@ export function computeDerived(
   const misc = data.misc;
   const hk = data.housekeeping;
 
-  // Front --Rs rooms and pax are auto
+  // Front - rooms and pax are auto
   f.total_rooms = toNum(f.paid_rooms) + toNum(f.comp_rooms);
   const roomNights = f.total_rooms;
   f.total_pax = toNum(f.adults) + toNum(f.child_5_12);
@@ -541,7 +598,7 @@ export function computeDerived(
   f.extra_total = extraTotal;
   f.extra_per_room = roomNights ? round2(extraTotal / roomNights) : 0;
 
-  // F&B --Rs total and averages
+  // F&B - total and averages
   const fnbTotal =
     toNum(fnb.meat) +
     toNum(fnb.dairy) +
@@ -558,7 +615,7 @@ export function computeDerived(
   fnb.per_pax = f.total_pax ? round2(fnbTotal / f.total_pax) : 0;
   fnb.per_room = roomNights ? round2(fnbTotal / roomNights) : 0;
 
-  // Misc --Rs total
+  // Misc - total
   const miscExtra = Array.isArray(data.misc_extra)
     ? data.misc_extra.reduce((acc: number, r: any) => acc + toNum(r?.amount), 0)
     : 0;
@@ -574,7 +631,7 @@ export function computeDerived(
     toNum(misc.maint_labour) +
     miscExtra;
 
-  // Housekeeping --Rs total and averages
+  // Housekeeping - total and averages
   const hkTotal =
     toNum(hk.hk_store) + toNum(hk.laundry) + toNum(hk.lantern_diesel);
   hk.total = hkTotal;

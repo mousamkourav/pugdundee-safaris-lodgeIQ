@@ -47,21 +47,30 @@ export default async function MonthlyPage({
       .eq("month", prevStart)
       .maybeSingle();
     const prevEnergy = ((prevRow as { data?: { energy?: Array<Record<string, unknown>> } } | null)?.data?.energy) ?? [];
-    if (prevEnergy.length > 0) {
-      const closingByAsset = new Map<string, unknown>();
-      for (const e of prevEnergy) {
-        const name = String(e?.asset ?? "").trim();
-        if (name) closingByAsset.set(name, e?.closing);
-      }
+    const namedPrev = prevEnergy.filter((e) => String(e?.asset ?? "").trim() !== "");
+    if (namedPrev.length > 0) {
       const cur = (data.energy as Array<Record<string, unknown>> | undefined) ?? [];
-      data.energy = cur.map((e) => {
-        const name = String(e?.asset ?? "").trim();
-        const openBlank = e?.opening === undefined || e?.opening === null || e?.opening === "";
-        if (openBlank && closingByAsset.has(name)) {
-          return { ...e, opening: closingByAsset.get(name) };
+      const curNamed = cur.some((e) => String(e?.asset ?? "").trim() !== "");
+      if (!curNamed) {
+        // Fresh month: nothing typed yet, so seed the asset names too. Without
+        // this the carry-forward could never fire, because it matches on a name
+        // the manager had not entered yet.
+        data.energy = namedPrev.map((e) => ({ asset: e.asset, opening: e.closing }));
+      } else {
+        // Partially filled month: only fill blank openings, matched by asset.
+        const closingByAsset = new Map<string, unknown>();
+        for (const e of namedPrev) {
+          closingByAsset.set(String(e.asset).trim(), e?.closing);
         }
-        return e;
-      });
+        data.energy = cur.map((e) => {
+          const name = String(e?.asset ?? "").trim();
+          const openBlank = e?.opening === undefined || e?.opening === null || e?.opening === "";
+          if (openBlank && closingByAsset.has(name)) {
+            return { ...e, opening: closingByAsset.get(name) };
+          }
+          return e;
+        });
+      }
     }
   }
   const status = (row?.status as string) ?? "none";

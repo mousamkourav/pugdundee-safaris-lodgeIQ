@@ -1,5 +1,5 @@
 import { requireUser, isAdmin } from "@/lib/auth";
-import { inr } from "@/lib/format";
+import { formatValue } from "@/lib/format";
 import {
   fetchMetrics,
   monthLabel,
@@ -9,15 +9,18 @@ import {
   type Metrics,
 } from "@/lib/dashboard";
 import { resolveRange, inRange, DEFAULT_RANGE } from "@/lib/ranges";
-import { activeGroups } from "@/lib/columns";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { DataTable } from "@/components/data-table";
 import { BarCompare, LineTrend, DonutShare } from "@/components/charts";
 import { RangeSelect } from "@/components/range-select";
-import { ColumnToggle } from "@/components/column-toggle";
 
 const toYM = (iso: string) => iso.slice(0, 7); // YYYY-MM-01 -> YYYY-MM
+
+// Money and counts are formatted through the same helper the report uses, so a
+// count can never pick up a rupee sign.
+const money = (n: number) => formatValue("money", n);
+const count = (n: number) => formatValue("count", n);
 
 function thisMonthYM(): string {
   const d = new Date();
@@ -27,7 +30,7 @@ function thisMonthYM(): string {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string; from?: string; to?: string; cols?: string }>;
+  searchParams: Promise<{ range?: string; from?: string; to?: string }>;
 }) {
   const { profile } = await requireUser();
   const sp = await searchParams;
@@ -93,37 +96,6 @@ export default async function DashboardPage({
     const totPax = agg.reduce((t, m) => t + m.pax, 0);
     const totCost = agg.reduce((t, m) => t + m.totalCost, 0);
 
-    const groups = activeGroups(sp.cols);
-    type Col = { key: string; label: string; className?: string };
-    const compareCols: Col[] = [{ key: "lodge", label: "Lodge" }];
-    if (groups.has("core"))
-      compareCols.push(
-        { key: "rn", label: "Room nights", className: "tabular" },
-        { key: "pax", label: "Pax", className: "tabular" }
-      );
-    if (groups.has("sales"))
-      compareCols.push({ key: "extras", label: "Extra sales", className: "text-right tabular" });
-    if (groups.has("expenses"))
-      compareCols.push(
-        { key: "fnb", label: "F&B", className: "text-right tabular" },
-        { key: "misc", label: "Misc", className: "text-right tabular" },
-        { key: "hk", label: "HK", className: "text-right tabular" },
-        { key: "cost", label: "Total expenses", className: "text-right tabular" }
-      );
-    if (groups.has("perroom"))
-      compareCols.push(
-        { key: "extrasPR", label: "Sales/room", className: "text-right tabular" },
-        { key: "costPR", label: "Exp/room", className: "text-right tabular" },
-        { key: "fnbPR", label: "F&B/room", className: "text-right tabular" }
-      );
-    if (groups.has("ops"))
-      compareCols.push(
-        { key: "perpax", label: "F&B/guest", className: "text-right tabular" },
-        { key: "energy", label: "Energy", className: "text-right tabular" },
-        { key: "safaris", label: "Safaris", className: "tabular" },
-        { key: "rating", label: "Rating", className: "tabular" }
-      );
-
     return (
       <div>
         <PageHeader
@@ -143,10 +115,13 @@ export default async function DashboardPage({
         </div>
 
         <div className="mb-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <KpiCard label={`Room nights (${rangeLabel})`} value={totRoomNights} />
-          <KpiCard label="Total pax" value={totPax} />
-          <KpiCard label="Extra sales" value={inr(totExtras)} />
-          <KpiCard label="F&B + Misc + HK" value={inr(totCost)} />
+          <KpiCard
+            label={`Total room nights (${rangeLabel})`}
+            value={count(totRoomNights)}
+          />
+          <KpiCard label="Total pax" value={count(totPax)} />
+          <KpiCard label="Extra sales" value={money(totExtras)} />
+          <KpiCard label="F&B + Misc + HK" value={money(totCost)} />
         </div>
 
         <div className="mb-6 grid gap-4 lg:grid-cols-2">
@@ -180,47 +155,75 @@ export default async function DashboardPage({
           />
         </div>
 
-        <div className="mb-6 grid gap-4 lg:grid-cols-2">
+        <div className="mb-8 grid gap-4 lg:grid-cols-2">
           <LineTrend
             title="Extra sales trend"
             data={buildTrend((m) => m.extras)}
             series={lodges}
           />
           <LineTrend
-            title="Room nights trend"
+            title="Total room nights trend"
             data={buildTrend((m) => m.roomNights)}
             series={lodges}
           />
         </div>
 
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg">Lodge comparison — {rangeLabel}</h2>
-          <ColumnToggle />
-        </div>
-        <DataTable
-          columns={compareCols}
-          rows={agg.map((m) => {
-            const pr = perRoom(m);
-            return {
+        {/* Sales and expenses are two different questions, so they get two
+            tables rather than one very wide one. */}
+        <section className="mb-8">
+          <h2 className="mb-1 text-lg">Lodge comparison - Sales</h2>
+          <p className="mb-3 text-sm text-sand-600">
+            What each lodge earned over {rangeLabel}.
+          </p>
+          <DataTable
+            columns={[
+              { key: "lodge", label: "Lodge" },
+              { key: "rn", label: "Total room nights", className: "text-right tabular" },
+              { key: "pax", label: "Pax", className: "text-right tabular" },
+              { key: "extras", label: "Extra sales", className: "text-right tabular" },
+              { key: "extrasPR", label: "Sales per room", className: "text-right tabular" },
+            ]}
+            rows={agg.map((m) => ({
               lodge: shortCode(m.lodgeName),
-              rn: m.roomNights,
-              pax: m.pax,
-              extras: inr(m.extras),
-              fnb: inr(m.fnb),
-              misc: inr(m.misc),
-              hk: inr(m.hk),
-              cost: inr(pr.totalExpenses),
-              extrasPR: inr(pr.extrasPerRoom),
-              costPR: inr(pr.totalExpPerRoom),
-              fnbPR: inr(pr.fnbPerRoom),
-              perpax: m.fnbPerPax ? inr(Math.round(m.fnbPerPax)) : "—",
-              energy: inr(m.energyCost),
-              safaris: m.safaris,
-              rating: m.rating ?? "—",
-            };
-          })}
-          empty={`No data for ${rangeLabel}.`}
-        />
+              rn: count(m.roomNights),
+              pax: count(m.pax),
+              extras: money(m.extras),
+              extrasPR: money(perRoom(m).extrasPerRoom),
+            }))}
+            empty={`No data for ${rangeLabel}.`}
+          />
+        </section>
+
+        <section className="mb-8">
+          <h2 className="mb-1 text-lg">Lodge comparison - Expenses</h2>
+          <p className="mb-3 text-sm text-sand-600">
+            What each lodge spent over {rangeLabel}.
+          </p>
+          <DataTable
+            columns={[
+              { key: "lodge", label: "Lodge" },
+              { key: "fnb", label: "F&B", className: "text-right tabular" },
+              { key: "misc", label: "Misc", className: "text-right tabular" },
+              { key: "hk", label: "Housekeeping", className: "text-right tabular" },
+              { key: "cost", label: "Total expenses", className: "text-right tabular" },
+              { key: "costPR", label: "Expenses per room", className: "text-right tabular" },
+              { key: "perpax", label: "F&B per guest", className: "text-right tabular" },
+            ]}
+            rows={agg.map((m) => {
+              const pr = perRoom(m);
+              return {
+                lodge: shortCode(m.lodgeName),
+                fnb: money(m.fnb),
+                misc: money(m.misc),
+                hk: money(m.hk),
+                cost: money(pr.totalExpenses),
+                costPR: money(pr.totalExpPerRoom),
+                perpax: m.fnbPerPax ? money(Math.round(m.fnbPerPax)) : "-",
+              };
+            })}
+            empty={`No data for ${rangeLabel}.`}
+          />
+        </section>
       </div>
     );
   }
@@ -237,16 +240,19 @@ export default async function DashboardPage({
       />
 
       <div className="mb-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard label={`Room nights (${rangeLabel})`} value={mine?.roomNights ?? 0} />
-        <KpiCard label="Pax" value={mine?.pax ?? 0} />
-        <KpiCard label="Extra sales" value={inr(mine?.extras ?? 0)} />
+        <KpiCard
+          label={`Total room nights (${rangeLabel})`}
+          value={count(mine?.roomNights ?? 0)}
+        />
+        <KpiCard label="Pax" value={count(mine?.pax ?? 0)} />
+        <KpiCard label="Extra sales" value={money(mine?.extras ?? 0)} />
         <KpiCard
           label="F&B per guest"
-          value={mine?.fnbPerPax ? inr(Math.round(mine.fnbPerPax)) : "—"}
+          value={mine?.fnbPerPax ? money(Math.round(mine.fnbPerPax)) : "-"}
         />
       </div>
 
-      <div className="mb-6 grid gap-4 lg:grid-cols-2">
+      <div className="mb-8 grid gap-4 lg:grid-cols-2">
         <LineTrend
           title="Extra sales trend"
           data={buildTrend((m) => m.extras)}
@@ -263,23 +269,23 @@ export default async function DashboardPage({
       <DataTable
         columns={[
           { key: "month", label: "Month" },
-          { key: "rn", label: "Room nights", className: "tabular" },
-          { key: "pax", label: "Pax", className: "tabular" },
+          { key: "rn", label: "Total room nights", className: "text-right tabular" },
+          { key: "pax", label: "Pax", className: "text-right tabular" },
           { key: "extras", label: "Extras", className: "text-right tabular" },
           { key: "fnb", label: "F&B", className: "text-right tabular" },
           { key: "cost", label: "Total cost", className: "text-right tabular" },
-          { key: "safaris", label: "Safaris", className: "tabular" },
+          { key: "safaris", label: "Safaris", className: "text-right tabular" },
         ]}
         rows={[...inWindow]
           .sort((a, b) => b.month.localeCompare(a.month))
           .map((m) => ({
             month: monthLabel(m.month),
-            rn: m.roomNights,
-            pax: m.pax,
-            extras: inr(m.extras),
-            fnb: inr(m.fnb),
-            cost: inr(m.totalCost),
-            safaris: m.safaris,
+            rn: count(m.roomNights),
+            pax: count(m.pax),
+            extras: money(m.extras),
+            fnb: money(m.fnb),
+            cost: money(m.totalCost),
+            safaris: count(m.safaris),
           }))}
         empty={`No data for ${rangeLabel}.`}
       />

@@ -1,40 +1,30 @@
 import { requireUser } from "@/lib/auth";
 import { getAccessibleLodges, resolveLodge } from "@/lib/lodges";
-import { currentMonth, monthRange, inr } from "@/lib/format";
+import { currentMonth, monthRange, formatValue } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
-import { SECTIONS, getPath, type Field } from "@/lib/monthly";
+import {
+  getPath,
+  groupFields,
+  sectionsForLodge,
+  splitTitle,
+  type ArrayCol,
+  type Field,
+} from "@/lib/monthly";
 import { PageHeader } from "@/components/page-header";
 import { LodgeMonthPicker } from "@/components/lodge-month-picker";
 import { NoLodge } from "@/components/no-lodge";
 import { PrintButton } from "@/components/print-button";
+import { SectionNav } from "@/components/section-nav";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-function fmt(field: Field, raw: unknown): string {
-  if (raw === undefined || raw === null || raw === "") return "—";
-  if (field.type === "rating") return String(raw);
-  if (field.type === "number") {
-    const num = Number(raw);
-    if (!Number.isFinite(num)) return String(raw);
-    return inr(num);
-  }
+// Whether a value is money or a count is decided by the field's `unit` in
+// lib/monthly.ts -- never here. See formatValue() in lib/format.ts.
+function fmt(field: Field | ArrayCol, raw: unknown): string {
+  if (raw === undefined || raw === null || raw === "") return "-";
   if (field.type === "bool") return raw ? "Yes" : "No";
-  return String(raw);
-}
-
-// group a section's fields by their optional subsection tag (Accommodation, etc.)
-function grouped(fields: Field[]) {
-  const out: { name: string | null; items: Field[] }[] = [];
-  let cur: { name: string | null; items: Field[] } | null = null;
-  for (const f of fields) {
-    const name = f.group ?? null;
-    if (!cur || cur.name !== name) {
-      cur = { name, items: [] };
-      out.push(cur);
-    }
-    cur.items.push(f);
-  }
-  return out;
+  if (field.type === "text" || field.type === "date") return String(raw);
+  return formatValue(field.unit, raw);
 }
 
 export default async function ReportDetailPage({
@@ -62,6 +52,10 @@ export default async function ReportDetailPage({
   const data = ((row as any)?.data ?? {}) as Record<string, unknown>;
   const status = (row as any)?.status ?? null;
   const hasData = !!row;
+
+  // Only the sections that apply to this lodge, so the Denwa-only sections stay
+  // hidden on every other lodge's report.
+  const sections = sectionsForLodge(lodgeName);
 
   return (
     <div>
@@ -93,83 +87,136 @@ export default async function ReportDetailPage({
         </div>
       )}
 
-      <div className="space-y-6">
-        {SECTIONS.map((sec) => {
-          const fieldGroups = sec.fields ? grouped(sec.fields) : [];
+      <SectionNav
+        sections={sections.map((sec) => ({ key: sec.key, title: sec.title }))}
+      />
+
+      <div className="space-y-8">
+        {sections.map((sec) => {
+          const fieldGroups = sec.fields ? groupFields(sec.fields) : [];
+          const { number, name } = splitTitle(sec.title);
           return (
             <section
               key={sec.key}
-              className="break-inside-avoid rounded-xl border border-sand-200 bg-white p-5"
+              id={`section-${sec.key}`}
+              className="break-inside-avoid scroll-mt-20 overflow-hidden rounded-xl border border-sand-200 bg-white"
             >
-              <h3 className="mb-3 text-base font-medium text-sand-800">
-                {sec.title}
+              <h3 className="flex items-center gap-3 border-l-4 border-olive-600 bg-sand-100 px-4 py-3 text-base font-medium text-sand-800">
+                {number && (
+                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-olive-600 text-xs font-semibold text-white">
+                    {number}
+                  </span>
+                )}
+                <span className="min-w-0">{name}</span>
               </h3>
 
-              {fieldGroups.map((grp, gi) => (
-                <div key={gi} className="mb-4 last:mb-0">
-                  {grp.name && (
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-sand-400">
-                      {grp.name}
-                    </p>
-                  )}
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-3 lg:grid-cols-4">
-                    {grp.items.map((f) => (
-                      <div
-                        key={f.path}
-                        className="flex justify-between border-b border-sand-100 py-1.5 text-sm"
-                      >
-                        <span className="text-sand-500">{f.label}</span>
-                        <span className="tabular text-sand-800">
-                          {fmt(f, getPath(data, f.path))}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-
-              {sec.arrays?.map((arr) => {
-                const rows = (data[arr.path] as any[]) ?? [];
-                return (
-                  <div key={arr.path} className="mt-4">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-sand-400">
-                      {arr.label}
-                    </p>
-                    {rows.length === 0 ? (
-                      <p className="text-sm text-sand-400">None recorded.</p>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b border-sand-200 text-left text-xs text-sand-500">
-                              {arr.columns.map((c) => (
-                                <th key={c.key} className="py-1.5 pr-4 font-medium">
-                                  {c.label}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {rows.map((r, ri) => (
-                              <tr key={ri} className="border-b border-sand-100">
-                                {arr.columns.map((c) => (
-                                  <td key={c.key} className="py-1.5 pr-4 text-sand-800">
-                                    {r?.[c.key] === undefined ||
-                                    r?.[c.key] === null ||
-                                    r?.[c.key] === ""
-                                      ? "—"
-                                      : String(r[c.key])}
-                                  </td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+              <div className="p-4 sm:p-5">
+                {fieldGroups.map((grp, gi) => (
+                  <div
+                    key={gi}
+                    className={
+                      "mb-5 last:mb-0" +
+                      (grp.name && gi > 0 ? " border-t border-sand-200 pt-4" : "")
+                    }
+                  >
+                    {grp.name && (
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-sand-500">
+                        {grp.name}
+                      </p>
                     )}
+                    <div className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                      {grp.fields.map((f) => (
+                        <div
+                          key={f.path}
+                          className="border-b border-sand-100 py-1.5 text-sm sm:flex sm:items-baseline sm:justify-between sm:gap-3"
+                        >
+                          <span className="block text-sand-500">{f.label}</span>
+                          <span className="tabular block font-medium text-sand-800 sm:text-right">
+                            {fmt(f, getPath(data, f.path))}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                );
-              })}
+                ))}
+
+                {sec.arrays?.map((arr) => {
+                  const rows = (data[arr.path] as any[]) ?? [];
+                  return (
+                    <div
+                      key={arr.path}
+                      className="mt-5 border-t border-sand-200 pt-4"
+                    >
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-sand-500">
+                        {arr.label}
+                      </p>
+                      {rows.length === 0 ? (
+                        <p className="text-sm text-sand-400">None recorded.</p>
+                      ) : (
+                        <>
+                          {/* real table from md up */}
+                          <div className="hidden overflow-x-auto md:block">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="border-b border-sand-200 text-left text-xs text-sand-500">
+                                  {arr.columns.map((c) => (
+                                    <th
+                                      key={c.key}
+                                      className="py-1.5 pr-4 font-medium"
+                                    >
+                                      {c.label}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {rows.map((r, ri) => (
+                                  <tr
+                                    key={ri}
+                                    className="border-b border-sand-100"
+                                  >
+                                    {arr.columns.map((c) => (
+                                      <td
+                                        key={c.key}
+                                        className="tabular py-1.5 pr-4 text-sand-800"
+                                      >
+                                        {fmt(c, r?.[c.key])}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          {/* stacked label/value cards below md */}
+                          <div className="space-y-2 md:hidden">
+                            {rows.map((r, ri) => (
+                              <div
+                                key={ri}
+                                className="rounded-lg border border-sand-200 p-3"
+                              >
+                                {arr.columns.map((c) => (
+                                  <div
+                                    key={c.key}
+                                    className="flex items-baseline justify-between gap-3 border-b border-sand-100 py-1 text-sm last:border-b-0"
+                                  >
+                                    <span className="text-sand-500">
+                                      {c.label}
+                                    </span>
+                                    <span className="tabular text-right text-sand-800">
+                                      {fmt(c, r?.[c.key])}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </section>
           );
         })}

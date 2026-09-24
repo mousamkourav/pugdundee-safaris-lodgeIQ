@@ -1,20 +1,21 @@
 import { redirect } from "next/navigation";
 import { requireUser, isAdmin } from "@/lib/auth";
-import { inr } from "@/lib/format";
+import { formatValue } from "@/lib/format";
 import { fetchMetrics, monthLabel, perRoom, shortCode } from "@/lib/dashboard";
-import { activeGroups } from "@/lib/columns";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table";
 import { BarCompare } from "@/components/charts";
 import { MonthSelect } from "@/components/month-select";
-import { ColumnToggle } from "@/components/column-toggle";
 
 const toYM = (iso: string) => iso.slice(0, 7);
+
+const money = (n: number) => formatValue("money", n);
+const count = (n: number) => formatValue("count", n);
 
 export default async function AnalyticsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string; cols?: string }>;
+  searchParams: Promise<{ month?: string }>;
 }) {
   const { profile } = await requireUser();
   if (!isAdmin(profile?.role)) redirect("/dashboard");
@@ -43,75 +44,13 @@ export default async function AnalyticsPage({
     .filter((m) => toYM(m.month) === selected)
     .sort((a, b) => b.extras - a.extras);
 
-  const groups = activeGroups(sp.cols);
-
-  type Col = { key: string; label: string; className?: string };
-  const cols: Col[] = [{ key: "lodge", label: "Lodge" }];
-  if (groups.has("core")) {
-    cols.push(
-      { key: "rn", label: "Room nights", className: "tabular" },
-      { key: "pax", label: "Pax", className: "tabular" }
-    );
-  }
-  if (groups.has("sales")) {
-    cols.push({
-      key: "extras",
-      label: "Extra sales",
-      className: "text-right tabular",
-    });
-  }
-  if (groups.has("expenses")) {
-    cols.push(
-      { key: "fnb", label: "F&B", className: "text-right tabular" },
-      { key: "misc", label: "Misc", className: "text-right tabular" },
-      { key: "hk", label: "HK", className: "text-right tabular" },
-      { key: "cost", label: "Total expenses", className: "text-right tabular" }
-    );
-  }
-  if (groups.has("perroom")) {
-    cols.push(
-      { key: "extrasPR", label: "Sales/room", className: "text-right tabular" },
-      { key: "costPR", label: "Exp/room", className: "text-right tabular" },
-      { key: "fnbPR", label: "F&B/room", className: "text-right tabular" }
-    );
-  }
-  if (groups.has("ops")) {
-    cols.push(
-      { key: "perpax", label: "F&B/guest", className: "text-right tabular" },
-      { key: "energy", label: "Energy", className: "text-right tabular" },
-      { key: "safaris", label: "Safaris", className: "tabular" },
-      { key: "rating", label: "Rating", className: "tabular" }
-    );
-  }
-
-  const tableRows = rows.map((m) => {
-    const pr = perRoom(m);
-    return {
-      lodge: m.lodgeName,
-      rn: m.roomNights,
-      pax: m.pax,
-      extras: inr(m.extras),
-      fnb: inr(m.fnb),
-      misc: inr(m.misc),
-      hk: inr(m.hk),
-      cost: inr(pr.totalExpenses),
-      extrasPR: inr(pr.extrasPerRoom),
-      costPR: inr(pr.totalExpPerRoom),
-      fnbPR: inr(pr.fnbPerRoom),
-      perpax: m.fnbPerPax ? inr(Math.round(m.fnbPerPax)) : "—",
-      energy: inr(m.energyCost),
-      safaris: m.safaris,
-      rating: m.rating ?? "—",
-    };
-  });
-
   return (
     <div>
       <PageHeader
         title="Compare lodges"
         description={`All lodges side by side — ${labels[selected]}.`}
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <MonthSelect months={monthsSet} selected={selected} labels={labels} />
             <a
               href={`/api/compare?month=${selected}`}
@@ -123,7 +62,7 @@ export default async function AnalyticsPage({
         }
       />
 
-      <div className="mb-6 grid gap-4 lg:grid-cols-2">
+      <div className="mb-8 grid gap-4 lg:grid-cols-2">
         <BarCompare
           title="Extra sales by lodge"
           data={rows.map((m) => ({ name: shortCode(m.lodgeName), value: m.extras }))}
@@ -151,11 +90,60 @@ export default async function AnalyticsPage({
         />
       </div>
 
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg">Lodge comparison — {labels[selected]}</h2>
-        <ColumnToggle />
-      </div>
-      <DataTable columns={cols} rows={tableRows} empty="No data for this month." />
+      <section className="mb-8">
+        <h2 className="mb-1 text-lg">Lodge comparison - Sales</h2>
+        <p className="mb-3 text-sm text-sand-600">
+          What each lodge earned in {labels[selected]}.
+        </p>
+        <DataTable
+          columns={[
+            { key: "lodge", label: "Lodge" },
+            { key: "rn", label: "Total room nights", className: "text-right tabular" },
+            { key: "pax", label: "Pax", className: "text-right tabular" },
+            { key: "extras", label: "Extra sales", className: "text-right tabular" },
+            { key: "extrasPR", label: "Sales per room", className: "text-right tabular" },
+          ]}
+          rows={rows.map((m) => ({
+            lodge: m.lodgeName,
+            rn: count(m.roomNights),
+            pax: count(m.pax),
+            extras: money(m.extras),
+            extrasPR: money(perRoom(m).extrasPerRoom),
+          }))}
+          empty="No data for this month."
+        />
+      </section>
+
+      <section className="mb-8">
+        <h2 className="mb-1 text-lg">Lodge comparison - Expenses</h2>
+        <p className="mb-3 text-sm text-sand-600">
+          What each lodge spent in {labels[selected]}.
+        </p>
+        <DataTable
+          columns={[
+            { key: "lodge", label: "Lodge" },
+            { key: "fnb", label: "F&B", className: "text-right tabular" },
+            { key: "misc", label: "Misc", className: "text-right tabular" },
+            { key: "hk", label: "Housekeeping", className: "text-right tabular" },
+            { key: "cost", label: "Total expenses", className: "text-right tabular" },
+            { key: "costPR", label: "Expenses per room", className: "text-right tabular" },
+            { key: "perpax", label: "F&B per guest", className: "text-right tabular" },
+          ]}
+          rows={rows.map((m) => {
+            const pr = perRoom(m);
+            return {
+              lodge: m.lodgeName,
+              fnb: money(m.fnb),
+              misc: money(m.misc),
+              hk: money(m.hk),
+              cost: money(pr.totalExpenses),
+              costPR: money(pr.totalExpPerRoom),
+              perpax: m.fnbPerPax ? money(Math.round(m.fnbPerPax)) : "-",
+            };
+          })}
+          empty="No data for this month."
+        />
+      </section>
     </div>
   );
 }

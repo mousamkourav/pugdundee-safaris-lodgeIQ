@@ -12,8 +12,7 @@ export const RANGE_PRESETS: RangePreset[] = [
   { key: "3m", label: "Last 3 months", months: 3 },
   { key: "6m", label: "Last 6 months", months: 6 },
   { key: "12m", label: "Last 12 months", months: 12 },
-  { key: "24m", label: "Last 24 months", months: 24 },
-  { key: "custom", label: "Custom range…", months: 0 },
+  { key: "custom", label: "Custom range", months: 0 },
 ];
 
 export const DEFAULT_RANGE = "3m";
@@ -50,4 +49,16 @@ export function resolveRange(
 
 export function inRange(ym: string, r: { start: string; end: string }): boolean {
   return ym >= r.start && ym <= r.end;
+}
+
+// "2026-09" -> "Sep 2026". Client-safe (lib/dashboard.ts pulls in the server
+// Supabase client, so the dashboard's monthLabel cannot be used in the picker).
+export function ymLabel(ym: string): string {
+  const [y, m] = ym.split("-").map(Number);
+  if (!y || !m) return ym;
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleString("en-US", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }

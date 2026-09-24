@@ -62,3 +62,23 @@ h1, h2, h3 {
 .tabular {
   font-variant-numeric: tabular-nums;
 }
+
+/* Array-block rows in the monthly form. The column count varies per block, so
+   it comes in as --cols rather than a Tailwind class (dynamic class names are
+   not safe under JIT). One column on phones, two on small tablets, the block's
+   real column count from md up where the header row supplies the labels. */
+.array-row {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 640px) {
+  .array-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 768px) {
+  .array-row {
+    grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
+  }
+}

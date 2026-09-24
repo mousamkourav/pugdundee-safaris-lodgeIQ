@@ -100,7 +100,7 @@ export function DonutShare({
           No data for this range.
         </div>
       ) : (
-        <div className="flex flex-col items-center gap-4 sm:flex-row">
+        <div className="flex flex-col items-center gap-4 lg:flex-row">
           <ResponsiveContainer width="100%" height={240}>
             <PieChart>
               <Pie
@@ -125,7 +125,7 @@ export function DonutShare({
               />
             </PieChart>
           </ResponsiveContainer>
-          <ul className="w-full shrink-0 space-y-1.5 sm:w-56">
+          <ul className="w-full shrink-0 space-y-1.5 lg:w-56">
             {[...data]
               .sort((a, b) => b.value - a.value)
               .map((d, i) => {

@@ -1,4 +1,4 @@
-﻿import type { Role } from "@/lib/auth";
+import type { Role } from "@/lib/auth";
 
 export interface NavItem {
   label: string;
