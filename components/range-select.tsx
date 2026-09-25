@@ -12,14 +12,9 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-// split "YYYY-MM" -> { y, m } (strings, may be empty)
-function parseYM(ym: string): { y: string; m: string } {
+function partsOf(ym: string): { y: string; m: string } {
   const [y, m] = (ym || "").split("-");
   return { y: y || "", m: m || "" };
-}
-function makeYM(y: string, m: string): string {
-  if (!y || !m) return "";
-  return `${y}-${m.padStart(2, "0")}`;
 }
 
 export function RangeSelect({
@@ -36,12 +31,19 @@ export function RangeSelect({
   const sp = useSearchParams();
   const [pending, startTransition] = useTransition();
 
-  const [draftFrom, setDraftFrom] = useState(from ?? "");
-  const [draftTo, setDraftTo] = useState(to ?? "");
+  // Store month and year parts INDEPENDENTLY so a half-selection holds.
+  const initFrom = partsOf(from ?? "");
+  const initTo = partsOf(to ?? "");
+  const [fromM, setFromM] = useState(initFrom.m);
+  const [fromY, setFromY] = useState(initFrom.y);
+  const [toM, setToM] = useState(initTo.m);
+  const [toY, setToY] = useState(initTo.y);
 
   useEffect(() => {
-    setDraftFrom(from ?? "");
-    setDraftTo(to ?? "");
+    const f = partsOf(from ?? "");
+    const t = partsOf(to ?? "");
+    setFromM(f.m); setFromY(f.y);
+    setToM(t.m); setToY(t.y);
   }, [from, to]);
 
   const nowYear = new Date().getFullYear();
@@ -64,8 +66,11 @@ export function RangeSelect({
     });
   }
 
-  function applyCustom(nextFrom: string, nextTo: string) {
-    if (!nextFrom || !nextTo) return;
+  // Apply only when BOTH ends are fully chosen (month + year on each side).
+  function apply(fM: string, fY: string, tM: string, tY: string) {
+    if (!fM || !fY || !tM || !tY) return;
+    const nextFrom = `${fY}-${fM.padStart(2, "0")}`;
+    const nextTo = `${tY}-${tM.padStart(2, "0")}`;
     if (nextFrom === (from ?? "") && nextTo === (to ?? "")) return;
     push((p) => {
       p.set("range", "custom");
@@ -75,26 +80,13 @@ export function RangeSelect({
   }
 
   const isCustom = preset === "custom";
-  const fromP = parseYM(draftFrom);
-  const toP = parseYM(draftTo);
 
+  function fromComplete() { return fromM && fromY; }
+  function toComplete() { return toM && toY; }
   const resolvedLabel =
-    isCustom && draftFrom && draftTo
-      ? draftFrom <= draftTo
-        ? `${ymLabel(draftFrom)} - ${ymLabel(draftTo)}`
-        : `${ymLabel(draftTo)} - ${ymLabel(draftFrom)}`
+    isCustom && fromComplete() && toComplete()
+      ? `${ymLabel(`${fromY}-${fromM.padStart(2, "0")}`)} - ${ymLabel(`${toY}-${toM.padStart(2, "0")}`)}`
       : null;
-
-  function setFromPart(part: "y" | "m", val: string) {
-    const next = part === "y" ? makeYM(val, fromP.m) : makeYM(fromP.y, val);
-    setDraftFrom(next);
-    applyCustom(next, draftTo);
-  }
-  function setToPart(part: "y" | "m", val: string) {
-    const next = part === "y" ? makeYM(val, toP.m) : makeYM(toP.y, val);
-    setDraftTo(next);
-    applyCustom(draftFrom, next);
-  }
 
   return (
     <div
@@ -126,8 +118,8 @@ export function RangeSelect({
               <span className="text-xs font-medium text-sand-500">From</span>
               <div className="flex gap-2">
                 <select
-                  value={fromP.m}
-                  onChange={(e) => setFromPart("m", e.target.value)}
+                  value={fromM}
+                  onChange={(e) => { const v = e.target.value; setFromM(v); apply(v, fromY, toM, toY); }}
                   disabled={pending}
                   className={controlCls}
                 >
@@ -137,8 +129,8 @@ export function RangeSelect({
                   ))}
                 </select>
                 <select
-                  value={fromP.y}
-                  onChange={(e) => setFromPart("y", e.target.value)}
+                  value={fromY}
+                  onChange={(e) => { const v = e.target.value; setFromY(v); apply(fromM, v, toM, toY); }}
                   disabled={pending}
                   className={controlCls}
                 >
@@ -154,8 +146,8 @@ export function RangeSelect({
               <span className="text-xs font-medium text-sand-500">To</span>
               <div className="flex gap-2">
                 <select
-                  value={toP.m}
-                  onChange={(e) => setToPart("m", e.target.value)}
+                  value={toM}
+                  onChange={(e) => { const v = e.target.value; setToM(v); apply(fromM, fromY, v, toY); }}
                   disabled={pending}
                   className={controlCls}
                 >
@@ -165,8 +157,8 @@ export function RangeSelect({
                   ))}
                 </select>
                 <select
-                  value={toP.y}
-                  onChange={(e) => setToPart("y", e.target.value)}
+                  value={toY}
+                  onChange={(e) => { const v = e.target.value; setToY(v); apply(fromM, fromY, toM, v); }}
                   disabled={pending}
                   className={controlCls}
                 >
