@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { compressImage, ImageDecodeError } from "@/lib/image-compress";
+import { Icon } from "@/components/icons";
 
 export type PickedPhoto = { key: string; blob: Blob; preview: string };
 
@@ -86,37 +87,19 @@ export function PhotoPicker({
     });
   }
 
+  const pickDisabled = disabled || busy || remaining <= 0;
+
   return (
     <div>
-      <p className="mb-1 block text-sm text-sand-700">
-        {label}
-        {required && " *"}{" "}
-        <span className="text-sand-500">
-          ({photos.length}/{max})
+      <p className="mb-1.5 flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-sand-500">
+        <span>
+          {label}
+          {required && " *"}
+        </span>
+        <span className="font-medium normal-case tracking-normal tabular">
+          {photos.length}/{max}
         </span>
       </p>
-
-      {photos.length > 0 && (
-        <div className="mb-2 grid grid-cols-3 gap-2 sm:grid-cols-6">
-          {photos.map((p) => (
-            <div
-              key={p.key}
-              className="relative aspect-square overflow-hidden rounded-lg border border-sand-200 bg-sand-100"
-            >
-              <img src={p.preview} alt="" className="h-full w-full object-cover" />
-              <button
-                type="button"
-                onClick={() => remove(p.key)}
-                disabled={disabled}
-                aria-label="Remove photo"
-                className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-sand-900/70 text-sm leading-none text-white hover:bg-sand-900 disabled:opacity-50"
-              >
-                x
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
 
       <input
         ref={inputRef}
@@ -129,20 +112,50 @@ export function PhotoPicker({
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
-        disabled={disabled || busy || remaining <= 0}
-        className="w-full rounded-lg border border-dashed border-sand-300 bg-sand-50 px-3 py-3 text-sm text-sand-700 hover:bg-sand-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+        disabled={pickDisabled}
+        className="flex w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-sand-300 bg-sand-50 px-4 py-6 text-center transition hover:border-olive-400 hover:bg-olive-50 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {busy
-          ? "Preparing photos..."
-          : remaining <= 0
-            ? "Photo limit reached"
-            : photos.length
-              ? "Add more photos"
-              : "Choose photos"}
+        <span className="grid h-11 w-11 place-items-center rounded-full bg-sand-200 text-sand-700">
+          <Icon name="camera" className="h-5 w-5" />
+        </span>
+        <span className="text-sm font-semibold text-olive-800">
+          {busy
+            ? "Preparing photos..."
+            : remaining <= 0
+              ? "Photo limit reached"
+              : photos.length
+                ? "Add more photos"
+                : "Tap to choose photos"}
+        </span>
+        <span className="text-xs text-sand-500">
+          Up to {max} photos. They are compressed on this device before upload.
+        </span>
       </button>
 
+      {photos.length > 0 && (
+        <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
+          {photos.map((p) => (
+            <div
+              key={p.key}
+              className="relative aspect-square overflow-hidden rounded-lg border border-sand-200 bg-sand-100 shadow-card"
+            >
+              <img src={p.preview} alt="" className="h-full w-full object-cover" />
+              <button
+                type="button"
+                onClick={() => remove(p.key)}
+                disabled={disabled}
+                aria-label="Remove photo"
+                className="absolute right-1 top-1 grid h-7 w-7 place-items-center rounded-full bg-olive-900/75 text-white transition hover:bg-error disabled:opacity-50"
+              >
+                <Icon name="x" className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {errors.length > 0 && (
-        <ul className="mt-2 space-y-1 text-xs text-error">
+        <ul className="mt-2 space-y-1 rounded-lg border border-error-border bg-error-bg px-3 py-2 text-xs text-error">
           {errors.map((m, i) => (
             <li key={i}>{m}</li>
           ))}

@@ -7,7 +7,7 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 const selCls =
-  "rounded-lg border border-sand-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gold-500";
+  "min-h-11 rounded-lg border border-sand-300 bg-white px-3.5 py-2 text-sm font-medium text-sand-700 shadow-card outline-none transition focus:border-olive-600 focus:ring-3 focus:ring-gold-500/35 sm:min-h-10";
 
 export function MonthPicker({ month }: { month: string }) {
   const router = useRouter();

@@ -1,6 +1,8 @@
-﻿node_modules/
+node_modules/
 .env
 .env.local
 .next/
 .vercel
 .DS_Store
+
+design-reference/

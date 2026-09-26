@@ -13,10 +13,21 @@ import {
   removeTaskPhotos,
   uploadTaskPhotos,
 } from "@/lib/tasks";
+import { Icon } from "@/components/icons";
 import { createTask } from "./actions";
 
 const INPUT =
-  "w-full rounded-lg border border-sand-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gold-500 disabled:bg-sand-100";
+  "w-full rounded-lg border border-sand-300 bg-white px-3.5 py-2.5 text-sm text-sand-700 outline-none transition focus:border-olive-600 focus:ring-3 focus:ring-gold-500/35 disabled:bg-sand-100";
+const LABEL = "mb-1.5 block text-sm font-medium text-sand-800";
+
+// Segmented priority control; the radio input is the peer that drives styling.
+const CHIP_BASE =
+  "flex min-h-11 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition peer-focus-visible:ring-3 peer-focus-visible:ring-gold-500/35 peer-disabled:cursor-not-allowed peer-disabled:opacity-60 sm:min-h-10";
+const PRIORITY_CHIP: Record<string, string> = {
+  low: `${CHIP_BASE} border-sand-200 bg-sand-100 text-sand-700 hover:bg-sand-200 peer-checked:border-sand-500 peer-checked:bg-white peer-checked:font-semibold peer-checked:text-olive-800 peer-checked:shadow-card`,
+  medium: `${CHIP_BASE} border-sand-200 bg-sand-100 text-sand-700 hover:bg-sand-200 peer-checked:border-gold-500 peer-checked:bg-gold-50 peer-checked:font-semibold peer-checked:text-gold-800 peer-checked:shadow-card`,
+  high: `${CHIP_BASE} border-sand-200 bg-sand-100 text-sand-700 hover:bg-sand-200 peer-checked:border-error-border peer-checked:bg-error-bg peer-checked:font-semibold peer-checked:text-error peer-checked:shadow-card`,
+};
 
 export function AssignTaskForm({
   lodges,
@@ -89,10 +100,10 @@ export function AssignTaskForm({
   const disabled = busy !== null;
 
   return (
-    <form ref={formRef} onSubmit={onSubmit} className="space-y-4">
+    <form ref={formRef} onSubmit={onSubmit} className="space-y-5">
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <label className="mb-1 block text-sm text-sand-700">Lodge *</label>
+          <label className={LABEL}>Select lodge *</label>
           <select
             name="lodge_id"
             defaultValue={defaultLodge}
@@ -107,48 +118,58 @@ export function AssignTaskForm({
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-sm text-sand-700">Title *</label>
-          <input
-            name="title"
-            required
-            maxLength={200}
-            disabled={disabled}
-            placeholder="e.g. Fix leaking tap in cottage 4"
-            className={INPUT}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-sm text-sand-700">Priority *</label>
-          <select
-            name="priority"
-            defaultValue="medium"
-            disabled={disabled}
-            className={INPUT}
-          >
-            {TASK_PRIORITIES.map((p) => (
-              <option key={p} value={p}>
-                {PRIORITY_LABEL[p]}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="mb-1 block text-sm text-sand-700">Due date</label>
+          <label className={LABEL}>Due date</label>
           <input name="due_date" type="date" disabled={disabled} className={INPUT} />
         </div>
       </div>
 
       <div>
-        <label className="mb-1 block text-sm text-sand-700">Description</label>
+        <label className={LABEL}>Task title *</label>
+        <input
+          name="title"
+          required
+          maxLength={200}
+          disabled={disabled}
+          placeholder="e.g. Fix leaking tap in cottage 4"
+          className={INPUT}
+        />
+      </div>
+
+      <div>
+        <label className={LABEL}>Detailed work instructions</label>
         <textarea
           name="description"
-          rows={3}
+          rows={4}
           maxLength={4000}
           disabled={disabled}
           placeholder="What needs to be done, where, and any details from the trip."
           className={INPUT}
         />
       </div>
+
+      <fieldset>
+        <legend className={LABEL}>Priority level *</legend>
+        <div className="grid grid-cols-3 gap-2">
+          {TASK_PRIORITIES.map((p) => (
+            <label key={p} className="relative">
+              <input
+                type="radio"
+                name="priority"
+                value={p}
+                defaultChecked={p === "medium"}
+                disabled={disabled}
+                className="peer sr-only"
+              />
+              <span className={PRIORITY_CHIP[p]}>
+                {p === "high" && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-error" aria-hidden="true" />
+                )}
+                {PRIORITY_LABEL[p]}
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
 
       <PhotoPicker
         photos={photos}
@@ -159,21 +180,24 @@ export function AssignTaskForm({
       />
 
       {error && (
-        <p className="rounded-lg bg-error-bg px-3 py-2 text-sm text-error">{error}</p>
+        <p className="rounded-lg border border-error-border bg-error-bg px-3 py-2 text-sm text-error">{error}</p>
       )}
       {ok && (
-        <p className="rounded-lg bg-success-bg px-3 py-2 text-sm text-success">
+        <p className="rounded-lg border border-success-border bg-success-bg px-3 py-2 text-sm text-success">
           Task assigned. The lodge managers have been notified.
         </p>
       )}
 
-      <button
-        type="submit"
-        disabled={disabled}
-        className="w-full rounded-lg bg-olive-600 px-4 py-2 text-sm font-medium text-white hover:bg-olive-700 disabled:opacity-60 sm:w-auto"
-      >
-        {busy ?? "Assign task"}
-      </button>
+      <div className="sticky bottom-0 -mx-5 -mb-5 flex justify-end border-t border-sand-200 bg-white px-5 py-4 sm:-mx-6 sm:-mb-6 sm:px-6">
+        <button
+          type="submit"
+          disabled={disabled}
+          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-olive-600 px-5 py-2 text-sm font-semibold text-white shadow-card transition hover:bg-olive-700 active:bg-olive-800 disabled:opacity-60 sm:w-auto"
+        >
+          <Icon name="send" className="h-4 w-4" />
+          {busy ?? "Assign task & notify managers"}
+        </button>
+      </div>
     </form>
   );
 }

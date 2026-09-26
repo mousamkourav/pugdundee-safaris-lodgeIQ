@@ -16,18 +16,18 @@ export function DataTable({
   // The first column (lodge or month) stays pinned while the rest scrolls, so a
   // wide comparison table is still readable on a phone or tablet.
   const stick = (i: number, base: string) =>
-    i === 0 ? `sticky left-0 z-10 ${base}` : "";
+    i === 0 ? `sticky left-0 z-10 shadow-sticky-col ${base}` : "";
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-sand-200 bg-white">
+    <div className="overflow-x-auto rounded-xl border border-sand-200 bg-white shadow-card">
       <table className="w-full text-sm">
         <thead>
-          <tr className="bg-sand-100 text-left text-sand-600">
+          <tr className="h-11 border-b border-sand-200 bg-sand-100 text-left">
             {columns.map((c, i) => (
               <th
                 key={c.key}
                 className={
-                  "whitespace-nowrap px-4 py-2.5 font-medium " +
+                  "whitespace-nowrap px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-sand-600 " +
                   stick(i, "bg-sand-100") +
                   " " +
                   (c.className ?? "")
@@ -52,16 +52,16 @@ export function DataTable({
             rows.map((r, i) => (
               <tr
                 key={i}
-                className="group border-t border-sand-200 hover:bg-sand-50"
+                className="group h-12 border-t border-sand-100 transition-colors first:border-t-0 hover:bg-sand-50"
               >
                 {columns.map((c, ci) => (
                   <td
                     key={c.key}
                     className={
-                      "whitespace-nowrap px-4 py-2.5 " +
+                      "whitespace-nowrap px-4 py-3 text-sand-700 " +
                       stick(
                         ci,
-                        "bg-white font-medium group-hover:bg-sand-50"
+                        "bg-white font-semibold text-olive-800 group-hover:bg-sand-50"
                       ) +
                       " " +
                       (c.className ?? "")

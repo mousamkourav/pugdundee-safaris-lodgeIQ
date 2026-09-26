@@ -1,7 +1,7 @@
 export const inp =
-  "w-full rounded-lg border border-sand-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gold-500";
+  "w-full rounded-lg border border-sand-300 bg-white px-3 py-2 text-sm text-sand-700 outline-none transition focus:border-olive-600 focus:ring-3 focus:ring-gold-500/35";
 export const btn =
-  "w-full rounded-lg bg-olive-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-olive-700";
+  "w-full rounded-lg bg-olive-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-olive-700 active:bg-olive-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-500 focus-visible:ring-offset-2";
 
 export function L({
   label,
@@ -12,7 +12,9 @@ export function L({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs text-sand-600">{label}</span>
+      <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-sand-500">
+        {label}
+      </span>
       {children}
     </label>
   );
@@ -38,7 +40,7 @@ export function DeleteBtn({
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="lodge_id" value={lodge} />
       <input type="hidden" name="month" value={month} />
-      <button className="text-xs text-error hover:underline">Delete</button>
+      <button className="text-xs font-medium text-error hover:underline">Delete</button>
     </form>
   );
 }

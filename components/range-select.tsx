@@ -5,7 +5,7 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { RANGE_PRESETS, ymLabel } from "@/lib/ranges";
 
 const controlCls =
-  "rounded-lg border border-sand-300 bg-white px-3 py-2 text-sm text-sand-800 outline-none transition focus:border-olive-600 focus:ring-2 focus:ring-gold-500 disabled:opacity-60";
+  "min-h-11 rounded-lg border border-sand-300 bg-white px-3.5 py-2 text-sm font-medium text-sand-700 shadow-card outline-none transition focus:border-olive-600 focus:ring-3 focus:ring-gold-500/35 disabled:opacity-60 sm:min-h-10";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -97,7 +97,7 @@ export function RangeSelect({
     >
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-sand-500">Period</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-sand-500">Period</span>
           <select
             value={preset}
             onChange={(e) => onPreset(e.target.value)}
@@ -115,7 +115,7 @@ export function RangeSelect({
         {isCustom && (
           <>
             <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-sand-500">From</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-sand-500">From</span>
               <div className="flex gap-2">
                 <select
                   value={fromM}
@@ -143,7 +143,7 @@ export function RangeSelect({
             </div>
 
             <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-sand-500">To</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-sand-500">To</span>
               <div className="flex gap-2">
                 <select
                   value={toM}

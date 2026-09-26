@@ -12,11 +12,9 @@ export function SectionNav({
   return (
     <nav
       aria-label="Jump to section"
-      className="no-print mb-6 rounded-xl border border-sand-200 bg-white p-3 sm:p-4"
+      className="no-print mb-6 rounded-xl border border-sand-200 bg-white p-3 shadow-card sm:p-4"
     >
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-sand-400">
-        Jump to section
-      </p>
+      <p className="eyebrow mb-2">Jump to section</p>
       <ul className="flex flex-wrap gap-1.5">
         {sections.map((sec) => {
           const { number, name } = splitTitle(sec.title);
@@ -24,10 +22,10 @@ export function SectionNav({
             <li key={sec.key}>
               <a
                 href={`#section-${sec.key}`}
-                className="flex items-center gap-1.5 rounded-full border border-sand-200 px-2.5 py-1 text-xs text-sand-600 transition hover:border-olive-600 hover:bg-olive-50 hover:text-olive-800"
+                className="flex items-center gap-1.5 rounded-full border border-sand-200 bg-sand-50 px-3 py-1 text-xs font-medium text-sand-700 transition hover:border-olive-600 hover:bg-olive-50 hover:text-olive-800"
               >
                 {number && (
-                  <span className="font-semibold text-olive-700">{number}</span>
+                  <span className="font-semibold text-olive-600">{number}</span>
                 )}
                 <span>{name}</span>
               </a>

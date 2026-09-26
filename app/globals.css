@@ -1,66 +1,144 @@
 @import "tailwindcss";
 
+/* Design tokens. Source of truth: design-reference/.../DESIGN.md
+   ("Safari Operational Elegance" / "LodgeIQ Safari Operations").
+   The existing sand / olive / gold / status names are kept and re-pointed at
+   the new palette so every existing class keeps working. Steps the design docs
+   do not name (e.g. olive-300, sand-400) are interpolated between named ones. */
 @theme {
-  --color-olive-50: #FAF8EC;
-  --color-olive-100: #F2EECB;
-  --color-olive-200: #E6DE9E;
-  --color-olive-300: #D3C766;
-  --color-olive-400: #B9A63A;
-  --color-olive-500: #9E8A20;
-  --color-olive-600: #907A17;
-  --color-olive-700: #756213;
-  --color-olive-800: #5A4B10;
-  --color-olive-900: #40360C;
+  /* Olive: 600 primary action, 700 hover/active, 800 headings + KPI numbers */
+  --color-olive-50: #F5F7EC;
+  --color-olive-100: #E8EDD4;
+  --color-olive-200: #D2DCAD;
+  --color-olive-300: #B5C47F;
+  --color-olive-400: #8FA152;
+  --color-olive-500: #718439;
+  --color-olive-600: #5A6B2F;
+  --color-olive-700: #48561F;
+  --color-olive-800: #3A4519;
+  --color-olive-900: #2A3212;
 
-  --color-gold-50: #FDF8E3;
-  --color-gold-100: #FBEFB8;
-  --color-gold-200: #F6E27E;
-  --color-gold-300: #EFD23F;
-  --color-gold-400: #E4C316;
-  --color-gold-500: #DAB705;
-  --color-gold-600: #B89804;
-  --color-gold-700: #8F7503;
-  --color-gold-800: #6B5802;
-  --color-gold-900: #4A3D01;
+  /* Gold: 500 = focus rings, priority dots, highlights */
+  --color-gold-50: #FDF9EA;
+  --color-gold-100: #FAEFC5;
+  --color-gold-200: #F3DF8C;
+  --color-gold-300: #E9CB55;
+  --color-gold-400: #DCB535;
+  --color-gold-500: #C9A227;
+  --color-gold-600: #A8841C;
+  --color-gold-700: #836517;
+  --color-gold-800: #634C14;
+  --color-gold-900: #45350F;
 
-  --color-sand-50: #FAF9F6;
-  --color-sand-100: #F3F1EA;
-  --color-sand-200: #E7E3D8;
-  --color-sand-300: #D3CDBE;
-  --color-sand-400: #A9A290;
-  --color-sand-500: #837D6B;
-  --color-sand-600: #625D4F;
-  --color-sand-700: #48453A;
-  --color-sand-800: #2E2C25;
-  --color-sand-900: #1B1A15;
+  /* Sand: 50 canvas, 100 muted surfaces, 200 borders, 300 input borders,
+     500 muted meta text, 700 body text */
+  --color-sand-50: #FAF8F3;
+  --color-sand-100: #F2EDE1;
+  --color-sand-200: #E6DDCA;
+  --color-sand-300: #D4C6A8;
+  --color-sand-400: #B09F7C;
+  --color-sand-500: #8A7A56;
+  --color-sand-600: #6B5E42;
+  --color-sand-700: #4F4531;
+  --color-sand-800: #3A3325;
+  --color-sand-900: #262118;
 
-  --color-success: #4E7A3A;
-  --color-success-bg: #EAF1E4;
-  --color-warning: #C2751A;
-  --color-warning-bg: #FBEFD9;
-  --color-error: #A83A2C;
-  --color-error-bg: #F7E3DF;
-  --color-info: #2F6E78;
-  --color-info-bg: #E1EEF0;
+  /* Functional states: text / fill / outline */
+  --color-success: #15803D;
+  --color-success-bg: #F0FDF4;
+  --color-success-border: #BBF7D0;
+  --color-warning: #B45309;
+  --color-warning-bg: #FFFBEB;
+  --color-warning-border: #FDE68A;
+  --color-error: #B91C1C;
+  --color-error-bg: #FEF2F2;
+  --color-error-border: #FECACA;
+  --color-info: #1D4ED8;
+  --color-info-bg: #EFF6FF;
+  --color-info-border: #BFDBFE;
+  /* Task "pending" amber from the task-tracker spec */
+  --color-pending: #D97706;
+  --color-pending-bg: #FEF3C7;
+  --color-pending-border: #FDE68A;
+
+  /* Surfaces from the Material-style token set in DESIGN.md */
+  --color-surface: #FBF9F4;
+  --color-surface-container-low: #F5F3EE;
+  --color-surface-container: #F0EEE9;
+  --color-surface-container-high: #EAE8E3;
+  --color-on-surface: #1B1C19;
+  --color-on-surface-variant: #45483C;
+  --color-primary-container: #5A6B2F;
+  --color-on-primary-container: #D7EBA1;
+  --color-secondary-container: #FED255;
+  --color-on-secondary-container: #735A00;
+
+  /* Typography: Epilogue for headings, Work Sans for everything else */
+  --font-sans: var(--font-work-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: var(--font-epilogue), var(--font-work-sans), ui-sans-serif, sans-serif;
+
+  /* Warm umber-tinted elevation (levels 1-3) */
+  --shadow-card: 0 1px 3px rgba(79, 69, 49, 0.05), 0 4px 12px rgba(79, 69, 49, 0.03);
+  --shadow-card-hover: 0 4px 6px -1px rgba(79, 69, 49, 0.08), 0 10px 24px -3px rgba(79, 69, 49, 0.06);
+  --shadow-overlay: 0 12px 32px rgba(58, 69, 25, 0.12), 0 2px 6px rgba(79, 69, 49, 0.06);
+  --shadow-bar: 0 -6px 20px -2px rgba(79, 69, 49, 0.08);
+  --shadow-sticky-col: 4px 0 8px -2px rgba(79, 69, 49, 0.06);
 }
 
 :root {
-  --radius: 0.625rem;
+  --radius: 0.5rem;
 }
 
 body {
   background: var(--color-sand-50);
-  color: var(--color-sand-800);
-  font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
+  color: var(--color-sand-700);
+  font-family: var(--font-sans);
 }
 
 h1, h2, h3 {
-  font-family: var(--font-poppins), var(--font-inter), sans-serif;
-  color: var(--color-sand-900);
+  font-family: var(--font-display);
+  color: var(--color-olive-800);
+  letter-spacing: -0.01em;
+}
+
+h1 {
+  font-weight: 700;
+}
+
+h2, h3 {
+  font-weight: 600;
 }
 
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/* Every form control in the app gets the design-system focus border and olive
+   checkboxes without touching each page's class strings. */
+@layer base {
+  input,
+  select,
+  textarea {
+    accent-color: var(--color-olive-600);
+  }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    border-color: var(--color-olive-600);
+  }
+  ::placeholder {
+    color: var(--color-sand-400);
+  }
+}
+
+/* Small uppercase label used above page titles and in card headers. */
+.eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-sand-500);
 }
 
 /* Array-block rows in the monthly form. The column count varies per block, so
@@ -81,4 +159,12 @@ h1, h2, h3 {
   .array-row {
     grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
   }
+}
+
+/* Horizontal chip rows scroll on phones without showing a scrollbar. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }

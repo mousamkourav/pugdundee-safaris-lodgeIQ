@@ -91,52 +91,69 @@ export default async function MonthlyPage({
   const locked = submitted && !admin;
   const lodgeName = lodges.find((l) => l.id === lodge)?.name ?? "Lodge";
 
+  const statusUi = submitted
+    ? { t: "Submitted", cls: "border-success-border bg-success-bg text-success", dot: "bg-success" }
+    : status === "draft"
+      ? { t: "Draft in progress", cls: "border-pending-border bg-pending-bg text-warning", dot: "bg-pending" }
+      : { t: "Not started", cls: "border-sand-200 bg-sand-100 text-sand-600", dot: "bg-sand-400" };
+  const btnSm =
+    "inline-flex min-h-10 items-center justify-center rounded-lg px-3.5 py-2 text-sm font-medium transition sm:min-h-9";
+
   return (
     <div>
-      <PageHeader title="Monthly report" description={`${lodgeName} · ${label}`} />
+      <PageHeader
+        eyebrow={
+          <>
+            <span>Reporting</span>
+            <span aria-hidden="true">/</span>
+            <span className="text-olive-700">{lodgeName}</span>
+            <span aria-hidden="true">/</span>
+            <span>Monthly operational submission</span>
+          </>
+        }
+        title={`${label} report`}
+        description={`Monthly report for ${lodgeName}. Figures roll up into the dashboards and summaries.`}
+      />
       <LodgeMonthPicker lodges={lodges} lodge={lodge} month={month} />
 
       {/* status banner */}
-      <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-sand-200 bg-white p-4">
-        <span className="text-sm text-sand-600">Status:</span>
-        <span
-          className={
-            "rounded-full px-3 py-1 text-xs capitalize " +
-            (submitted
-              ? "bg-success-bg text-success"
-              : status === "draft"
-              ? "bg-warning-bg text-warning"
-              : "bg-sand-100 text-sand-600")
-          }
-        >
-          {status === "none" ? "Not started" : status}
-        </span>
-        {locked && (
-          <span className="text-sm text-sand-500">
-            Submitted and locked.
+      <div className="mb-6 flex flex-col gap-3 rounded-xl border border-sand-200 bg-white p-4 shadow-card sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="eyebrow">Status</span>
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${statusUi.cls}`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${statusUi.dot}`} aria-hidden="true" />
+            {statusUi.t}
           </span>
-        )}
+          {locked && (
+            <span className="text-sm text-sand-500">
+              Submitted and locked.
+            </span>
+          )}
+        </div>
         {locked && !editPending && (
           <form action={requestEdit}>
             <input type="hidden" name="lodge_id" value={lodge} />
             <input type="hidden" name="month" value={month} />
-            <button className="rounded-lg border border-olive-600 px-3 py-1.5 text-sm text-olive-700 hover:bg-olive-50">
+            <button className={`${btnSm} border border-olive-600 bg-white text-olive-700 hover:bg-olive-50`}>
               Request edit access
             </button>
           </form>
         )}
         {locked && editPending && (
-          <span className="rounded-full bg-warning-bg px-3 py-1 text-xs text-warning">
+          <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-pending-border bg-pending-bg px-2.5 py-0.5 text-xs font-semibold text-warning">
+            <span className="h-1.5 w-1.5 rounded-full bg-pending" aria-hidden="true" />
             Edit request pending approval
           </span>
         )}
         {admin && editPending && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <form action={approveEdit}>
               <input type="hidden" name="lodge_id" value={lodge} />
               <input type="hidden" name="month" value={month} />
               <input type="hidden" name="back" value={`/monthly?lodge=${lodge}&month=${month}`} />
-              <button className="rounded-lg bg-olive-600 px-3 py-1.5 text-sm text-white hover:bg-olive-700">
+              <button className={`${btnSm} bg-olive-600 font-semibold text-white hover:bg-olive-700`}>
                 Approve edit
               </button>
             </form>
@@ -144,20 +161,20 @@ export default async function MonthlyPage({
               <input type="hidden" name="lodge_id" value={lodge} />
               <input type="hidden" name="month" value={month} />
               <input type="hidden" name="back" value={`/monthly?lodge=${lodge}&month=${month}`} />
-              <button className="rounded-lg border border-error/30 px-3 py-1.5 text-sm text-error hover:bg-error-bg">
+              <button className={`${btnSm} border border-error-border bg-white text-error hover:bg-error-bg`}>
                 Decline
               </button>
             </form>
           </div>
         )}
         {admin && row && (
-          <div className="ml-auto flex gap-2">
+          <div className="flex flex-wrap gap-2 sm:ml-auto">
             {submitted && (
               <form action={reopenReport}>
                 <input type="hidden" name="id" value={String(row.id)} />
                 <input type="hidden" name="lodge_id" value={lodge} />
                 <input type="hidden" name="month" value={month} />
-                <button className="rounded-lg border border-sand-200 px-3 py-1.5 text-sm text-sand-700 hover:bg-sand-50">
+                <button className={`${btnSm} border border-sand-300 bg-white text-sand-700 hover:border-sand-500 hover:bg-sand-100`}>
                   Reopen for editing
                 </button>
               </form>
@@ -167,7 +184,7 @@ export default async function MonthlyPage({
                 <input type="hidden" name="id" value={String(row.id)} />
                 <input type="hidden" name="lodge_id" value={lodge} />
                 <input type="hidden" name="month" value={month} />
-                <button className="rounded-lg border border-error/30 px-3 py-1.5 text-sm text-error hover:bg-error-bg">
+                <button className={`${btnSm} border border-error-border bg-white text-error hover:bg-error-bg`}>
                   Delete
                 </button>
               </form>

@@ -62,10 +62,18 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
 };
 
 export const STATUS_BADGE: Record<TaskStatus, string> = {
-  pending: "bg-warning-bg text-warning",
-  submitted: "bg-info-bg text-info",
-  resolved: "bg-success-bg text-success",
-  declined: "bg-error-bg text-error",
+  pending: "border border-pending-border bg-pending-bg text-warning",
+  submitted: "border border-info-border bg-info-bg text-info",
+  resolved: "border border-success-border bg-success-bg text-success",
+  declined: "border border-error-border bg-error-bg text-error",
+};
+
+// Solid accent per status: card left edge and the 6px status dot.
+export const STATUS_ACCENT: Record<TaskStatus, { bar: string; dot: string }> = {
+  pending: { bar: "border-l-pending", dot: "bg-pending" },
+  submitted: { bar: "border-l-info", dot: "bg-info" },
+  resolved: { bar: "border-l-success", dot: "bg-success" },
+  declined: { bar: "border-l-error", dot: "bg-error" },
 };
 
 export const PRIORITY_LABEL: Record<TaskPriority, string> = {
@@ -75,9 +83,9 @@ export const PRIORITY_LABEL: Record<TaskPriority, string> = {
 };
 
 export const PRIORITY_BADGE: Record<TaskPriority, string> = {
-  low: "bg-sand-100 text-sand-700",
-  medium: "bg-gold-100 text-gold-800",
-  high: "bg-error-bg text-error",
+  low: "border border-sand-200 bg-sand-100 text-sand-600",
+  medium: "border border-gold-200 bg-gold-50 text-gold-800",
+  high: "border border-error-border bg-error-bg text-error",
 };
 
 export const isTaskStatus = (v: unknown): v is TaskStatus =>
