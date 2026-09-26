@@ -48,7 +48,7 @@ export function AppShell({
         />
       )}
 
-      {/* sidebar — fixed width, no collapse */}
+      {/* sidebar - fixed width, no collapse */}
       <aside
         className={
           "fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-sand-200 bg-white transition-transform duration-200 " +
@@ -164,6 +164,14 @@ export function AppShell({
                 </span>
               </summary>
               <div className="absolute right-0 mt-1 w-44 rounded-xl border border-sand-200 bg-white p-1 shadow-lg">
+                <Link
+                  href="/account"
+                  onClick={(e) => e.currentTarget.closest("details")?.removeAttribute("open")}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-sand-700 transition hover:bg-sand-50"
+                >
+                  <Icon name="userCog" className="h-[18px] w-[18px] text-sand-400" />
+                  My account
+                </Link>
                 <form action={signOut}>
                   <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-sand-700 transition hover:bg-sand-50">
                     <Icon name="logout" className="h-[18px] w-[18px] text-sand-400" />

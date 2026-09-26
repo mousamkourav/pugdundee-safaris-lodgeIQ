@@ -30,6 +30,21 @@ const paths: Record<string, React.ReactNode> = {
       <path d="M9 13h6M9 17h6" />
     </>
   ),
+  fileSearch: (
+    <>
+      <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+      <path d="M11 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v3" />
+      <circle cx="16.5" cy="16.5" r="3" />
+      <path d="M18.7 18.7 21 21" />
+    </>
+  ),
+  route: (
+    <>
+      <circle cx="6" cy="19" r="2" />
+      <circle cx="18" cy="5" r="2" />
+      <path d="M8 19h8.5a3.5 3.5 0 0 0 0-7h-9a3.5 3.5 0 0 1 0-7H16" />
+    </>
+  ),
   barChart: (
     <>
       <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />

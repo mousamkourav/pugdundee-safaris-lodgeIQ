@@ -16,7 +16,7 @@ export default async function NotificationsPage({
 }: {
   searchParams: Promise<{ created?: string; sent?: string }>;
 }) {
-  const { profile } = await requireUser();
+  const { user, profile } = await requireUser();
   const sp = await searchParams;
   const admin = isAdmin(profile?.role);
 
@@ -24,6 +24,9 @@ export default async function NotificationsPage({
   const { data } = await s
     .from("notifications")
     .select("*")
+    // Broadcast alerts (no target) plus ones addressed to this user only, so
+    // personal notifications (e.g. trip-report tasks) don't leak to everyone.
+    .or(`target_user.is.null,target_user.eq.${user.id}`)
     .order("created_at", { ascending: false })
     .limit(100);
 
