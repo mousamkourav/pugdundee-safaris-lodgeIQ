@@ -3,21 +3,21 @@
 import { useEffect, useState } from "react";
 import type { LodgeLite } from "@/lib/lodges";
 import { Icon } from "@/components/icons";
-import { AssignTaskForm } from "./assign-task-form";
+import { AssignTripForm } from "./assign-trip-form";
 
-// Header button + right-hand slide-over that hosts the assign form. Pure
-// presentation: the form inside is the same AssignTaskForm with the same
-// submit logic. The panel stays mounted while closed so a half-filled form
-// (and its picked photos) survives closing and reopening.
+// Header button + right-hand slide-over hosting the two-step "Assign Trip &
+// Tasks" flow. The panel stays mounted while closed so a half-filled form (and
+// its picked photos) survives closing and reopening.
 export function AssignTaskDrawer({
   lodges,
   defaultLodge,
+  authorityChips,
 }: {
   lodges: LodgeLite[];
   defaultLodge: string;
+  authorityChips?: string[];
 }) {
   const [open, setOpen] = useState(false);
-  const lodgeName = lodges.find((l) => l.id === defaultLodge)?.name;
 
   useEffect(() => {
     if (!open) return;
@@ -39,12 +39,13 @@ export function AssignTaskDrawer({
         className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-olive-600 px-5 py-2 text-sm font-semibold text-white shadow-card transition hover:bg-olive-700 active:bg-olive-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-500 focus-visible:ring-offset-2 sm:w-auto"
       >
         <Icon name="plus" className="h-4 w-4" />
-        Assign new task
+        Assign trip &amp; tasks
       </button>
 
       <div
         className={
-          "fixed inset-0 z-50 transition " + (open ? "visible" : "invisible pointer-events-none")
+          "fixed inset-0 z-50 transition " +
+          (open ? "visible" : "invisible pointer-events-none")
         }
         aria-hidden={!open}
       >
@@ -58,7 +59,7 @@ export function AssignTaskDrawer({
         <div
           role="dialog"
           aria-modal="true"
-          aria-labelledby="assign-task-title"
+          aria-labelledby="assign-trip-title"
           className={
             "absolute inset-y-0 right-0 flex w-full max-w-2xl flex-col bg-white shadow-overlay transition-transform duration-200 " +
             (open ? "translate-x-0" : "translate-x-full")
@@ -69,16 +70,11 @@ export function AssignTaskDrawer({
               <Icon name="clipboard" className="h-5 w-5" />
             </span>
             <div className="min-w-0 flex-1">
-              <h2 id="assign-task-title" className="flex flex-wrap items-center gap-2 text-lg leading-6 sm:text-xl">
-                Assign operational task
-                {lodgeName && (
-                  <span className="rounded-full bg-olive-100 px-2.5 py-0.5 font-sans text-xs font-semibold text-olive-700">
-                    {lodgeName}
-                  </span>
-                )}
+              <h2 id="assign-trip-title" className="text-lg leading-6 sm:text-xl">
+                Assign trip &amp; tasks
               </h2>
               <p className="mt-0.5 text-sm text-sand-500">
-                Lodge managers are notified in-app as soon as it is assigned.
+                Log a lodge visit and queue the tasks assigned during it.
               </p>
             </div>
             <button
@@ -91,7 +87,12 @@ export function AssignTaskDrawer({
             </button>
           </div>
           <div className="flex-1 overflow-y-auto p-5 sm:p-6">
-            <AssignTaskForm lodges={lodges} defaultLodge={defaultLodge} />
+            <AssignTripForm
+              lodges={lodges}
+              defaultLodge={defaultLodge}
+              authorityChips={authorityChips}
+              onDone={() => setOpen(false)}
+            />
           </div>
         </div>
       </div>

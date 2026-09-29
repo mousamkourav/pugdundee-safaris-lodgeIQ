@@ -208,3 +208,57 @@ export function formatDate(iso: string | null | undefined): string {
   const d = iso.slice(0, 10).split("-");
   return d.length === 3 ? `${d[2]}-${d[1]}-${d[0]}` : iso;
 }
+// ============================================================================
+// TRIPS  (append this block to the end of lib/tasks.ts)
+// A trip = one authority's visit to ONE lodge over a date range. Tasks are
+// created under a trip and inherit the trip's lodge.
+// ============================================================================
+
+export type TripStatus = "active" | "closed";
+
+export type Trip = {
+  id: string;
+  lodge_id: string;
+  authority: string | null; // visiting authority / inspection lead (free text)
+  focus: string | null; // inspection focus / pre-visit notes
+  start_date: string | null;
+  end_date: string | null;
+  status: TripStatus;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string | null;
+};
+
+// A single task entry queued in the assign flow (before it becomes a Task row).
+export type NewTaskInput = {
+  id: string; // client-generated uuid (shared with its photos)
+  title: string;
+  description?: string;
+  priority: string;
+  due_date?: string;
+  photos: string[]; // storage paths under {lodge_id}/{id}/ref/
+};
+
+// Human summary of a visit window, e.g. "24-27 Oct 2026" or "24 Oct 2026".
+export function tripDateRange(
+  start: string | null | undefined,
+  end: string | null | undefined
+): string {
+  const s = start ? formatDate(start) : "";
+  const e = end ? formatDate(end) : "";
+  if (s && e && s !== e) return `${s} to ${e}`;
+  return s || e || "-";
+}
+
+// Inclusive day count of a visit window (min 1 when a start exists).
+export function tripDays(
+  start: string | null | undefined,
+  end: string | null | undefined
+): number {
+  if (!start) return 0;
+  const a = Date.parse(start.slice(0, 10));
+  const b = end ? Date.parse(end.slice(0, 10)) : a;
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 0;
+  return Math.max(1, Math.round((b - a) / 86400000) + 1);
+}
+
