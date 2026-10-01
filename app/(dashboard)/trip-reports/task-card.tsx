@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import { Icon } from "@/components/icons";
@@ -14,6 +14,9 @@ import {
 import { CompleteTaskForm } from "./complete-task-form";
 import { ReviewButtons } from "./review-buttons";
 
+// All display data is resolved on the server and passed in, so the popup needs
+// no client fetch. The action components (CompleteTaskForm/ReviewButtons) are
+// reused unchanged inside the popup.
 export type TaskCardData = {
   task: Task;
   refUrls: string[];
@@ -24,6 +27,7 @@ export type TaskCardData = {
   canSubmit: boolean;
   canReview: boolean;
   canDelete: boolean;
+  lodgeName?: string;
 };
 
 function Thumbs({ label, urls, icon }: { label: string; urls: string[]; icon: string }) {
@@ -70,6 +74,7 @@ export function TaskCard(d: TaskCardData) {
 
   return (
     <>
+      {/* compact card */}
       <button
         type="button"
         onClick={() => setOpen(true)}
@@ -106,6 +111,12 @@ export function TaskCard(d: TaskCardData) {
               By {d.assignedByName}
             </span>
             <span>Assigned {formatDate(t.created_at)}</span>
+            {d.lodgeName && (
+              <span className="flex items-center gap-1">
+                <Icon name="mapPin" className="h-3 w-3" />
+                {d.lodgeName}
+              </span>
+            )}
           </span>
         </span>
         <span className="shrink-0 text-right">
@@ -119,6 +130,7 @@ export function TaskCard(d: TaskCardData) {
         </span>
       </button>
 
+      {/* detail popup */}
       {open && (
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-olive-800/35 backdrop-blur-sm" onClick={() => setOpen(false)} />
