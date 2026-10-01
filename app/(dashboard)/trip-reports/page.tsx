@@ -30,6 +30,7 @@ import { tripDateRange } from "@/lib/tasks";
 import { AssignTaskDrawer } from "./assign-task-drawer";
 import { CompleteTaskForm } from "./complete-task-form";
 import { ReviewButtons } from "./review-buttons";
+import { TaskCard } from "./task-card";
 
 const TITLE = "Trip reports";
 
@@ -247,133 +248,23 @@ export default async function TripReportsPage({
           <p className="text-sm text-sand-500">{EMPTY[tab]}</p>
         </div>
       ) : (
-        <div className="grid gap-5 lg:grid-cols-2">
+        <div className="flex flex-col gap-2">
           {tasks.map((t) => {
-            const refs = photoList(t.assigned_photos).map((p) => photoUrl(s, p));
+            const refUrls = photoList(t.assigned_photos).map((p) => photoUrl(s, p));
             const doneUrls = photoList(t.completion_photos).map((p) => photoUrl(s, p));
-            const overdue =
-              t.due_date &&
-              (t.status === "pending" || t.status === "declined") &&
-              t.due_date < new Date().toISOString().slice(0, 10);
-            const review = canReviewTask(t, user.id);
-            const accent = STATUS_ACCENT[t.status] ?? STATUS_ACCENT.pending;
             return (
-              <article
+              <TaskCard
                 key={t.id}
-                className={`flex min-w-0 flex-col gap-5 rounded-xl border border-l-4 border-sand-200 bg-white p-5 shadow-card sm:p-6 ${accent.bar}`}
-              >
-                <div>
-                  <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide ${PRIORITY_BADGE[t.priority] ?? PRIORITY_BADGE.medium}`}
-                    >
-                      {t.priority === "high" && "! "}
-                      {PRIORITY_LABEL[t.priority] ?? t.priority} priority
-                    </span>
-                    <span
-                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_BADGE[t.status]}`}
-                    >
-                      <span className={`h-1.5 w-1.5 rounded-full ${accent.dot}`} aria-hidden="true" />
-                      {STATUS_LABEL[t.status]}
-                    </span>
-                    {t.due_date && (
-                      <span
-                        className={
-                          "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium sm:ml-auto " +
-                          (overdue ? "bg-error-bg text-error" : "bg-sand-100 text-sand-600")
-                        }
-                      >
-                        <Icon name={overdue ? "alert" : "clock"} className="h-3.5 w-3.5" />
-                        {overdue ? "Overdue: " : "Due "}
-                        {formatDate(t.due_date)}
-                      </span>
-                    )}
-                  </div>
-                  <h2 className="break-words text-lg leading-snug sm:text-xl">{t.title}</h2>
-                  {t.description && (
-                    <p className="mt-2 whitespace-pre-line break-words text-[15px] leading-6 text-sand-700">
-                      {t.description}
-                    </p>
-                  )}
-                  <p className="mt-3 flex items-center gap-1.5 text-xs text-sand-500">
-                    <Icon name="user" className="h-3.5 w-3.5" />
-                    Assigned by <span className="font-semibold text-olive-800">{who(t.created_by)}</span>
-                    on {formatDate(t.created_at)}
-                  </p>
-                </div>
-
-                {refs.length > 0 && (
-                  <div className="rounded-xl border border-sand-200 bg-sand-50 p-3">
-                    <Photos label="Reference photos" urls={refs} />
-                  </div>
-                )}
-
-                {t.status === "declined" && t.decline_reason && (
-                  <div className="rounded-xl border border-error-border bg-error-bg p-4">
-                    <p className="mb-1 flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold uppercase tracking-wider text-error">
-                      <span className="flex items-center gap-1.5">
-                        <Icon name="xCircle" className="h-4 w-4" />
-                        Declined{t.resolved_by ? ` by ${who(t.resolved_by)}` : ""}
-                      </span>
-                      {t.resolved_at && (
-                        <span className="font-semibold normal-case tracking-normal">
-                          {formatDate(t.resolved_at)}
-                        </span>
-                      )}
-                    </p>
-                    <p className="whitespace-pre-line break-words text-sm leading-6 text-error">
-                      {t.decline_reason}
-                    </p>
-                  </div>
-                )}
-
-                {t.submitted_at && t.status !== "pending" && (
-                  <div className="space-y-3 rounded-xl border border-info-border bg-info-bg/60 p-4">
-                    <p className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold uppercase tracking-wider text-info">
-                      <span className="flex items-center gap-1.5">
-                        <Icon name="send" className="h-3.5 w-3.5" />
-                        {t.status === "declined" ? "Last submission" : "Manager submission report"}
-                      </span>
-                      <span className="font-semibold normal-case tracking-normal">
-                        {who(t.submitted_by)} - {formatDate(t.submitted_at)}
-                      </span>
-                    </p>
-                    {t.completion_comment && (
-                      <p className="whitespace-pre-line break-words text-sm italic leading-6 text-sand-700">
-                        &quot;{t.completion_comment}&quot;
-                      </p>
-                    )}
-                    <Photos label="Proof photos" urls={doneUrls} icon="checkCircle" />
-                  </div>
-                )}
-
-                {t.status === "resolved" && (
-                  <p className="flex items-center gap-1.5 rounded-lg border border-success-border bg-success-bg px-3 py-2 text-sm font-medium text-success">
-                    <Icon name="checkCircle" className="h-4 w-4" />
-                    Approved by {who(t.resolved_by)} on {formatDate(t.resolved_at)}
-                  </p>
-                )}
-
-                {t.status === "submitted" && !review && (
-                  <p className="flex items-center gap-1.5 text-xs text-sand-500">
-                    <Icon name="clock" className="h-3.5 w-3.5" />
-                    Waiting for {who(t.created_by)} to review.
-                  </p>
-                )}
-
-                {(canSubmitTask(t) || review || canDelete) && (
-                  <div className="mt-auto space-y-3 border-t border-sand-100 pt-4">
-                    {canSubmitTask(t) && (
-                      <CompleteTaskForm
-                        taskId={t.id}
-                        lodgeId={t.lodge_id}
-                        resubmit={t.status === "declined"}
-                      />
-                    )}
-                    <ReviewButtons taskId={t.id} canReview={review} canDelete={canDelete} />
-                  </div>
-                )}
-              </article>
+                task={t}
+                refUrls={refUrls}
+                doneUrls={doneUrls}
+                assignedByName={who(t.created_by)}
+                submittedByName={who(t.submitted_by)}
+                resolvedByName={who(t.resolved_by)}
+                canSubmit={canSubmitTask(t)}
+                canReview={canReviewTask(t, user.id)}
+                canDelete={canDelete}
+              />
             );
           })}
         </div>
