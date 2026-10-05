@@ -5,6 +5,9 @@ import { createClient } from "@/lib/supabase/server";
 import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { StatusBadge } from "@/components/sales/status-badge";
+import { StatusActions } from "@/components/sales/status-actions";
+import { ShareLink } from "@/components/sales/share-link";
+import { todayIST } from "@/lib/sales/plan/load-context";
 import { getMemberNames } from "@/lib/sales/members";
 import { rupees, fmtDate, fmtRange, daysSince } from "@/lib/sales/format";
 import { dayName } from "@/lib/sales/pricing/dates";
@@ -48,7 +51,7 @@ const EVENT_LABEL: Record<string, string> = {
 
 export default async function QueryDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { profile } = await requireUser();
+  const { user, profile } = await requireUser();
   const admin = isSuperAdmin(profile?.role);
   const supabase = await createClient();
 
@@ -59,7 +62,7 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
   const [{ data: vData }, { data: eData }] = await Promise.all([
     supabase
       .from("sales_itinerary_versions")
-      .select("id, version_no, total_amount, currency, created_by, created_at, plan, pricing")
+      .select("id, version_no, total_amount, currency, created_by, created_at, share_token, plan, pricing")
       .eq("query_id", id)
       .order("version_no", { ascending: false }),
     supabase
@@ -68,17 +71,30 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
       .eq("query_id", id)
       .order("created_at", { ascending: false }),
   ]);
-  const versions = (vData ?? []) as { id: string; version_no: number; total_amount: number; currency: string; created_by: string | null; created_at: string; plan: Plan; pricing: PriceResult }[];
+  const versions = (vData ?? []) as { id: string; version_no: number; total_amount: number; currency: string; created_by: string | null; created_at: string; share_token: string; plan: Plan; pricing: PriceResult }[];
   const events = (eData ?? []) as { event_type: string; from_status: string | null; to_status: string | null; remark: string | null; actor: string | null; created_at: string }[];
   const current = versions[0];
 
   const people = [q.assigned_to, q.created_by, ...versions.map((v) => v.created_by), ...events.map((e) => e.actor)].filter((x): x is string => !!x);
-  const names = (await getMemberNames(people)).names;
+  const memberInfo = await getMemberNames(people);
+  const names = memberInfo.names;
   if (profile?.id && profile?.full_name) names[profile.id] = profile.full_name;
 
   const plan = current?.plan;
   const pricing = current?.pricing;
-  const canEdit = q.status === "open" || q.status === "booked";
+  const canAct = admin || q.assigned_to === user.id;
+  const canEdit = canAct && (q.status === "open" || q.status === "booked");
+
+  const { data: rData } = await supabase.from("sales_reasons").select("kind, label").eq("active", true).order("sort");
+  const reasonRows = (rData ?? []) as { kind: string; label: string }[];
+  const reasons = {
+    lost: reasonRows.filter((r) => r.kind === "lost").map((r) => r.label),
+    cancelled: reasonRows.filter((r) => r.kind === "cancelled").map((r) => r.label),
+  };
+  const members = admin
+    ? memberInfo.members.filter((m) => m.status !== "disabled").map((m) => ({ id: m.id, name: m.full_name || "Unnamed" }))
+    : [];
+  const deposit = pricing?.payments?.[0]?.amount ?? null;
 
   return (
     <div className="space-y-6">
@@ -101,8 +117,20 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <StatusActions
+            queryId={q.id}
+            queryNo={q.query_no}
+            status={q.status}
+            isAdmin={admin}
+            canAct={canAct}
+            reasons={reasons}
+            members={members}
+            assignedTo={q.assigned_to}
+            deposit={q.status === "open" ? deposit : null}
+            today={todayIST()}
+          />
           {canEdit && (
-            <Link href={`/sales/new?from=${q.id}`} className={ui.btnPrimary}>
+            <Link href={`/sales/new?from=${q.id}`} className={ui.btnSecondary}>
               <Icon name="clipboard" className="h-[18px] w-[18px]" />
               Edit as new version
             </Link>
@@ -204,6 +232,32 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
         </div>
 
         <div className="space-y-6">
+          {current && (
+            <section className={`${ui.card} p-5`}>
+              <h2 className="text-lg">Client itinerary</h2>
+              <p className="mb-3 mt-1 text-sm text-sand-500">Version {current.version_no}, with photos and payment terms. Costs by lodge are never shown to the guest.</p>
+              <ShareLink path={`/i/${current.share_token}`} />
+            </section>
+          )}
+
+          {q.status === "booked" && (
+            <section className="rounded-xl border border-success-border bg-success-bg p-5 text-sm">
+              <h2 className="text-lg">Booking</h2>
+              <dl className="mt-3 space-y-2">
+                <div className="flex justify-between gap-3"><dt className="text-sand-600">Amount received</dt><dd className="tabular font-semibold text-olive-800">{rupees(q.booked_amount)}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-sand-600">Payment date</dt><dd className="font-medium text-olive-800">{fmtDate(q.booked_at)}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-sand-600">Reference</dt><dd className="font-medium text-olive-800">{q.payment_ref || "-"}</dd></div>
+              </dl>
+            </section>
+          )}
+
+          {(q.status === "lost" || q.status === "cancelled") && q.lost_reason && (
+            <section className={`${ui.muted} p-5 text-sm`}>
+              <h2 className="text-lg">{q.status === "lost" ? "Lost" : "Cancelled"}</h2>
+              <p className="mt-2"><span className="text-sand-500">Reason: </span><span className="font-medium text-olive-800">{q.lost_reason}</span></p>
+            </section>
+          )}
+
           <section className={`${ui.card} p-5`}>
             <h2 className="text-lg">Guest</h2>
             <dl className="mt-3 space-y-2 text-sm">
@@ -238,7 +292,6 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
               ))}
             </ol>
           </section>
-          {admin && <p className="text-xs text-sand-500">Status actions (booked, lost, cancelled, reopen) and the client PDF come in the next step.</p>}
         </div>
       </div>
     </div>
