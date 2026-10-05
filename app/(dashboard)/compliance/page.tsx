@@ -12,6 +12,7 @@ import { addDoc, updateDoc, deleteDoc } from "./actions";
 
 type Doc = {
   id: string;
+  lodge_id: string;
   doc_type: string | null;
   title: string;
   issue_date: string | null;
@@ -86,18 +87,20 @@ export default async function CompliancePage({
   await requireUser();
   const sp = await searchParams;
   const lodges = await getAccessibleLodges();
-  const lodge = resolveLodge(sp.lodge, lodges);
-  if (!lodge) return <NoLodge title="Insurances & licences" />;
+  if (lodges.length === 0) return <NoLodge title="Insurances & licences" />;
+  const lodge = sp.lodge ? resolveLodge(sp.lodge, lodges) : null;
 
   const s = await createClient();
-  const { data: rows } = await s
+  let docQuery = s
     .from("compliance_documents")
-    .select("id, doc_type, title, issue_date, expiry_date, notes")
-    .eq("lodge_id", lodge)
+    .select("id, lodge_id, doc_type, title, issue_date, expiry_date, notes")
     .order("expiry_date", { ascending: true, nullsFirst: false });
+  if (lodge) docQuery = docQuery.eq("lodge_id", lodge);
+  const { data: rows } = await docQuery;
 
   const docs = (rows as Doc[]) ?? [];
-  const lodgeName = lodges.find((l) => l.id === lodge)?.name ?? "Lodge";
+  const lodgeNameById = new Map(lodges.map((l) => [l.id, l.name]));
+  const lodgeName = lodge ? (lodges.find((l) => l.id === lodge)?.name ?? "Lodge") : "All lodges";
 
   const expired = docs.filter((d) => {
     const n = daysUntil(d.expiry_date);
@@ -125,9 +128,11 @@ export default async function CompliancePage({
   const visible = activeCat
     ? sorted.filter((d) => splitNotes(d.notes).cat === activeCat)
     : sorted;
-  const slug = lodgeSlug(lodgeName);
-  const catHref = (c: string | null) =>
-    `/compliance?lodge=${encodeURIComponent(slug)}${c ? `&cat=${encodeURIComponent(c)}` : ""}`;
+  const lodgeParam = lodge ? `lodge=${encodeURIComponent(lodgeSlug(lodgeName))}` : "";
+  const catHref = (c: string | null) => {
+    const parts = [lodgeParam, c ? `cat=${encodeURIComponent(c)}` : ""].filter(Boolean);
+    return "/compliance" + (parts.length ? "?" + parts.join("&") : "");
+  };
 
   const cards = [
     {
@@ -184,6 +189,11 @@ export default async function CompliancePage({
               <span className="font-medium normal-case tracking-normal text-sand-500">
                 {lodgeName} - {docs.length} documents
               </span>
+              {lodge && (
+                <Link href="/compliance" className="font-medium normal-case tracking-normal text-olive-700 hover:underline">
+                  Show all lodges
+                </Link>
+              )}
             </>
           }
           title="Insurances & licences"
@@ -237,7 +247,19 @@ export default async function CompliancePage({
             </div>
           </div>
           <form action={addDoc} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1">
-            <input type="hidden" name="lodge" value={lodge} />
+            {lodge ? (
+              <input type="hidden" name="lodge" value={lodge} />
+            ) : (
+              <label className="block sm:col-span-2 lg:col-span-1">
+                <span className={labelCls}>Lodge *</span>
+                <select name="lodge" required defaultValue="" className={inputCls}>
+                  <option value="" disabled>Select lodge</option>
+                  {lodges.map((l) => (
+                    <option key={l.id} value={l.id}>{l.name}</option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="block">
               <span className={labelCls}>Category</span>
               <select name="category" className={inputCls} defaultValue="License">
@@ -327,6 +349,11 @@ export default async function CompliancePage({
                                 <span className="rounded bg-sand-100 px-1.5 py-px font-medium text-sand-600">
                                   {cat}
                                 </span>
+                                {!lodge && (
+                                  <span className="rounded bg-olive-50 px-1.5 py-px font-medium text-olive-700">
+                                    {lodgeNameById.get(d.lodge_id) ?? "Lodge"}
+                                  </span>
+                                )}
                                 {text && <span className="break-words">{text}</span>}
                               </p>
                               <p className="mt-1 text-xs text-sand-500 md:hidden">
@@ -360,7 +387,7 @@ export default async function CompliancePage({
                           className="border-t border-sand-100 bg-sand-50 px-4 py-4 sm:px-5"
                         >
                           <input type="hidden" name="id" value={d.id} />
-                          <input type="hidden" name="lodge" value={lodge} />
+                          <input type="hidden" name="lodge" value={d.lodge_id} />
                           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
                             <label className="block">
                               <span className={labelCls}>Category</span>
