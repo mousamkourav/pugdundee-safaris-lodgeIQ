@@ -183,6 +183,7 @@ export async function loadPricingData(): Promise<{ data: PricingData; error: str
             days_before_arrival: numOrNull(p.days_before_arrival),
           }))
         : null,
+      per_person_basis: s.per_person_basis === "adults" ? "adults" : "guests",
     } satisfies PricingSettings,
   };
 

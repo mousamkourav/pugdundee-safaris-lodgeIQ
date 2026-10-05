@@ -353,7 +353,7 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     totals: { room, safari, transfer, addon, discount, markup, adjustment, grand },
     byProperty,
     guests,
-    perPerson: guests ? round(grand / guests) : grand,
+    perPerson: perPersonOf(grand, guests, trip.adults, data.settings.per_person_basis),
     arrival,
     departure,
     currency,
@@ -364,6 +364,11 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     errors,
     warnings,
   };
+}
+
+function perPersonOf(grand: number, guests: number, adults: number, basis?: string | null) {
+  const n = basis === "adults" ? adults : guests;
+  return n > 0 ? round(grand / n) : grand;
 }
 
 // Instalments due on or before the booking date are merged into the deposit.

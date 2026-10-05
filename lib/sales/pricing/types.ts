@@ -145,6 +145,7 @@ export interface PricingSettings {
   markup_pct?: number | null;
   fx?: { USD?: number | null } | null;
   payment_slabs?: PaymentSlab[] | null;
+  per_person_basis?: "guests" | "adults" | null; // default "guests"
 }
 
 export interface PricingData {

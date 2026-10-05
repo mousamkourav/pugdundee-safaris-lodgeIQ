@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ui } from "@/components/ui";
 import { StatusBadge } from "./status-badge";
 import { rupees, fmtRange, fmtDate, daysSince } from "@/lib/sales/format";
@@ -45,7 +46,9 @@ export function QueriesTable({
               const age = daysSince(r.created_at);
               return (
                 <tr key={r.id} className="border-t border-sand-200 align-middle hover:bg-sand-50">
-                  <td className="whitespace-nowrap px-4 py-3 font-semibold text-olive-600">{r.query_no}</td>
+                  <td className="whitespace-nowrap px-4 py-3 font-semibold text-olive-600">
+                    <Link href={`/sales/queries/${r.id}`} className="hover:underline">{r.query_no}</Link>
+                  </td>
                   <td className="px-4 py-3">
                     <p className="font-medium text-olive-800">{r.guest_name}</p>
                     <p className="text-xs capitalize text-sand-500">{r.nationality}</p>

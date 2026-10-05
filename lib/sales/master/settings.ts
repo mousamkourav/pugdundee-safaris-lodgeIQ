@@ -19,6 +19,18 @@ export const SETTINGS_FIELDS: (FieldDef & { path: string[] })[] = [
     ],
   },
   { name: "fx_usd", path: ["fx", "USD"], label: "Rupees per 1 USD", type: "number", help: "Used to show USD prices. Update when the rate moves." },
+  {
+    name: "per_person_basis",
+    path: ["per_person_basis"],
+    label: "Per-person price divides by",
+    type: "select",
+    required: true,
+    initial: "guests",
+    options: [
+      { value: "guests", label: "All guests (adults and children)" },
+      { value: "adults", label: "Adults only" },
+    ],
+  },
   { name: "markup_pct", path: ["markup_pct"], label: "Default markup %", type: "number", empty: 0 },
   { name: "quote_validity_days", path: ["quote_validity_days"], label: "Quote valid for (days)", type: "int", empty: 15 },
   {
