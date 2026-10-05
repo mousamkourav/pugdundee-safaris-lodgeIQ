@@ -87,6 +87,7 @@ export default async function UsersPage({
               <option value="lodge_manager">Lodge manager</option>
               <option value="operations_manager">Operations manager</option>
               <option value="lodge_accounts">Lodge accounts</option>
+              <option value="sales_member">Sales member</option>
               {isSuperAdmin(profile?.role) && (
                 <>
                   <option value="senior_manager">Senior manager</option>

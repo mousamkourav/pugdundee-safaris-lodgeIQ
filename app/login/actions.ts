@@ -37,7 +37,7 @@ export async function login(formData: FormData) {
     }
   }
 
-  redirect("/dashboard");
+  redirect("/hub");
 }
 
 export async function signOut() {

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { NAV } from "./nav";
+import { NAV, MODULES, moduleForPath, canSwitchModules, type Module } from "./nav";
 import { Icon } from "./icons";
 import type { Role } from "@/lib/auth";
 import { signOut } from "@/app/login/actions";
@@ -19,6 +19,35 @@ function initials(name: string) {
 }
 
 const roleLabel = (role: string) => role.replace(/_/g, " ");
+
+// Segmented control to jump between modules (super roles only).
+function ModuleSwitcher({ current, className = "" }: { current: Module; className?: string }) {
+  return (
+    <div
+      className={
+        "inline-flex rounded-lg border border-sand-200 bg-sand-100 p-1 text-sm " + className
+      }
+      role="navigation"
+      aria-label="Switch module"
+    >
+      {MODULES.map((m) => (
+        <Link
+          key={m.key}
+          href={m.href}
+          aria-current={m.key === current ? "page" : undefined}
+          className={
+            "flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-center font-medium transition " +
+            (m.key === current
+              ? "bg-white text-olive-800 shadow-card"
+              : "text-sand-500 hover:text-olive-800")
+          }
+        >
+          {m.label}
+        </Link>
+      ))}
+    </div>
+  );
+}
 
 export function AppShell({
   role,
@@ -35,13 +64,18 @@ export function AppShell({
   // Close the drawer on navigation (covers back/forward too).
   useEffect(() => setMobileOpen(false), [pathname]);
 
-  const groups = NAV.map((g) => ({
-    ...g,
-    items: g.items.filter((i) => !i.roles || i.roles.includes(role)),
-  })).filter((g) => g.items.length > 0);
+  const currentModule = moduleForPath(pathname, role);
+  const switcher = canSwitchModules(role);
 
-  const isActive = (href: string) =>
-    pathname === href || pathname.startsWith(href + "/");
+  const groups = NAV.filter((g) => g.module === currentModule)
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((i) => !i.roles || i.roles.includes(role)),
+    }))
+    .filter((g) => g.items.length > 0);
+
+  const isActive = (href: string, exact = false) =>
+    exact ? pathname === href : pathname === href || pathname.startsWith(href + "/");
 
   return (
     <div className="min-h-screen bg-sand-50">
@@ -84,6 +118,13 @@ export function AppShell({
           </button>
         </div>
 
+        {/* module switcher inside the drawer on small screens */}
+        {switcher && (
+          <div className="px-3 pb-2 md:hidden">
+            <ModuleSwitcher current={currentModule} className="flex w-full" />
+          </div>
+        )}
+
         <nav className="flex-1 space-y-5 overflow-y-auto px-3 pb-4 pt-2">
           {groups.map((group) => (
             <div key={group.title}>
@@ -92,7 +133,7 @@ export function AppShell({
               </p>
               <ul className="space-y-0.5">
                 {group.items.map((item) => {
-                  const active = isActive(item.href);
+                  const active = isActive(item.href, item.exact);
                   return (
                     <li key={item.href}>
                       <Link
@@ -153,7 +194,7 @@ export function AppShell({
       {/* main column */}
       <div className="flex min-h-screen flex-col lg:pl-[280px] print:pl-0">
         {/* top bar */}
-        <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b border-sand-200 bg-sand-50/90 px-4 backdrop-blur sm:px-6 lg:px-8">
+        <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b border-sand-200 bg-sand-50/90 px-4 backdrop-blur sm:px-6 lg:px-8 print:hidden">
           <button
             onClick={() => setMobileOpen(true)}
             className="-ml-1 rounded-lg p-2 text-sand-600 hover:bg-sand-100 lg:hidden"
@@ -164,6 +205,8 @@ export function AppShell({
           <span className="font-display text-lg font-bold text-olive-800 lg:hidden">
             LodgeIQ
           </span>
+
+          {switcher && <ModuleSwitcher current={currentModule} className="hidden md:inline-flex" />}
 
           <div className="ml-auto flex items-center gap-1 sm:gap-2">
             <Link

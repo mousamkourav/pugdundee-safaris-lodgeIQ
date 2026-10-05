@@ -43,7 +43,13 @@ export async function inviteUser(formData: FormData) {
   const uid = created.user.id;
 
   // Ensure the profile row exists with the chosen role + name.
-  await admin.from("profiles").upsert({ id: uid, full_name, role });
+  const { error: profileError } = await admin.from("profiles").upsert({ id: uid, full_name, role });
+  if (profileError) {
+    redirect(
+      "/admin/users?error=" +
+        encodeURIComponent("User created but profile failed: " + profileError.message)
+    );
+  }
 
   // Assign lodges (only meaningful for resort managers; admins see all lodges).
   if (["lodge_manager","operations_manager","lodge_accounts"].includes(role) && lodgeIds.length > 0) {
