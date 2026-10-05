@@ -8,6 +8,7 @@ import { loadBuilderContext, todayIST } from "@/lib/sales/plan/load-context";
 import { emptyPlan } from "@/lib/sales/plan/planner";
 import { sanitizePlan } from "@/lib/sales/plan/sanitize";
 import type { Plan } from "@/lib/sales/plan/types";
+import { aiEnabled } from "./ai-actions";
 
 export default async function NewItineraryPage({
   searchParams,
@@ -37,6 +38,7 @@ export default async function NewItineraryPage({
     queryNo = (q as { query_no: string }).query_no;
   }
 
+  const aiAvailable = await aiEnabled();
   const ready = ctx.pricing.parks.length > 0 && ctx.properties.length > 0 && ctx.pricing.roomRates.length > 0;
 
   return (
@@ -60,7 +62,7 @@ export default async function NewItineraryPage({
           )}
         </div>
       ) : (
-        <Builder ctx={ctx} initial={initial} queryId={fromId} today={today} />
+        <Builder ctx={ctx} initial={initial} queryId={fromId} today={today} aiAvailable={aiAvailable} />
       )}
     </div>
   );

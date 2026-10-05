@@ -38,7 +38,7 @@ export const SETTINGS_FIELDS: (FieldDef & { path: string[] })[] = [
     path: ["ai_parsing_enabled"],
     label: "AI reading of trip descriptions",
     type: "bool",
-    help: "Off = only the built-in text reader and the form are used. The API key lives in Vercel, never here.",
+    help: "Used only when the built-in reader cannot find the parks or date. Also needs GEMINI_API_KEY set in Vercel (never stored here). Emails and phone numbers are removed before sending.",
   },
   {
     name: "payment_slabs",

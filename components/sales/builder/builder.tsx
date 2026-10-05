@@ -20,6 +20,8 @@ import {
 } from "@/lib/sales/plan/planner";
 import type { BuilderContext, DaySafari, Plan, PlanDay, PlanStop } from "@/lib/sales/plan/types";
 import { saveItinerary } from "@/app/(dashboard)/sales/new/actions";
+import { aiReadTrip } from "@/app/(dashboard)/sales/new/ai-actions";
+import { applyParsed, extractTrip, mergeParsed, needsHelp } from "@/lib/sales/plan/parse-text";
 
 const STEPS = ["Guest", "Route", "Day plan", "Price & save"];
 const SOURCES = ["Website", "Email", "Phone", "Travel agent", "Repeat guest", "Referral", "Other"];
@@ -78,6 +80,61 @@ function Field({ label, required, children, hint, wide }: { label: string; requi
 }
 
 // ---------------------------------------------------------------------------
+function TripText({
+  onRead,
+  busy,
+  outcome,
+}: {
+  onRead: (text: string) => void;
+  busy: boolean;
+  outcome: { understood: string[]; missing: string[]; source: string } | null;
+}) {
+  const [text, setText] = useState("");
+  return (
+    <section className="space-y-3 rounded-xl border border-olive-100 bg-olive-50/60 p-4 sm:p-5">
+      <div className="flex items-center gap-2">
+        <Icon name="send" className="h-[18px] w-[18px] text-olive-600" />
+        <h2 className="text-base">Describe the trip</h2>
+        <span className="text-xs text-sand-500">optional</span>
+      </div>
+      <textarea
+        className={ui.input}
+        rows={2}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="e.g. 2 adults, arriving Nagpur 16 Jan 2027, Tadoba 4 nights then Pench 3 nights, Nagpur out, full board"
+      />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-sand-500">Fills guests, dates, parks and transfers. You can check and change everything after.</p>
+        <button type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} disabled={busy || text.trim().length < 5} onClick={() => onRead(text)}>
+          {busy ? "Reading..." : "Fill from text"}
+        </button>
+      </div>
+      {outcome && (
+        <div className="space-y-2 text-sm">
+          {outcome.understood.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {outcome.understood.map((u, i) => (
+                <span key={i} className="inline-flex items-center gap-1 rounded-full border border-success-border bg-success-bg px-2.5 py-0.5 text-xs font-medium text-success">
+                  <Icon name="check" className="h-3.5 w-3.5" />
+                  {u}
+                </span>
+              ))}
+            </div>
+          )}
+          {outcome.missing.length > 0 && (
+            <ul className={`${ui.alertWarning} list-disc space-y-0.5 pl-6 text-xs`}>
+              {outcome.missing.map((m, i) => <li key={i}>{m.match(/^[A-Z"]/) ? m : `Not found: ${m}`}</li>)}
+            </ul>
+          )}
+          <p className="text-xs text-sand-500">Read by {outcome.source}.</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 function Summary({ plan, ctx, result, problems }: { plan: Plan; ctx: BuilderContext; result: PriceResult | null; problems: string[] }) {
   const nights = plan.stops.reduce((t, s) => t + s.nights, 0);
   const safaris = plan.days.reduce((t, d) => t + d.safaris.length, 0);
@@ -109,7 +166,19 @@ function Summary({ plan, ctx, result, problems }: { plan: Plan; ctx: BuilderCont
 }
 
 // ---------------------------------------------------------------------------
-export function Builder({ ctx, initial, queryId, today }: { ctx: BuilderContext; initial: Plan; queryId: string | null; today: string }) {
+export function Builder({
+  ctx,
+  initial,
+  queryId,
+  today,
+  aiAvailable = false,
+}: {
+  ctx: BuilderContext;
+  initial: Plan;
+  queryId: string | null;
+  today: string;
+  aiAvailable?: boolean;
+}) {
   const router = useRouter();
   const [plan, setPlan] = useState<Plan>(initial);
   const [step, setStep] = useState(initial.days.length ? 2 : 0);
@@ -119,6 +188,8 @@ export function Builder({ ctx, initial, queryId, today }: { ctx: BuilderContext;
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveProblems, setSaveProblems] = useState<string[]>([]);
   const [saving, startSave] = useTransition();
+  const [reading, startReading] = useTransition();
+  const [readOutcome, setReadOutcome] = useState<{ understood: string[]; missing: string[]; source: string } | null>(null);
 
   const problems = useMemo(() => routeProblems(plan, ctx), [plan, ctx]);
   const stale = plan.days.length > 0 && routeKey(plan) !== builtKey;
@@ -192,6 +263,28 @@ export function Builder({ ctx, initial, queryId, today }: { ctx: BuilderContext;
     setDay(i, day.text === autoText ? described : { ...next, title: day.title });
   }
 
+  // Built-in reader first (instant, free). Only if it cannot find the parks
+  // or the date, and AI is switched on, ask the server's AI fallback.
+  function readText(text: string) {
+    startReading(async () => {
+      let parsed = extractTrip(text, ctx, today);
+      let source = "the built-in reader";
+      const extraNotes: string[] = [];
+      if (needsHelp(parsed) && aiAvailable) {
+        const ai = await aiReadTrip(text);
+        if (ai.parsed) {
+          parsed = mergeParsed(parsed, ai.parsed);
+          source = "the built-in reader with AI help";
+        } else if (ai.error) extraNotes.push(ai.error);
+      }
+      const r = applyParsed(plan, parsed, ctx);
+      setPlan(r.plan);
+      setChildrenText(r.plan.guest.children.join(", "));
+      setReadOutcome({ understood: r.understood, missing: [...r.missing, ...extraNotes], source });
+      if (r.plan.stops.length && step === 0 && plan.guest.name.trim()) go(1);
+    });
+  }
+
   function save() {
     setSaveError(null);
     setSaveProblems([]);
@@ -216,6 +309,8 @@ export function Builder({ ctx, initial, queryId, today }: { ctx: BuilderContext;
 
       <div className={step >= 2 ? "grid gap-6 lg:grid-cols-[1fr_320px]" : ""}>
         <div className="min-w-0 space-y-6">
+          {step <= 1 && <TripText onRead={readText} busy={reading} outcome={readOutcome} />}
+
           {/* ---------------- STEP 1: GUEST ---------------- */}
           {step === 0 && (
             <section className={`${ui.card} space-y-5 p-5 sm:p-6`}>
