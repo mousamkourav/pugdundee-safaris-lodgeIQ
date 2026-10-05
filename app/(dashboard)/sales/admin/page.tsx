@@ -29,10 +29,16 @@ export default async function MasterDataHub() {
           <h1 className="mt-1 text-2xl">Master data</h1>
           <p className="mt-1 text-sm text-sand-500">Everything the itinerary builder and pricing use. Changes apply to new quotes only; saved quotes keep their prices.</p>
         </div>
-        <Link href="/sales/admin/settings" className={ui.btnSecondary}>
-          <Icon name="wrench" className="h-[18px] w-[18px]" />
-          Settings
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/sales/admin/brand-photos" className={ui.btnSecondary}>
+            <Icon name="image" className="h-[18px] w-[18px]" />
+            Brand photos
+          </Link>
+          <Link href="/sales/admin/settings" className={ui.btnSecondary}>
+            <Icon name="wrench" className="h-[18px] w-[18px]" />
+            Settings
+          </Link>
+        </div>
       </div>
 
       {nextEntity && (

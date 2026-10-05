@@ -4,6 +4,9 @@ import { createClient } from "@/lib/supabase/server";
 import { getEntity } from "@/lib/sales/master/entities";
 import { withOptions } from "@/lib/sales/master/load";
 import { MasterForm } from "@/components/sales/master-form";
+import { MediaManager } from "@/components/sales/media-manager";
+import { getMedia } from "@/lib/sales/media";
+import { ui } from "@/components/ui";
 import { saveRecord, deleteRecord } from "../../actions";
 
 export default async function EntityEditPage({
@@ -35,6 +38,7 @@ export default async function EntityEditPage({
   }
 
   const fields = await withOptions(entity.fields);
+  const media = entity.media && !isNew ? await getMedia(entity.media.owner, id) : [];
   const listHref = `/sales/admin/${entity.key}`;
   const heading = isNew ? `Add ${entity.singular}` : String(values.name ?? values.title ?? values.label ?? `Edit ${entity.singular}`);
 
@@ -58,6 +62,12 @@ export default async function EntityEditPage({
         afterSaveHref={listHref}
         submitLabel={isNew ? `Add ${entity.singular}` : "Save changes"}
       />
+      {entity.media &&
+        (isNew ? (
+          <p className={ui.muted + " p-4 text-sm text-sand-500"}>Save first, then you can add photos.</p>
+        ) : (
+          <MediaManager owner={entity.media.owner} ownerId={id} items={media} max={entity.media.max} />
+        ))}
     </div>
   );
 }

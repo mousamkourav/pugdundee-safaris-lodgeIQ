@@ -42,8 +42,9 @@ export const ENTITIES: EntityDef[] = [
     title: "Parks",
     singular: "park",
     group: "Places",
-    icon: "route",
+    icon: "leaf",
     description: "National parks, with descriptions used in itineraries.",
+    media: { owner: "park", max: 12 },
     fields: [
       { name: "name", label: "Park name", type: "text", required: true, placeholder: "e.g. Tadoba-Andhari Tiger Reserve" },
       { name: "state", label: "State", type: "text", placeholder: "e.g. Maharashtra" },
@@ -63,7 +64,7 @@ export const ENTITIES: EntityDef[] = [
     title: "Park closures",
     singular: "closure",
     group: "Places",
-    icon: "x",
+    icon: "xCircle",
     description: "Weekly closures (e.g. Tadoba core on Tuesday) and dated closures (Holi, Diwali, monsoon).",
     fields: [
       { name: "park_id", label: "Park", type: "ref", ref: PARK, required: true },
@@ -109,6 +110,7 @@ export const ENTITIES: EntityDef[] = [
     icon: "building",
     description: "Your lodges, partner lodges and city hotels.",
     afterSave: "property-location",
+    media: { owner: "property", max: 24 },
     fields: [
       { name: "name", label: "Name", type: "text", required: true },
       { name: "kind", label: "Type", type: "select", required: true, options: opts([["own_lodge", "Own lodge"], ["partner_lodge", "Partner lodge"], ["city_hotel", "City hotel"]]), initial: "partner_lodge" },
@@ -140,8 +142,9 @@ export const ENTITIES: EntityDef[] = [
     title: "Room categories",
     singular: "room category",
     group: "Stay",
-    icon: "clipboard",
+    icon: "bed",
     description: "Room types at each lodge and how many people they take.",
+    media: { owner: "room_category", max: 8 },
     fields: [
       { name: "property_id", label: "Lodge / hotel", type: "ref", ref: PROPERTY, required: true },
       { name: "name", label: "Room name", type: "text", required: true, placeholder: "e.g. AC Cottage" },
@@ -166,7 +169,7 @@ export const ENTITIES: EntityDef[] = [
     title: "Seasons",
     singular: "season",
     group: "Stay",
-    icon: "fileText",
+    icon: "calendar",
     description: "Named date ranges (peak, festive, low). Optional labels for rates.",
     fields: [
       { name: "property_id", label: "Lodge / hotel", type: "ref", ref: PROPERTY, help: "Leave empty to apply to all." },
@@ -184,7 +187,7 @@ export const ENTITIES: EntityDef[] = [
     title: "Room rates",
     singular: "room rate",
     group: "Stay",
-    icon: "barChart",
+    icon: "receipt",
     description: "Per room per night, by date range and meal plan.",
     fields: [
       { name: "room_category_id", label: "Room", type: "ref", ref: ROOM, required: true },
@@ -265,7 +268,7 @@ export const ENTITIES: EntityDef[] = [
     title: "Transfer rates",
     singular: "transfer rate",
     group: "Safaris & travel",
-    icon: "route",
+    icon: "car",
     description: "One-way vehicle rates between airports, stations, cities and lodges.",
     fields: [
       { name: "from_location_id", label: "From", type: "ref", ref: LOCATION, required: true },
@@ -293,8 +296,9 @@ export const ENTITIES: EntityDef[] = [
     title: "Add-ons & activities",
     singular: "add-on",
     group: "Safaris & travel",
-    icon: "clipboard",
+    icon: "plus",
     description: "Extras such as village visits, city tours or spa treatments.",
+    media: { owner: "addon", max: 4 },
     fields: [
       { name: "name", label: "Name", type: "text", required: true },
       { name: "description", label: "Description", type: "textarea", wide: true },
@@ -316,7 +320,7 @@ export const ENTITIES: EntityDef[] = [
     title: "Offers",
     singular: "offer",
     group: "Commercial",
-    icon: "barChart",
+    icon: "receipt",
     description: "Early bird rates, percentage discounts and stay-X-pay-Y deals.",
     fields: [
       { name: "name", label: "Offer name", type: "text", required: true, placeholder: "e.g. Early Bird 2026-27" },
@@ -395,7 +399,7 @@ export const ENTITIES: EntityDef[] = [
     title: "Lost & cancel reasons",
     singular: "reason",
     group: "Content",
-    icon: "x",
+    icon: "list",
     description: "Dropdown choices when a query is marked lost or cancelled.",
     fields: [
       { name: "kind", label: "Used when", type: "select", required: true, initial: "lost", options: opts([["lost", "Marking lost"], ["cancelled", "Marking cancelled"]]) },

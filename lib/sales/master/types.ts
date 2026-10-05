@@ -51,6 +51,12 @@ export interface FieldDef {
   asNumber?: boolean;
 }
 
+// Supabase Storage bucket created in sales_module_v1.sql.
+export const MEDIA_BUCKET = "sales-media";
+
+// Must match the CHECK constraint on public.sales_media.owner_type.
+export type MediaOwner = "property" | "room_category" | "park" | "addon" | "brand";
+
 export interface EntityDef {
   key: string; // URL segment under /sales/admin/
   table: string;
@@ -65,7 +71,17 @@ export interface EntityDef {
   order: { column: string; ascending: boolean }[];
   listFilter?: { column: string; op: "eq" | "neq"; value: string };
   afterSave?: "property-location";
+  media?: { owner: MediaOwner; max: number }; // photo gallery on the edit page
   deleteWarning?: string;
 }
 
 export type ActionResult = { ok?: boolean; error?: string; id?: string };
+
+export interface MediaItem {
+  id: string;
+  url: string;
+  storage_path: string;
+  caption: string | null;
+  is_cover: boolean;
+  sort: number;
+}

@@ -74,9 +74,9 @@ export const NAV: NavGroup[] = [
     module: "sales",
     items: [
       { label: "Dashboard", href: "/sales", icon: "grid", exact: true },
-      { label: "Create itinerary", href: "/sales/new", icon: "clipboard" },
-      { label: "Queries", href: "/sales/queries", icon: "fileText" },
-      { label: "Lost & cancelled", href: "/sales/closed", icon: "x" },
+      { label: "Create itinerary", href: "/sales/new", icon: "plus" },
+      { label: "Queries", href: "/sales/queries", icon: "list" },
+      { label: "Lost & cancelled", href: "/sales/closed", icon: "xCircle" },
     ],
   },
   {
@@ -84,7 +84,7 @@ export const NAV: NavGroup[] = [
     module: "sales",
     items: [
       { label: "Master data", href: "/sales/admin", icon: "building", roles: SUPER },
-      { label: "Members", href: "/admin/users", icon: "userCog", roles: SUPER },
+      { label: "Members", href: "/admin/users", icon: "users", roles: SUPER },
     ],
   },
 ];
