@@ -4,10 +4,14 @@
 export type RangePreset = {
   key: string;
   label: string;
-  months: number; // 0 = custom
+  months: number; // window length; 0 = custom
+  endOffset?: number; // months before the current month the window ends (default 0)
 };
 
 export const RANGE_PRESETS: RangePreset[] = [
+  // The previous calendar month only (monthly reports are filed after the
+  // month ends, so this is the most recent complete month).
+  { key: "last", label: "Last month", months: 1, endOffset: 1 },
   { key: "current", label: "This month", months: 1 },
   { key: "3m", label: "Last 3 months", months: 3 },
   { key: "6m", label: "Last 6 months", months: 6 },
@@ -15,7 +19,7 @@ export const RANGE_PRESETS: RangePreset[] = [
   { key: "custom", label: "Custom range", months: 0 },
 ];
 
-export const DEFAULT_RANGE = "3m";
+export const DEFAULT_RANGE = "last";
 
 // "YYYY-MM" + delta months -> "YYYY-MM"
 export function ymAdd(ym: string, delta: number): string {
@@ -27,8 +31,10 @@ export function ymAdd(ym: string, delta: number): string {
 export type ResolvedRange = { start: string; end: string; key: string };
 
 // Resolve a preset (or custom from/to) into an inclusive [start, end] of YYYY-MM.
-// Anchored to the current month (todayYM) so "last N months" means the calendar
-// window ending this month.
+// Anchored to the current month (todayYM): "last N months" is the calendar
+// window ending this month; "last" (Last month) is just the previous calendar
+// month, e.g. todayYM 2026-10 -> 2026-09..2026-09. Unknown keys fall back to
+// DEFAULT_RANGE.
 export function resolveRange(
   preset: string | undefined,
   todayYM: string,
@@ -41,10 +47,11 @@ export function resolveRange(
     const [start, end] = a <= b ? [a, b] : [b, a];
     return { start, end, key: "custom" };
   }
-  const found = RANGE_PRESETS.find((p) => p.key === preset && p.months > 0);
-  const months = found ? found.months : 3;
-  const key = found ? found.key : DEFAULT_RANGE;
-  return { start: ymAdd(todayYM, -(months - 1)), end: todayYM, key };
+  const found =
+    RANGE_PRESETS.find((p) => p.key === preset && p.months > 0) ??
+    RANGE_PRESETS.find((p) => p.key === DEFAULT_RANGE)!;
+  const end = ymAdd(todayYM, -(found.endOffset ?? 0));
+  return { start: ymAdd(end, -(found.months - 1)), end, key: found.key };
 }
 
 export function inRange(ym: string, r: { start: string; end: string }): boolean {

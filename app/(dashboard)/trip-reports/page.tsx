@@ -203,7 +203,7 @@ export default async function TripReportsPage({
                   canSubmit={canSubmitTask(t)}
                   canReview={canReviewTask(t, user.id)}
                   canDelete={canDelete}
-                  canEdit={canEditTask(t, user.id, role)}
+                  canEdit={canEditTask(t, user.id)}
                   lodgeName={lodgeNameById.get(t.lodge_id)}
                 />
               );

@@ -42,7 +42,10 @@ revoke all on table public.trips from anon;
 
 
 -- -----------------------------------------------------------------------------
--- (3) tasks_guard_update: the task's creator may now edit detail fields
+-- (3) SUPERSEDED by supabase/creator_only_edits.sql (details become
+-- creator-only, no admin override). If you re-run this file, run that one
+-- again afterwards.
+-- tasks_guard_update: the task's creator may now edit detail fields
 -- (title, description, priority, due_date, department, assigned_photos) as
 -- well as super_admin / senior_manager. Everything else is unchanged from
 -- supabase/tasks_hardening.sql.

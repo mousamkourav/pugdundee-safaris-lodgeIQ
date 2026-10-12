@@ -3,6 +3,8 @@ import { getAccessibleLodges, resolveLodge, lodgeSlug } from "@/lib/lodges";
 import { Icon } from "@/components/icons";
 import { currentMonth, monthRange } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { canEditReportData, reportOwner } from "@/lib/monthly";
 import { PageHeader } from "@/components/page-header";
 import { LodgeMonthPicker } from "@/components/lodge-month-picker";
 import { NoLodge } from "@/components/no-lodge";
@@ -15,7 +17,7 @@ export default async function MonthlyPage({
 }: {
   searchParams: Promise<{ lodge?: string; month?: string }>;
 }) {
-  const [{ profile }, sp, lodges] = await Promise.all([
+  const [{ user, profile }, sp, lodges] = await Promise.all([
     requireUser(),
     searchParams,
     getAccessibleLodges(),
@@ -111,9 +113,33 @@ export default async function MonthlyPage({
 
   const editReq = (erRows as Array<{ status: string }> | null)?.[0] ?? null;
   const editPending = editReq?.status === "pending";
-  // Managers get read-only once submitted; admins can always edit.
-  const locked = submitted && !admin;
+  // Only the report's creator may edit its data; admins keep their overrides
+  // (approve/decline, reopen, delete) but not field editing on others' reports.
+  const canEditData = canEditReportData(row, user.id, admin);
+  // The creator gets read-only once submitted (admins who created it can still edit).
+  const submittedLock = submitted && !admin;
+  const locked = !canEditData || submittedLock;
+  // The edit-request path only helps someone who may edit once it is reopened.
+  const showRequestEdit = canEditData && submittedLock;
   const lodgeName = lodges.find((l) => l.id === lodge)?.name ?? "Lodge";
+
+  // Who owns it, for the read-only note (service role: managers cannot read
+  // other users' profiles).
+  const owner = reportOwner(row);
+  let ownerName: string | null = null;
+  if (!canEditData && owner) {
+    const { data: op } = await createAdminClient()
+      .from("profiles")
+      .select("full_name")
+      .eq("id", owner)
+      .maybeSingle();
+    ownerName = (op as { full_name: string | null } | null)?.full_name ?? null;
+  }
+  const readOnlyNote = canEditData
+    ? null
+    : owner
+      ? `Read-only: only ${ownerName ?? "the person who created this report"} can edit it.`
+      : "Read-only: only the lodge's manager can edit this report's fields.";
 
   const statusUi = submitted
     ? { t: "Submitted", cls: "border-success-border bg-success-bg text-success", dot: "bg-success" }
@@ -171,13 +197,16 @@ export default async function MonthlyPage({
             <span className={`h-1.5 w-1.5 rounded-full ${statusUi.dot}`} aria-hidden="true" />
             {statusUi.t}
           </span>
-          {locked && (
+          {showRequestEdit && (
             <span className="text-sm text-sand-500">
               Submitted and locked.
             </span>
           )}
+          {readOnlyNote && (
+            <span className="text-sm text-sand-500">{readOnlyNote}</span>
+          )}
         </div>
-        {locked && !editPending && (
+        {showRequestEdit && !editPending && (
           <form action={requestEdit}>
             <input type="hidden" name="lodge_id" value={lodge} />
             <input type="hidden" name="month" value={month} />
@@ -186,7 +215,7 @@ export default async function MonthlyPage({
             </button>
           </form>
         )}
-        {locked && editPending && (
+        {showRequestEdit && editPending && (
           <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-pending-border bg-pending-bg px-2.5 py-0.5 text-xs font-semibold text-warning">
             <span className="h-1.5 w-1.5 rounded-full bg-pending" aria-hidden="true" />
             Edit request pending approval

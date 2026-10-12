@@ -216,8 +216,8 @@ export async function createTask(input: {
   return done();
 }
 
-// Edit a task's details after creation. Allowed for the task's creator or a
-// super role, in any status. Photos, status and completion fields are not
+// Edit a task's details after creation. Allowed only for the task's creator,
+// in any status. Photos, status and completion fields are not
 // touched here. The DB trigger tasks_guard_update enforces the same rule.
 export async function updateTask(input: {
   task_id: string;
@@ -240,8 +240,8 @@ export async function updateTask(input: {
   const [cu, task] = await Promise.all([getCurrentUser(), loadTask(input.task_id)]);
   if (!cu?.user) return fail("Please sign in again.");
   if (!task) return fail("Task not found or you do not have access to it.");
-  if (!canEditTask(task, cu.user.id, cu.profile?.role)) {
-    return fail("Only the person who assigned this task or a senior manager can edit it.");
+  if (!canEditTask(task, cu.user.id)) {
+    return fail("Only the person who assigned this task can edit it.");
   }
 
   const s = await createClient();

@@ -191,12 +191,12 @@ export function photoUrl(client: SupabaseClient, path: string): string {
 export const canAssignTasks = (role?: string | null) => isSuperAdmin(role);
 export const canDeleteTasks = (role?: string | null) => isSuperAdmin(role);
 // Task details (title, description, priority, due date, department) may be
-// edited by the task's creator or a super role. Mirrors tasks_guard_update.
+// edited ONLY by the task's creator - not by other admins. Mirrors step 4 of
+// the tasks_guard_update trigger.
 export const canEditTask = (
   task: Pick<Task, "created_by">,
-  userId: string | null | undefined,
-  role?: string | null
-) => isSuperAdmin(role) || (!!userId && task.created_by === userId);
+  userId: string | null | undefined
+) => !!userId && task.created_by === userId;
 // Tasks may be added to an existing trip (in any state) by its creator or a
 // super role.
 export const canAddTripTasks = (

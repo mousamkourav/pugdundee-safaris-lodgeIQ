@@ -5,7 +5,12 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser, isAdmin, isSuperAdmin } from "@/lib/auth";
 import { monthRange } from "@/lib/format";
-import { parseMonthlyForm, computeDerived } from "@/lib/monthly";
+import {
+  parseMonthlyForm,
+  computeDerived,
+  canEditReportData,
+  reportOwner,
+} from "@/lib/monthly";
 
 function back(lodge: string, month: string) {
   revalidatePath("/monthly");
@@ -65,6 +70,12 @@ async function saveInternal(fd: FormData, submit: boolean) {
   if (!cu?.user) throw new Error("Not authorized");
   const admin = isAdmin(cu.profile?.role);
 
+  // Only the report's creator may edit its data (see canEditReportData). Admins
+  // keep reopen / approve / delete, which are separate actions.
+  if (!canEditReportData(existing, cu.user.id, admin)) {
+    back(lodge_id, month);
+    return;
+  }
   if (existing && existing.status === "submitted" && !admin) {
     back(lodge_id, month);
     return;
@@ -81,7 +92,10 @@ async function saveInternal(fd: FormData, submit: boolean) {
 
   const s = await createClient();
   const payload: Record<string, unknown> = { lodge_id, month: start, data };
-  if (!existing) payload.created_by = cu.user.id;
+  // New report, or an older row with no created_by: record who saved it, so
+  // ownership is explicit from here on. Only reached when this user may edit
+  // it (its submitted_by owner, or an unowned row).
+  if (!existing || !existing.created_by) payload.created_by = cu.user.id;
   if (submit) {
     payload.status = "submitted";
     payload.submitted_by = cu.user.id;
@@ -112,11 +126,26 @@ export async function submitReport(fd: FormData) {
 export async function reopenReport(fd: FormData) {
   const cu = await getCurrentUser();
   if (!cu?.user || !isAdmin(cu.profile?.role)) throw new Error("Not authorized");
+  const id = String(fd.get("id"));
   const s = await createClient();
-  await s
+  // Clearing submitted_by must not erase who owns the report: older rows may
+  // record their creator only there, so carry it into created_by first.
+  const { data: cur } = await s
     .from("monthly_submissions")
-    .update({ status: "draft", submitted_by: null, submitted_at: null })
-    .eq("id", String(fd.get("id")));
+    .select("created_by, submitted_by")
+    .eq("id", id)
+    .maybeSingle();
+  const owner = reportOwner(cur as { created_by?: unknown; submitted_by?: unknown } | null);
+  const { error } = await s
+    .from("monthly_submissions")
+    .update({
+      status: "draft",
+      submitted_by: null,
+      submitted_at: null,
+      ...(owner ? { created_by: owner } : {}),
+    })
+    .eq("id", id);
+  if (error) throw new Error(`Could not reopen the report: ${error.message}`);
   back(String(fd.get("lodge_id")), String(fd.get("month")));
 }
 

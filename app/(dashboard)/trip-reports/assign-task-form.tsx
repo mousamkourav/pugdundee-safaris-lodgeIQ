@@ -122,8 +122,8 @@ export function AssignTaskForm({
           </select>
         </div>
         <div>
-          <label className={LABEL}>Due date</label>
-          <input name="due_date" type="date" disabled={disabled} className={INPUT} />
+          <label className={LABEL}>Department *</label>
+          <DepartmentSelect name="department" disabled={disabled} className={INPUT} />
         </div>
       </div>
 
@@ -151,11 +151,6 @@ export function AssignTaskForm({
         />
       </div>
 
-      <div>
-        <label className={LABEL}>Department *</label>
-        <DepartmentSelect name="department" disabled={disabled} className={INPUT} />
-      </div>
-
       <fieldset>
         <legend className={LABEL}>Priority level *</legend>
         <div className="grid grid-cols-3 gap-2">
@@ -179,6 +174,11 @@ export function AssignTaskForm({
           ))}
         </div>
       </fieldset>
+
+      <div>
+        <label className={LABEL}>Due date</label>
+        <input name="due_date" type="date" disabled={disabled} className={INPUT} />
+      </div>
 
       <PhotoPicker
         photos={photos}

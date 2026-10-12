@@ -453,7 +453,7 @@ export function MonthlyForm({
               </p>
               <p className="text-xs text-sand-500">
                 {admin
-                  ? "As admin you can edit anytime."
+                  ? "As admin you can keep editing reports you created, even after submitting."
                   : "Once submitted you can't edit - an admin can reopen it if needed."}
               </p>
             </div>

@@ -15,7 +15,7 @@ type EditableTask = Pick<
   "id" | "title" | "description" | "priority" | "due_date" | "department"
 >;
 
-// "Edit details" button + modal for a task's creator (or a super role). Only
+// "Edit details" button + modal, shown only to the task's creator. Only
 // the detail fields are editable; photos, status and completion stay as-is.
 // The server action re-checks permission; showing the button is not a guard.
 export function EditTaskButton({ task }: { task: EditableTask }) {

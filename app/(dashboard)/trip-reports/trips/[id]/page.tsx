@@ -179,7 +179,7 @@ export default async function TripDetailPage({
                     ))}
                   </div>
                 )}
-                {canEditTask(t, user.id, role) && (
+                {canEditTask(t, user.id) && (
                   <div className="mt-auto pt-1">
                     <EditTaskButton task={t} />
                   </div>

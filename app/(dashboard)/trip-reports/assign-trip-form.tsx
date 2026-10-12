@@ -420,6 +420,16 @@ export function AssignTripForm({
             </p>
 
             <div>
+              <label className={LABEL}>Department *</label>
+              <DepartmentSelect
+                value={draft.department}
+                onChange={(v) => setDraft({ ...draft, department: v })}
+                disabled={disabled}
+                className={INPUT}
+              />
+            </div>
+
+            <div>
               <label className={LABEL}>Task title *</label>
               <input
                 value={draft.title}
@@ -440,16 +450,6 @@ export function AssignTripForm({
                 rows={3}
                 maxLength={4000}
                 placeholder="What needs doing and where."
-                className={INPUT}
-              />
-            </div>
-
-            <div>
-              <label className={LABEL}>Department *</label>
-              <DepartmentSelect
-                value={draft.department}
-                onChange={(v) => setDraft({ ...draft, department: v })}
-                disabled={disabled}
                 className={INPUT}
               />
             </div>
