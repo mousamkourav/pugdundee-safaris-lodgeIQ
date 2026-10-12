@@ -10,6 +10,7 @@ import { Icon } from "@/components/icons";
 import {
   canAssignTasks,
   canDeleteTasks,
+  canEditTask,
   canReviewTask,
   canSubmitTask,
   photoList,
@@ -30,9 +31,11 @@ export default async function TripReportsPage({
 }: {
   searchParams: Promise<{ lodge?: string }>;
 }) {
-  const { user, profile } = await requireUser();
-  const sp = await searchParams;
-  const lodges = await getAccessibleLodges();
+  const [{ user, profile }, sp, lodges] = await Promise.all([
+    requireUser(),
+    searchParams,
+    getAccessibleLodges(),
+  ]);
   if (lodges.length === 0) return <NoLodge title={TITLE} />;
 
   const role = profile?.role as string | undefined;
@@ -51,11 +54,6 @@ export default async function TripReportsPage({
 
   const s = await createClient();
 
-  // Recent trips (optionally filtered to one lodge), newest first.
-  const recentTrips = await fetchTripsWithCounts(s, {
-    lodgeId: lodgeFilter,
-    limit: RECENT_TRIPS,
-  });
 
   // Recent tasks, newest first, across all accessible lodges (RLS scopes).
   let taskQuery = s
@@ -64,7 +62,12 @@ export default async function TripReportsPage({
     .order("created_at", { ascending: false })
     .limit(RECENT_TASKS);
   if (lodgeFilter) taskQuery = taskQuery.eq("lodge_id", lodgeFilter);
-  const { data: taskData } = await taskQuery;
+  // Recent trips (optionally filtered to one lodge) and recent tasks are
+  // independent: load them together.
+  const [recentTrips, { data: taskData }] = await Promise.all([
+    fetchTripsWithCounts(s, { lodgeId: lodgeFilter, limit: RECENT_TRIPS }),
+    taskQuery,
+  ]);
   const tasks = (taskData ?? []) as Task[];
 
   // Resolve names (service role: managers cannot read other profiles).
@@ -200,6 +203,7 @@ export default async function TripReportsPage({
                   canSubmit={canSubmitTask(t)}
                   canReview={canReviewTask(t, user.id)}
                   canDelete={canDelete}
+                  canEdit={canEditTask(t, user.id, role)}
                   lodgeName={lodgeNameById.get(t.lodge_id)}
                 />
               );

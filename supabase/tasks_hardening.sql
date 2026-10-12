@@ -19,6 +19,9 @@
 
 -- -----------------------------------------------------------------------------
 -- (a) tasks: column / transition guard
+-- SUPERSEDED by supabase/tasks_department_and_edit.sql (adds the department
+-- column and lets a task's creator edit its details). If you re-run this file,
+-- run that one again afterwards or the newer trigger rules are lost.
 -- -----------------------------------------------------------------------------
 
 create or replace function public.tasks_guard_update()

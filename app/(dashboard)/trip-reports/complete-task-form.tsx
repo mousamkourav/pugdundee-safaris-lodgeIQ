@@ -1,10 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PhotoPicker, type PickedPhoto } from "@/components/photo-picker";
-import { MAX_PHOTOS, removeTaskPhotos, uploadTaskPhotos } from "@/lib/tasks";
+import {
+  MAX_PHOTOS,
+  TASK_PHOTO_MAX_BYTES,
+  removeTaskPhotos,
+  uploadTaskPhotos,
+} from "@/lib/tasks";
 import { Icon } from "@/components/icons";
 import { submitCompletion } from "./actions";
 
@@ -17,7 +21,6 @@ export function CompleteTaskForm({
   lodgeId: string;
   resubmit?: boolean;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [photos, setPhotos] = useState<PickedPhoto[]>([]);
   const [comment, setComment] = useState("");
@@ -75,7 +78,8 @@ export function CompleteTaskForm({
         return;
       }
       close();
-      router.refresh();
+      // No router.refresh(): the action's revalidatePath already returns the
+      // re-rendered page; refreshing again would render it a second time.
     } catch (err) {
       await removeTaskPhotos(supabase, uploaded);
       setError(err instanceof Error ? err.message : "Something went wrong.");
@@ -95,6 +99,7 @@ export function CompleteTaskForm({
         photos={photos}
         setPhotos={setPhotos}
         max={MAX_PHOTOS}
+        maxBytes={TASK_PHOTO_MAX_BYTES}
         label="Completion photos"
         required
         disabled={disabled}

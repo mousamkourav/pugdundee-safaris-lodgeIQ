@@ -14,12 +14,15 @@ function back(lodge: string, month: string) {
 
 async function loadRow(lodge: string, monthStart: string) {
   const s = await createClient();
-  const { data } = await s
+  const { data, error } = await s
     .from("monthly_submissions")
     .select("*")
     .eq("lodge_id", lodge)
     .eq("month", monthStart)
     .maybeSingle();
+  // Never fall through to "no row" on a read error: that would save a merge
+  // onto {} and mark it as a brand-new report.
+  if (error) throw new Error(`Could not load the report: ${error.message}`);
   return data as Record<string, unknown> | null;
 }
 
@@ -41,14 +44,27 @@ function deepMerge(base: any, patch: any): any {
 }
 
 async function saveInternal(fd: FormData, submit: boolean) {
-  const cu = await getCurrentUser();
-  if (!cu?.user) throw new Error("Not authorized");
   const lodge_id = String(fd.get("lodge_id"));
   const month = String(fd.get("month"));
   const { start } = monthRange(month);
+
+  // The form posts the lodge+month its data was loaded for. If they differ from
+  // the target, the values on screen belong to another report - refuse to save
+  // them here (this is how Waghoba Sept 2026 got August's data and was locked).
+  const origin = fd.get("form_origin");
+  if (origin !== null && String(origin) !== `${lodge_id}|${month}`) {
+    back(lodge_id, month);
+    return;
+  }
+
+  // Auth and the existing row are independent: fetch both at once.
+  const [cu, existing] = await Promise.all([
+    getCurrentUser(),
+    loadRow(lodge_id, start),
+  ]);
+  if (!cu?.user) throw new Error("Not authorized");
   const admin = isAdmin(cu.profile?.role);
 
-  const existing = await loadRow(lodge_id, start);
   if (existing && existing.status === "submitted" && !admin) {
     back(lodge_id, month);
     return;
@@ -65,22 +81,24 @@ async function saveInternal(fd: FormData, submit: boolean) {
 
   const s = await createClient();
   const payload: Record<string, unknown> = { lodge_id, month: start, data };
+  if (!existing) payload.created_by = cu.user.id;
   if (submit) {
     payload.status = "submitted";
     payload.submitted_by = cu.user.id;
     payload.submitted_at = new Date().toISOString();
   } else if (!existing) {
     payload.status = "draft";
-    payload.created_by = cu.user.id;
   } else if (admin) {
     payload.status = existing.status;
   } else {
     payload.status = "draft";
   }
 
-  await s
+  const { error } = await s
     .from("monthly_submissions")
     .upsert(payload, { onConflict: "lodge_id,month" });
+  // Surface failures instead of redirecting as if the save worked.
+  if (error) throw new Error(`Could not save the report: ${error.message}`);
   back(lodge_id, month);
 }
 

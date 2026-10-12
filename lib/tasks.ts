@@ -18,6 +18,8 @@ export const TASK_MANAGER_ROLES = [
 
 export const TASK_BUCKET = "task-photos";
 export const MAX_PHOTOS = 6;
+// Every task photo (reference + completion) must be at most this size.
+export const TASK_PHOTO_MAX_BYTES = 200 * 1024;
 
 export type TaskStatus = "pending" | "submitted" | "resolved" | "declined";
 export type TaskPriority = "low" | "medium" | "high";
@@ -31,6 +33,41 @@ export const TASK_STATUSES: TaskStatus[] = [
 ];
 export const TASK_PRIORITIES: TaskPriority[] = ["low", "medium", "high"];
 
+// Department responsible for a task. Keys are stored in tasks.department and
+// must match the check constraint in supabase/tasks_department.sql.
+export const TASK_DEPARTMENTS = [
+  "housekeeping",
+  "fnb",
+  "maintenance",
+  "naturalist",
+  "front_office",
+  "kitchen",
+  "security",
+  "gardens",
+  "transport",
+  "other",
+] as const;
+export type TaskDepartment = (typeof TASK_DEPARTMENTS)[number];
+
+export const DEPARTMENT_LABEL: Record<TaskDepartment, string> = {
+  housekeeping: "Housekeeping",
+  fnb: "F&B",
+  maintenance: "General Maintenance",
+  naturalist: "Naturalist",
+  front_office: "Front Office",
+  kitchen: "Kitchen",
+  security: "Security",
+  gardens: "Gardens & Landscaping",
+  transport: "Vehicles & Transport",
+  other: "Other",
+};
+
+export const isTaskDepartment = (v: unknown): v is TaskDepartment =>
+  typeof v === "string" && (TASK_DEPARTMENTS as readonly string[]).includes(v);
+
+export const departmentLabel = (v: string | null | undefined): string | null =>
+  isTaskDepartment(v) ? DEPARTMENT_LABEL[v] : null;
+
 export type Task = {
   id: string;
   lodge_id: string;
@@ -38,6 +75,7 @@ export type Task = {
   description: string | null;
   priority: TaskPriority;
   due_date: string | null;
+  department: string | null;
   status: TaskStatus;
   assigned_photos: string[] | null;
   completion_photos: string[] | null;
@@ -152,6 +190,20 @@ export function photoUrl(client: SupabaseClient, path: string): string {
 
 export const canAssignTasks = (role?: string | null) => isSuperAdmin(role);
 export const canDeleteTasks = (role?: string | null) => isSuperAdmin(role);
+// Task details (title, description, priority, due date, department) may be
+// edited by the task's creator or a super role. Mirrors tasks_guard_update.
+export const canEditTask = (
+  task: Pick<Task, "created_by">,
+  userId: string | null | undefined,
+  role?: string | null
+) => isSuperAdmin(role) || (!!userId && task.created_by === userId);
+// Tasks may be added to an existing trip (in any state) by its creator or a
+// super role.
+export const canAddTripTasks = (
+  trip: Pick<Trip, "created_by">,
+  userId: string | null | undefined,
+  role?: string | null
+) => isSuperAdmin(role) || (!!userId && trip.created_by === userId);
 
 // Anyone who can see the task (RLS = lodge access) may submit completion
 // while it is still open or after it was declined.
@@ -175,19 +227,30 @@ export async function uploadTaskPhotos(
   kind: PhotoKind,
   blobs: Blob[]
 ): Promise<string[]> {
+  // Last check before anything is written: PhotoPicker already compresses to
+  // the ceiling, so this only fires if a caller skipped it.
+  if (blobs.some((b) => b.size > TASK_PHOTO_MAX_BYTES)) {
+    throw new Error(
+      `Each photo must be under ${Math.round(TASK_PHOTO_MAX_BYTES / 1024)}KB. Remove it and add it again.`
+    );
+  }
+  const paths = blobs.map(() => photoPath(lodgeId, taskId, kind));
   const done: string[] = [];
   try {
-    for (const blob of blobs) {
-      const path = photoPath(lodgeId, taskId, kind);
-      const { error } = await client.storage.from(TASK_BUCKET).upload(path, blob, {
-        contentType: "image/jpeg",
-        cacheControl: "31536000",
-        upsert: false,
-      });
-      if (error) throw new Error(`Photo upload failed: ${error.message}`);
-      done.push(path);
-    }
-    return done;
+    // Upload in parallel; track each success so a failure cleans up the rest.
+    await Promise.all(
+      blobs.map(async (blob, i) => {
+        const path = paths[i];
+        const { error } = await client.storage.from(TASK_BUCKET).upload(path, blob, {
+          contentType: "image/jpeg",
+          cacheControl: "31536000",
+          upsert: false,
+        });
+        if (error) throw new Error(`Photo upload failed: ${error.message}`);
+        done.push(path);
+      })
+    );
+    return paths; // original order, not completion order
   } catch (e) {
     await removeTaskPhotos(client, done);
     throw e;
@@ -236,6 +299,7 @@ export type NewTaskInput = {
   description?: string;
   priority: string;
   due_date?: string;
+  department: string;
   photos: string[]; // storage paths under {lodge_id}/{id}/ref/
 };
 

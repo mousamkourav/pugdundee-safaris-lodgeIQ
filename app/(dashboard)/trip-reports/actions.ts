@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { getCurrentUser, isSuperAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -8,8 +9,10 @@ import {
   MAX_PHOTOS,
   TASK_BUCKET,
   TASK_MANAGER_ROLES,
+  canEditTask,
   canReviewTask,
   canSubmitTask,
+  isTaskDepartment,
   isTaskPriority,
   isUuid,
   isValidPhotoPath,
@@ -148,32 +151,32 @@ export async function createTask(input: {
   description?: string;
   priority: string;
   due_date?: string;
+  department: string;
   photos: string[];
 }): Promise<ActionResult> {
-  const cu = await getCurrentUser();
-  if (!cu?.user) return fail("Please sign in again.");
-  if (!isSuperAdmin(cu.profile?.role)) return fail("Only senior managers can assign tasks.");
-
   const id = input?.id;
   const lodgeId = input?.lodge_id;
   if (!isUuid(id) || !isUuid(lodgeId)) return fail("Invalid task or lodge.");
+
+  const s = await createClient();
+  const [cu, { data: lodge }] = await Promise.all([
+    getCurrentUser(),
+    s.from("lodges").select("id,name").eq("id", lodgeId).maybeSingle(),
+  ]);
+  if (!cu?.user) return fail("Please sign in again.");
+  if (!isSuperAdmin(cu.profile?.role)) return fail("Only senior managers can assign tasks.");
 
   const title = cleanText(input.title, 200);
   if (!title) return fail("Title is required.");
   const description = cleanText(input.description, 4000) || null;
   if (!isTaskPriority(input.priority)) return fail("Choose a priority.");
+  if (!isTaskDepartment(input.department)) return fail("Choose a department.");
   const due = cleanText(input.due_date, 10);
   if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) return fail("Invalid due date.");
 
   const photos = checkPhotos(input.photos ?? [], lodgeId, id, "ref", 0);
   if (typeof photos === "string") return fail(photos);
 
-  const s = await createClient();
-  const { data: lodge } = await s
-    .from("lodges")
-    .select("id,name")
-    .eq("id", lodgeId)
-    .maybeSingle();
   if (!lodge) return fail("Lodge not found.");
 
   const { error } = await s.from("tasks").insert({
@@ -183,6 +186,7 @@ export async function createTask(input: {
     description,
     priority: input.priority,
     due_date: due || null,
+    department: input.department,
     status: "pending",
     assigned_photos: photos,
     completion_photos: [],
@@ -194,17 +198,66 @@ export async function createTask(input: {
     );
   }
 
-  await notify({
-    type: "task_assigned",
-    severity: input.priority === "high" ? "warning" : "info",
-    title: `New task: ${title}`,
-    body: `A ${input.priority} priority task was assigned to ${(lodge as { name: string }).name}${
-      due ? ` (due ${due})` : ""
-    }. Open Trip reports to complete it.`,
-    lodgeId,
-    taskId: id,
-    targets: await lodgeManagers(lodgeId),
-  });
+  // Notifications run after the response is sent (no user-facing wait).
+  const priority = input.priority;
+  after(async () =>
+    notify({
+      type: "task_assigned",
+      severity: priority === "high" ? "warning" : "info",
+      title: `New task: ${title}`,
+      body: `A ${priority} priority task was assigned to ${(lodge as { name: string }).name}${
+        due ? ` (due ${due})` : ""
+      }. Open Trip reports to complete it.`,
+      lodgeId,
+      taskId: id,
+      targets: await lodgeManagers(lodgeId),
+    })
+  );
+  return done();
+}
+
+// Edit a task's details after creation. Allowed for the task's creator or a
+// super role, in any status. Photos, status and completion fields are not
+// touched here. The DB trigger tasks_guard_update enforces the same rule.
+export async function updateTask(input: {
+  task_id: string;
+  title: string;
+  description?: string;
+  priority: string;
+  due_date?: string;
+  department: string;
+}): Promise<ActionResult> {
+  if (!isUuid(input?.task_id)) return fail("Invalid task.");
+
+  const title = cleanText(input.title, 200);
+  if (!title) return fail("Title is required.");
+  const description = cleanText(input.description, 4000) || null;
+  if (!isTaskPriority(input.priority)) return fail("Choose a priority.");
+  if (!isTaskDepartment(input.department)) return fail("Choose a department.");
+  const due = cleanText(input.due_date, 10);
+  if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) return fail("Invalid due date.");
+
+  const [cu, task] = await Promise.all([getCurrentUser(), loadTask(input.task_id)]);
+  if (!cu?.user) return fail("Please sign in again.");
+  if (!task) return fail("Task not found or you do not have access to it.");
+  if (!canEditTask(task, cu.user.id, cu.profile?.role)) {
+    return fail("Only the person who assigned this task or a senior manager can edit it.");
+  }
+
+  const s = await createClient();
+  const { data, error } = await s
+    .from("tasks")
+    .update({
+      title,
+      description,
+      priority: input.priority,
+      due_date: due || null,
+      department: input.department,
+    })
+    .eq("id", task.id)
+    .select("id");
+  if (error) return fail(`Could not update task: ${error.message}`);
+  if (!data?.length) return fail("Task could not be updated.");
   return done();
 }
 
@@ -213,11 +266,10 @@ export async function submitCompletion(input: {
   photos: string[];
   comment?: string;
 }): Promise<ActionResult> {
-  const cu = await getCurrentUser();
-  if (!cu?.user) return fail("Please sign in again.");
   if (!isUuid(input?.task_id)) return fail("Invalid task.");
 
-  const task = await loadTask(input.task_id);
+  const [cu, task] = await Promise.all([getCurrentUser(), loadTask(input.task_id)]);
+  if (!cu?.user) return fail("Please sign in again.");
   if (!task) return fail("Task not found or you do not have access to it.");
   if (!canSubmitTask(task)) return fail(STALE);
 
@@ -241,27 +293,30 @@ export async function submitCompletion(input: {
   if (error) return fail(`Could not submit: ${error.message}`);
   if (!data?.length) return fail(STALE);
 
-  // Resubmission after a decline replaces the old completion photos.
+  // Resubmission after a decline replaces the old completion photos. Cleanup
+  // and the notification run after the response is sent.
   const donePrefix = `${taskFolder(task.lodge_id, task.id)}/done/`;
-  await removeFiles(
-    photoList(task.completion_photos).filter(
-      (p) => p.startsWith(donePrefix) && !photos.includes(p)
-    )
+  const stale = photoList(task.completion_photos).filter(
+    (p) => p.startsWith(donePrefix) && !photos.includes(p)
   );
-
-  if (task.created_by && task.created_by !== cu.user.id) {
-    await notify({
-      type: "task_submitted",
-      severity: "info",
-      title: `Task completed: ${task.title}`,
-      body: `${cu.profile?.full_name ?? "A manager"} at ${await lodgeName(
-        task.lodge_id
-      )} marked this task complete. Review and approve or decline it.`,
-      lodgeId: task.lodge_id,
-      taskId: task.id,
-      targets: [task.created_by],
-    });
-  }
+  const userId = cu.user.id;
+  const by = cu.profile?.full_name ?? "A manager";
+  after(async () => {
+    await removeFiles(stale);
+    if (task.created_by && task.created_by !== userId) {
+      await notify({
+        type: "task_submitted",
+        severity: "info",
+        title: `Task completed: ${task.title}`,
+        body: `${by} at ${await lodgeName(
+          task.lodge_id
+        )} marked this task complete. Review and approve or decline it.`,
+        lodgeId: task.lodge_id,
+        taskId: task.id,
+        targets: [task.created_by],
+      });
+    }
+  });
   return done();
 }
 
@@ -270,14 +325,13 @@ async function resolve(
   outcome: Extract<TaskStatus, "resolved" | "declined">,
   reason?: unknown
 ): Promise<ActionResult> {
-  const cu = await getCurrentUser();
-  if (!cu?.user) return fail("Please sign in again.");
   if (!isUuid(taskId)) return fail("Invalid task.");
 
   const why = cleanText(reason, 2000);
   if (outcome === "declined" && !why) return fail("Enter a reason for declining.");
 
-  const task = await loadTask(taskId);
+  const [cu, task] = await Promise.all([getCurrentUser(), loadTask(taskId)]);
+  if (!cu?.user) return fail("Please sign in again.");
   if (!task) return fail("Task not found or you do not have access to it.");
   if (task.created_by !== cu.user.id) {
     return fail("Only the person who assigned this task can review it.");
@@ -300,7 +354,8 @@ async function resolve(
   if (!data?.length) return fail(STALE);
 
   if (task.submitted_by && task.submitted_by !== cu.user.id) {
-    await notify({
+    const submittedBy = task.submitted_by;
+    after(() => notify({
       type: outcome === "resolved" ? "task_approved" : "task_declined",
       severity: outcome === "resolved" ? "info" : "warning",
       title:
@@ -313,8 +368,8 @@ async function resolve(
           : `Reason: ${why}. Please fix and resubmit from Trip reports.`,
       lodgeId: task.lodge_id,
       taskId: task.id,
-      targets: [task.submitted_by],
-    });
+      targets: [submittedBy],
+    }));
   }
   return done();
 }

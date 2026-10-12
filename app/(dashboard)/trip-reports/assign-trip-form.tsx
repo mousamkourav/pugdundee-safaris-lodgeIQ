@@ -1,22 +1,24 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PhotoPicker, type PickedPhoto } from "@/components/photo-picker";
 import type { LodgeLite } from "@/lib/lodges";
 import { Icon } from "@/components/icons";
 import {
   MAX_PHOTOS,
+  TASK_PHOTO_MAX_BYTES,
   TASK_PRIORITIES,
   PRIORITY_LABEL,
+  departmentLabel,
   newUuid,
   removeTaskPhotos,
   uploadTaskPhotos,
   tripDays,
   type NewTaskInput,
 } from "@/lib/tasks";
-import { createTrip } from "./trip-actions";
+import { addTasksToTrip, createTrip } from "./trip-actions";
+import { DepartmentSelect } from "./department-select";
 
 const INPUT =
   "w-full rounded-lg border border-sand-300 bg-white px-3.5 py-2.5 text-sm text-sand-700 outline-none transition focus:border-olive-600 focus:ring-3 focus:ring-gold-500/35 disabled:bg-sand-100";
@@ -45,11 +47,19 @@ type Draft = {
   description: string;
   priority: string;
   due_date: string;
+  department: string;
   photos: PickedPhoto[];
 };
 
 function emptyDraft(): Draft {
-  return { title: "", description: "", priority: "medium", due_date: "", photos: [] };
+  return {
+    title: "",
+    description: "",
+    priority: "medium",
+    due_date: "",
+    department: "",
+    photos: [],
+  };
 }
 
 // A task already queued in this session (kept until the whole trip is saved).
@@ -58,8 +68,18 @@ type Queued = {
   title: string;
   priority: string;
   due_date: string;
+  department: string;
   description: string;
   photos: PickedPhoto[];
+};
+
+// Adding tasks to a trip that already exists: skips step 1 and saves through
+// addTasksToTrip. Works at any time, including after tasks were submitted.
+export type ExistingTrip = {
+  id: string;
+  lodgeId: string;
+  lodgeName: string;
+  summary: string; // e.g. "Authority - 24-27 Oct 2026"
 };
 
 export function AssignTripForm({
@@ -67,17 +87,18 @@ export function AssignTripForm({
   defaultLodge,
   authorityChips,
   onDone,
+  existingTrip,
 }: {
   lodges: LodgeLite[];
   defaultLodge: string;
   authorityChips?: string[];
   onDone?: () => void;
+  existingTrip?: ExistingTrip;
 }) {
-  const router = useRouter();
 
   // Step 1 - trip
-  const [step, setStep] = useState<1 | 2>(1);
-  const [lodgeId, setLodgeId] = useState(defaultLodge);
+  const [step, setStep] = useState<1 | 2>(existingTrip ? 2 : 1);
+  const [lodgeId, setLodgeId] = useState(existingTrip?.lodgeId ?? defaultLodge);
   const [authority, setAuthority] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -91,7 +112,8 @@ export function AssignTripForm({
   const [error, setError] = useState<string | null>(null);
   const disabled = busy !== null;
 
-  const lodgeName = lodges.find((l) => l.id === lodgeId)?.name ?? "lodge";
+  const lodgeName =
+    existingTrip?.lodgeName ?? lodges.find((l) => l.id === lodgeId)?.name ?? "lodge";
   const days = useMemo(() => tripDays(startDate, endDate), [startDate, endDate]);
 
   function goToTasks() {
@@ -105,6 +127,7 @@ export function AssignTripForm({
   function addDraftToQueue() {
     setError(null);
     if (!draft.title.trim()) return setError("Give the task a title.");
+    if (!draft.department) return setError("Choose a department for this task.");
     setQueued((q) => [
       ...q,
       {
@@ -113,6 +136,7 @@ export function AssignTripForm({
         description: draft.description,
         priority: draft.priority,
         due_date: draft.due_date,
+        department: draft.department,
         photos: draft.photos,
       },
     ]);
@@ -132,6 +156,7 @@ export function AssignTripForm({
     // Include the current draft if it has a title but wasn't added yet.
     let tasks = queued;
     if (draft.title.trim()) {
+      if (!draft.department) return setError("Choose a department for this task.");
       tasks = [
         ...queued,
         {
@@ -140,6 +165,7 @@ export function AssignTripForm({
           description: draft.description,
           priority: draft.priority,
           due_date: draft.due_date,
+          department: draft.department,
           photos: draft.photos,
         },
       ];
@@ -171,20 +197,23 @@ export function AssignTripForm({
           description: t.description,
           priority: t.priority,
           due_date: t.due_date,
+          department: t.department,
           photos: paths,
         });
       }
 
       setBusy(`Assigning ${tasks.length} task${tasks.length > 1 ? "s" : ""}...`);
-      const res = await createTrip({
-        id: tripId,
-        lodge_id: lodgeId,
-        authority: authority.trim() || undefined,
-        focus: focus.trim() || undefined,
-        start_date: startDate || undefined,
-        end_date: endDate || undefined,
-        tasks: payload,
-      });
+      const res = existingTrip
+        ? await addTasksToTrip({ trip_id: existingTrip.id, tasks: payload })
+        : await createTrip({
+            id: tripId,
+            lodge_id: lodgeId,
+            authority: authority.trim() || undefined,
+            focus: focus.trim() || undefined,
+            start_date: startDate || undefined,
+            end_date: endDate || undefined,
+            tasks: payload,
+          });
       if (!res.ok) {
         await removeTaskPhotos(supabase, allUploaded);
         setError(res.error);
@@ -194,12 +223,13 @@ export function AssignTripForm({
       tasks.forEach((t) => t.photos.forEach((p) => URL.revokeObjectURL(p.preview)));
       setQueued([]);
       setDraft(emptyDraft());
-      setStep(1);
+      setStep(existingTrip ? 2 : 1);
       setAuthority("");
       setStartDate("");
       setEndDate("");
       setFocus("");
-      router.refresh();
+      // No router.refresh(): the action's revalidatePath already returns the
+      // re-rendered page; refreshing again would render it a second time.
       onDone?.();
     } catch (err) {
       await removeTaskPhotos(supabase, allUploaded);
@@ -334,19 +364,27 @@ export function AssignTripForm({
             <div className="min-w-0 flex-1 text-sm">
               <p className="font-semibold text-olive-800">{lodgeName}</p>
               <p className="text-xs text-sand-500">
-                {authority ? authority + " - " : ""}
-                {startDate ? startDate : "dates not set"}
-                {endDate && endDate !== startDate ? ` to ${endDate}` : ""}
+                {existingTrip ? (
+                  existingTrip.summary
+                ) : (
+                  <>
+                    {authority ? authority + " - " : ""}
+                    {startDate ? startDate : "dates not set"}
+                    {endDate && endDate !== startDate ? ` to ${endDate}` : ""}
+                  </>
+                )}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              disabled={disabled}
-              className="rounded-lg border border-sand-200 px-2.5 py-1 text-xs font-medium text-sand-700 hover:bg-sand-100"
-            >
-              Edit
-            </button>
+            {!existingTrip && (
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                disabled={disabled}
+                className="rounded-lg border border-sand-200 px-2.5 py-1 text-xs font-medium text-sand-700 hover:bg-sand-100"
+              >
+                Edit
+              </button>
+            )}
           </div>
 
           {/* queued tasks */}
@@ -358,6 +396,7 @@ export function AssignTripForm({
                     {i + 1}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-sm font-medium text-sand-800">{t.title}</span>
+                  <span className="hidden shrink-0 text-xs text-sand-500 sm:inline">{departmentLabel(t.department)}</span>
                   <span className="shrink-0 text-xs capitalize text-sand-500">{t.priority}</span>
                   <button
                     type="button"
@@ -405,6 +444,16 @@ export function AssignTripForm({
               />
             </div>
 
+            <div>
+              <label className={LABEL}>Department *</label>
+              <DepartmentSelect
+                value={draft.department}
+                onChange={(v) => setDraft({ ...draft, department: v })}
+                disabled={disabled}
+                className={INPUT}
+              />
+            </div>
+
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <span className={LABEL}>Priority</span>
@@ -441,6 +490,7 @@ export function AssignTripForm({
                 setDraft((d) => ({ ...d, photos: typeof p === "function" ? p(d.photos) : p }))
               }
               max={MAX_PHOTOS}
+              maxBytes={TASK_PHOTO_MAX_BYTES}
               label="Reference photos"
               disabled={disabled}
             />
@@ -465,10 +515,15 @@ export function AssignTripForm({
               className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-olive-600 px-5 py-2 text-sm font-semibold text-white shadow-card transition hover:bg-olive-700 disabled:opacity-60"
             >
               <Icon name="send" className="h-4 w-4" />
-              {busy ?? `Assign ${totalCount || ""} task${totalCount === 1 ? "" : "s"} to ${lodgeName}`}
+              {busy ??
+                (existingTrip
+                  ? `Add ${totalCount || ""} task${totalCount === 1 ? "" : "s"} to this trip`
+                  : `Assign ${totalCount || ""} task${totalCount === 1 ? "" : "s"} to ${lodgeName}`)}
             </button>
             <p className="text-center text-xs text-sand-500">
-              Lodge managers are notified in-app as soon as the trip is assigned.
+              {existingTrip
+                ? "Lodge managers are notified in-app as soon as the tasks are added."
+                : "Lodge managers are notified in-app as soon as the trip is assigned."}
             </p>
           </div>
         </div>

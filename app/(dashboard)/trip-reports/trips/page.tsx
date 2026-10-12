@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getAccessibleLodges, resolveLodge } from "@/lib/lodges";
 import { createClient } from "@/lib/supabase/server";
@@ -14,9 +14,11 @@ export default async function AllTripsPage({
 }: {
   searchParams: Promise<{ lodge?: string }>;
 }) {
-  await requireUser();
-  const sp = await searchParams;
-  const lodges = await getAccessibleLodges();
+  const [, sp, lodges] = await Promise.all([
+    requireUser(),
+    searchParams,
+    getAccessibleLodges(),
+  ]);
   const lodge = sp.lodge ? resolveLodge(sp.lodge, lodges) : null;
 
   const s = await createClient();

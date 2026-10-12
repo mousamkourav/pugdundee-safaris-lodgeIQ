@@ -15,9 +15,11 @@ export default async function MonthlyPage({
 }: {
   searchParams: Promise<{ lodge?: string; month?: string }>;
 }) {
-  const { profile } = await requireUser();
-  const sp = await searchParams;
-  const lodges = await getAccessibleLodges();
+  const [{ profile }, sp, lodges] = await Promise.all([
+    requireUser(),
+    searchParams,
+    getAccessibleLodges(),
+  ]);
   const lodge = resolveLodge(sp.lodge, lodges);
   const month = sp.month || currentMonth();
   if (!lodge) return <NoLodge title="Monthly report" />;
@@ -25,23 +27,47 @@ export default async function MonthlyPage({
   const { start, label } = monthRange(month);
   const admin = isAdmin(profile?.role);
   const s = await createClient();
-  const { data: rowData } = await s
-    .from("monthly_submissions")
-    .select("*")
-    .eq("lodge_id", lodge)
-    .eq("month", start)
-    .maybeSingle();
+
+  const [yy0, mm0] = start.split("-").map(Number);
+  const prevDate = new Date(Date.UTC(yy0, mm0 - 2, 1));
+  const prevStart = `${prevDate.getUTCFullYear()}-${String(prevDate.getUTCMonth() + 1).padStart(2, "0")}-01`;
+
+  // Independent reads, fired together: one round-trip of latency instead of four.
+  const [{ data: rowData }, { data: draftRows }, { data: prevRow }, { data: erRows }] =
+    await Promise.all([
+      s
+        .from("monthly_submissions")
+        .select("*")
+        .eq("lodge_id", lodge)
+        .eq("month", start)
+        .maybeSingle(),
+      // Drafts in progress (user's accessible lodges via RLS), newest first.
+      s
+        .from("monthly_submissions")
+        .select("lodge_id, month")
+        .eq("status", "draft")
+        .order("month", { ascending: false })
+        .limit(24),
+      s
+        .from("monthly_submissions")
+        .select("data")
+        .eq("lodge_id", lodge)
+        .eq("month", prevStart)
+        .maybeSingle(),
+      // Edit-request state for this lodge+month (latest pending/approved).
+      s
+        .from("edit_requests")
+        .select("status")
+        .eq("lodge_id", lodge)
+        .eq("month", start)
+        .in("status", ["pending", "approved"])
+        .order("created_at", { ascending: false })
+        .limit(1),
+    ]);
 
   const row = rowData as Record<string, unknown> | null;
   const data = (row?.data as Record<string, unknown>) ?? {};
 
-  // Drafts in progress (user's accessible lodges via RLS), newest first.
-  const { data: draftRows } = await s
-    .from("monthly_submissions")
-    .select("lodge_id, month")
-    .eq("status", "draft")
-    .order("month", { ascending: false })
-    .limit(24);
   const MONTH_NAMES = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const drafts = ((draftRows ?? []) as Array<{ lodge_id: string; month: string }>).map((dr) => {
     const ln = lodges.find((l) => l.id === dr.lodge_id)?.name ?? "Lodge";
@@ -53,15 +79,6 @@ export default async function MonthlyPage({
   // Energy carry-forward: prefill this month's opening from last month's closing
   // (matched by asset name). Only fills blanks; the manager can still edit.
   {
-    const [yy, mm] = start.split("-").map(Number);
-    const prevDate = new Date(Date.UTC(yy, mm - 2, 1));
-    const prevStart = `${prevDate.getUTCFullYear()}-${String(prevDate.getUTCMonth() + 1).padStart(2, "0")}-01`;
-    const { data: prevRow } = await s
-      .from("monthly_submissions")
-      .select("data")
-      .eq("lodge_id", lodge)
-      .eq("month", prevStart)
-      .maybeSingle();
     const prevEnergy = ((prevRow as { data?: { energy?: Array<Record<string, unknown>> } } | null)?.data?.energy) ?? [];
     const namedPrev = prevEnergy.filter((e) => String(e?.asset ?? "").trim() !== "");
     if (namedPrev.length > 0) {
@@ -92,15 +109,6 @@ export default async function MonthlyPage({
   const status = (row?.status as string) ?? "none";
   const submitted = status === "submitted";
 
-  // Edit-request state for this lodge+month (latest pending/approved).
-  const { data: erRows } = await s
-    .from("edit_requests")
-    .select("status")
-    .eq("lodge_id", lodge)
-    .eq("month", start)
-    .in("status", ["pending", "approved"])
-    .order("created_at", { ascending: false })
-    .limit(1);
   const editReq = (erRows as Array<{ status: string }> | null)?.[0] ?? null;
   const editPending = editReq?.status === "pending";
   // Managers get read-only once submitted; admins can always edit.
@@ -230,7 +238,12 @@ export default async function MonthlyPage({
         )}
       </div>
 
+      {/* key: the form seeds its state from initialData once. Without a key,
+          switching lodge/month via the picker (client navigation) kept the
+          previous month's state on screen - and saving it wrote that data into
+          the newly selected month. Remount on every lodge+month change. */}
       <MonthlyForm
+        key={`${lodge}:${month}`}
         initialData={data}
         locked={locked}
         admin={admin}

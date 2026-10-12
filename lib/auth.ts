@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
@@ -29,7 +30,9 @@ export const SUPER_ROLES: Role[] = ["super_admin", "senior_manager"];
 // admins (rates, members, all queries); sales_member sees only their own queries.
 export const SALES_ROLES: Role[] = ["super_admin", "senior_manager", "sales_member"];
 
-export async function getCurrentUser() {
+// cache(): the dashboard layout and the page both call this during one request;
+// dedupe so the Auth + profile round-trips to Supabase happen once, not twice.
+export const getCurrentUser = cache(async function getCurrentUser() {
   const supabase = await createClient();
   const {
     data: { user },
@@ -41,7 +44,7 @@ export async function getCurrentUser() {
     .eq("id", user.id)
     .single();
   return { user, profile };
-}
+});
 
 export async function requireUser() {
   const res = await getCurrentUser();

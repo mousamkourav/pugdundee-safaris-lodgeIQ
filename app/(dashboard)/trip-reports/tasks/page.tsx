@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { requireUser, isAdmin } from "@/lib/auth";
 import { getAccessibleLodges } from "@/lib/lodges";
 import { createClient } from "@/lib/supabase/server";
@@ -11,6 +11,7 @@ import {
   STATUS_LABEL,
   PRIORITY_LABEL,
   canDeleteTasks,
+  canEditTask,
   canReviewTask,
   canSubmitTask,
   isTaskStatus,
@@ -28,9 +29,11 @@ export default async function AllTasksPage({
 }: {
   searchParams: Promise<SP>;
 }) {
-  const { user, profile } = await requireUser();
-  const sp = await searchParams;
-  const lodges = await getAccessibleLodges();
+  const [{ user, profile }, sp, lodges] = await Promise.all([
+    requireUser(),
+    searchParams,
+    getAccessibleLodges(),
+  ]);
   const role = profile?.role as string | undefined;
   const admin = isAdmin(role);
   const canDelete = canDeleteTasks(role);
@@ -138,6 +141,7 @@ export default async function AllTasksPage({
                     canSubmit={canSubmitTask(t)}
                     canReview={canReviewTask(t, user.id)}
                     canDelete={canDelete}
+                    canEdit={canEditTask(t, user.id, role)}
                     lodgeName={lodgeNameById.get(t.lodge_id)}
                   />
                 );

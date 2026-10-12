@@ -1,12 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { getCurrentUser, isSuperAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   MAX_PHOTOS,
   TASK_MANAGER_ROLES,
+  canAddTripTasks,
+  isTaskDepartment,
   isTaskPriority,
   isUuid,
   isValidPhotoPath,
@@ -46,12 +49,14 @@ function validateTask(
       description: string | null;
       priority: string;
       due_date: string | null;
+      department: string;
       assigned_photos: string[];
     } {
   if (!isUuid(t?.id)) return "A task has an invalid id.";
   const title = cleanText(t.title, 200);
   if (!title) return "Every task needs a title.";
   if (!isTaskPriority(t.priority)) return `Choose a priority for "${title}".`;
+  if (!isTaskDepartment(t.department)) return `Choose a department for "${title}".`;
   const due = cleanText(t.due_date, 10);
   if (due && !DATE_RE.test(due)) return `Invalid due date for "${title}".`;
 
@@ -67,6 +72,7 @@ function validateTask(
     description: cleanText(t.description, 4000) || null,
     priority: t.priority,
     due_date: due || null,
+    department: t.department,
     assigned_photos: Array.from(new Set(photos)),
   };
 }
@@ -142,14 +148,19 @@ export async function createTrip(input: {
   end_date?: string;
   tasks: NewTaskInput[];
 }): Promise<ActionResult> {
-  const cu = await getCurrentUser();
-  if (!cu?.user) return fail("Please sign in again.");
-  if (!isSuperAdmin(cu.profile?.role))
-    return fail("Only senior managers can assign trips.");
-
   const tripId = input?.id;
   const lodgeId = input?.lodge_id;
   if (!isUuid(tripId) || !isUuid(lodgeId)) return fail("Invalid trip or lodge.");
+
+  // Auth and the lodge lookup are independent: one round-trip, not two.
+  const s = await createClient();
+  const [cu, { data: lodge }] = await Promise.all([
+    getCurrentUser(),
+    s.from("lodges").select("id,name").eq("id", lodgeId).maybeSingle(),
+  ]);
+  if (!cu?.user) return fail("Please sign in again.");
+  if (!isSuperAdmin(cu.profile?.role))
+    return fail("Only senior managers can assign trips.");
 
   const start = cleanText(input.start_date, 10);
   const end = cleanText(input.end_date, 10);
@@ -169,12 +180,6 @@ export async function createTrip(input: {
     rows.push(v);
   }
 
-  const s = await createClient();
-  const { data: lodge } = await s
-    .from("lodges")
-    .select("id,name")
-    .eq("id", lodgeId)
-    .maybeSingle();
   if (!lodge) return fail("Lodge not found.");
 
   // 1. Insert the trip header.
@@ -206,6 +211,7 @@ export async function createTrip(input: {
       description: r.description,
       priority: r.priority,
       due_date: r.due_date,
+      department: r.department,
       status: "pending",
       assigned_photos: r.assigned_photos,
       completion_photos: [],
@@ -221,14 +227,19 @@ export async function createTrip(input: {
   const name = (lodge as { name: string }).name;
   const n = rows.length;
   const anyHigh = rows.some((r) => r.priority === "high");
-  await notifyManagers(
-    lodgeId,
-    tripId,
-    `${n} new task${n > 1 ? "s" : ""} for ${name}`,
-    `${cu.profile?.full_name ?? "Management"} logged a lodge visit and assigned ${n} task${
-      n > 1 ? "s" : ""
-    }. Open Trip reports to complete them.`,
-    anyHigh ? "warning" : "info"
+  const by = cu.profile?.full_name ?? "Management";
+  // Notify after the response is sent: the user does not wait on 3 more
+  // round-trips (managers lookup + insert) for something they never see.
+  after(() =>
+    notifyManagers(
+      lodgeId,
+      tripId,
+      `${n} new task${n > 1 ? "s" : ""} for ${name}`,
+      `${by} logged a lodge visit and assigned ${n} task${
+        n > 1 ? "s" : ""
+      }. Open Trip reports to complete them.`,
+      anyHigh ? "warning" : "info"
+    )
   );
 
   return done();
@@ -239,19 +250,23 @@ export async function addTasksToTrip(input: {
   trip_id: string;
   tasks: NewTaskInput[];
 }): Promise<ActionResult> {
-  const cu = await getCurrentUser();
-  if (!cu?.user) return fail("Please sign in again.");
-  if (!isSuperAdmin(cu.profile?.role))
-    return fail("Only senior managers can add tasks.");
   if (!isUuid(input?.trip_id)) return fail("Invalid trip.");
 
   const s = await createClient();
-  const { data: trip } = await s
-    .from("trips")
-    .select("id,lodge_id")
-    .eq("id", input.trip_id)
-    .maybeSingle();
+  const [cu, { data: trip }] = await Promise.all([
+    getCurrentUser(),
+    s
+      .from("trips")
+      .select("id,lodge_id,created_by")
+      .eq("id", input.trip_id)
+      .maybeSingle(),
+  ]);
+  if (!cu?.user) return fail("Please sign in again.");
   if (!trip) return fail("Trip not found or you do not have access to it.");
+  // Any trip state (including after its tasks were submitted or resolved):
+  // the trip's creator or a super role may keep adding tasks.
+  if (!canAddTripTasks(trip as { created_by: string | null }, cu.user.id, cu.profile?.role))
+    return fail("Only the person who created this trip or a senior manager can add tasks.");
   const lodgeId = (trip as { lodge_id: string }).lodge_id;
 
   const rawTasks = Array.isArray(input.tasks) ? input.tasks : [];
@@ -273,6 +288,7 @@ export async function addTasksToTrip(input: {
       description: r.description,
       priority: r.priority,
       due_date: r.due_date,
+      department: r.department,
       status: "pending",
       assigned_photos: r.assigned_photos,
       completion_photos: [],
@@ -281,17 +297,22 @@ export async function addTasksToTrip(input: {
   );
   if (error) return fail(`Could not add tasks: ${error.message}`);
 
-  const name = await lodgeName(lodgeId);
   const n = rows.length;
-  await notifyManagers(
-    lodgeId,
-    input.trip_id,
-    `${n} more task${n > 1 ? "s" : ""} for ${name}`,
-    `${cu.profile?.full_name ?? "Management"} added ${n} task${
-      n > 1 ? "s" : ""
-    } to an existing lodge visit. Open Trip reports to complete them.`,
-    rows.some((r) => r.priority === "high") ? "warning" : "info"
-  );
+  const tripId = input.trip_id;
+  const by = cu.profile?.full_name ?? "Management";
+  const anyHigh = rows.some((r) => r.priority === "high");
+  after(async () => {
+    const name = await lodgeName(lodgeId);
+    await notifyManagers(
+      lodgeId,
+      tripId,
+      `${n} more task${n > 1 ? "s" : ""} for ${name}`,
+      `${by} added ${n} task${
+        n > 1 ? "s" : ""
+      } to an existing lodge visit. Open Trip reports to complete them.`,
+      anyHigh ? "warning" : "info"
+    );
+  });
 
   return done();
 }

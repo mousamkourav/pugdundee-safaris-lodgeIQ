@@ -1,12 +1,12 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PhotoPicker, type PickedPhoto } from "@/components/photo-picker";
 import type { LodgeLite } from "@/lib/lodges";
 import {
   MAX_PHOTOS,
+  TASK_PHOTO_MAX_BYTES,
   TASK_PRIORITIES,
   PRIORITY_LABEL,
   newUuid,
@@ -15,6 +15,7 @@ import {
 } from "@/lib/tasks";
 import { Icon } from "@/components/icons";
 import { createTask } from "./actions";
+import { DepartmentSelect } from "./department-select";
 
 const INPUT =
   "w-full rounded-lg border border-sand-300 bg-white px-3.5 py-2.5 text-sm text-sand-700 outline-none transition focus:border-olive-600 focus:ring-3 focus:ring-gold-500/35 disabled:bg-sand-100";
@@ -36,7 +37,6 @@ export function AssignTaskForm({
   lodges: LodgeLite[];
   defaultLodge: string;
 }) {
-  const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const [photos, setPhotos] = useState<PickedPhoto[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -54,6 +54,8 @@ export function AssignTaskForm({
     const title = String(fd.get("title") ?? "").trim();
     if (!lodgeId) return setError("Choose a lodge.");
     if (!title) return setError("Title is required.");
+    const department = String(fd.get("department") ?? "");
+    if (!department) return setError("Choose a department.");
 
     const id = newUuid();
     const supabase = createClient();
@@ -77,6 +79,7 @@ export function AssignTaskForm({
         description: String(fd.get("description") ?? ""),
         priority: String(fd.get("priority") ?? "medium"),
         due_date: String(fd.get("due_date") ?? ""),
+        department,
         photos: uploaded,
       });
       if (!res.ok) {
@@ -88,7 +91,8 @@ export function AssignTaskForm({
       setPhotos([]);
       formRef.current?.reset();
       setOk(true);
-      router.refresh();
+      // No router.refresh(): the action's revalidatePath already returns the
+      // re-rendered page; refreshing again would render it a second time.
     } catch (err) {
       await removeTaskPhotos(supabase, uploaded);
       setError(err instanceof Error ? err.message : "Something went wrong.");
@@ -147,6 +151,11 @@ export function AssignTaskForm({
         />
       </div>
 
+      <div>
+        <label className={LABEL}>Department *</label>
+        <DepartmentSelect name="department" disabled={disabled} className={INPUT} />
+      </div>
+
       <fieldset>
         <legend className={LABEL}>Priority level *</legend>
         <div className="grid grid-cols-3 gap-2">
@@ -175,6 +184,7 @@ export function AssignTaskForm({
         photos={photos}
         setPhotos={setPhotos}
         max={MAX_PHOTOS}
+        maxBytes={TASK_PHOTO_MAX_BYTES}
         label="Reference photos"
         disabled={disabled}
       />

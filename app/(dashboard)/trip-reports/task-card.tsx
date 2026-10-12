@@ -8,10 +8,12 @@ import {
   STATUS_ACCENT,
   STATUS_BADGE,
   STATUS_LABEL,
+  departmentLabel,
   formatDate,
   type Task,
 } from "@/lib/tasks";
 import { CompleteTaskForm } from "./complete-task-form";
+import { EditTaskButton } from "./edit-task-button";
 import { ReviewButtons } from "./review-buttons";
 
 // All display data is resolved on the server and passed in, so the popup needs
@@ -27,8 +29,12 @@ export type TaskCardData = {
   canSubmit: boolean;
   canReview: boolean;
   canDelete: boolean;
+  canEdit?: boolean;
   lodgeName?: string;
 };
+
+const DEPT_BADGE =
+  "inline-flex items-center gap-1 rounded-full border border-sand-200 bg-sand-100 font-semibold text-sand-700";
 
 function Thumbs({ label, urls, icon }: { label: string; urls: string[]; icon: string }) {
   if (!urls.length) return null;
@@ -59,6 +65,7 @@ export function TaskCard(d: TaskCardData) {
     t.due_date < new Date().toISOString().slice(0, 10);
   const thumb = d.refUrls[0] ?? d.doneUrls[0] ?? null;
   const photoCount = d.refUrls.length + d.doneUrls.length;
+  const dept = departmentLabel(t.department);
 
   useEffect(() => {
     if (!open) return;
@@ -103,6 +110,12 @@ export function TaskCard(d: TaskCardData) {
             <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${PRIORITY_BADGE[t.priority] ?? PRIORITY_BADGE.medium}`}>
               {PRIORITY_LABEL[t.priority] ?? t.priority}
             </span>
+            {dept && (
+              <span className={`${DEPT_BADGE} px-2 py-0.5 text-[11px]`}>
+                <Icon name="tag" className="h-3 w-3" />
+                {dept}
+              </span>
+            )}
           </span>
           <span className="block truncate font-semibold text-sand-900">{t.title}</span>
           <span className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-sand-500">
@@ -149,6 +162,12 @@ export function TaskCard(d: TaskCardData) {
                   <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide ${PRIORITY_BADGE[t.priority] ?? PRIORITY_BADGE.medium}`}>
                     {PRIORITY_LABEL[t.priority] ?? t.priority} priority
                   </span>
+                  {dept && (
+                    <span className={`${DEPT_BADGE} px-2.5 py-0.5 text-xs`}>
+                      <Icon name="tag" className="h-3.5 w-3.5" />
+                      {dept}
+                    </span>
+                  )}
                 </div>
                 <h2 className="break-words text-lg leading-6 sm:text-xl">{t.title}</h2>
               </div>
@@ -226,8 +245,9 @@ export function TaskCard(d: TaskCardData) {
                 </p>
               )}
 
-              {(d.canSubmit || d.canReview || d.canDelete) && (
+              {(d.canSubmit || d.canReview || d.canDelete || d.canEdit) && (
                 <div className="space-y-3 border-t border-sand-100 pt-4">
+                  {d.canEdit && <EditTaskButton task={t} />}
                   {d.canSubmit && (
                     <CompleteTaskForm taskId={t.id} lodgeId={t.lodge_id} resubmit={t.status === "declined"} />
                   )}

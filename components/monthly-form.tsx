@@ -94,6 +94,15 @@ const STATUS_UI: Record<SecStatus, { label: string; pill: string; dot: string }>
   },
 };
 
+const MONTH_LABELS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+const monthLabel = (ym: string) => {
+  const [y, m] = ym.split("-");
+  return `${MONTH_LABELS[Number(m) - 1] ?? m} ${y}`;
+};
+
 const pad = (n: string | null, i: number) => {
   const v = n ?? String(i + 1);
   return /^\d$/.test(v) ? `0${v}` : v;
@@ -119,6 +128,9 @@ export function MonthlyForm({
   submitReport: (fd: FormData) => Promise<void>;
 }) {
   const [data, setData] = useState<Data>(() => normalize(initialData, lodgeName));
+  // The lodge+month this form's state was loaded for. Posted with every save so
+  // the server can refuse to write it into a different lodge/month.
+  const [origin] = useState(() => `${lodge}|${month}`);
   const sections = sectionsForLodge(lodgeName);
   const [activeKey, setActiveKey] = useState<string | null>(sections[0]?.key ?? null);
 
@@ -186,6 +198,7 @@ export function MonthlyForm({
     <form action={saveDraft}>
       <input type="hidden" name="lodge_id" value={lodge} />
       <input type="hidden" name="month" value={month} />
+      <input type="hidden" name="form_origin" value={origin} />
 
       {/* mobile / tablet: horizontal section strip */}
       <nav
@@ -453,6 +466,13 @@ export function MonthlyForm({
               </button>
               <button
                 formAction={submitReport}
+                onClick={(e) => {
+                  const what = `${lodgeName} - ${monthLabel(month)}`;
+                  const msg = admin
+                    ? `Mark the ${what} report as submitted?`
+                    : `Submit the ${what} report? It will be locked and you will need admin approval to edit it again.`;
+                  if (!window.confirm(msg)) e.preventDefault();
+                }}
                 className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg bg-olive-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-olive-700 active:bg-olive-800 sm:min-h-10 sm:flex-none"
               >
                 {admin ? "Save & mark submitted" : "Submit (locks report)"}

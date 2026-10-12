@@ -30,10 +30,12 @@ export async function fetchTripsWithCounts(
 
   // Task counts per trip, in one query.
   const tripIds = tripRows.map((t) => t.id);
-  const { data: tasks } = await s
-    .from("tasks")
-    .select("trip_id,status")
-    .in("trip_id", tripIds);
+  const lodgeIds = Array.from(new Set(tripRows.map((t) => t.lodge_id)));
+  // Task counts and lodge names are independent: one round-trip for both.
+  const [{ data: tasks }, { data: lodges }] = await Promise.all([
+    s.from("tasks").select("trip_id,status").in("trip_id", tripIds),
+    s.from("lodges").select("id,name").in("id", lodgeIds),
+  ]);
   const counts = new Map<string, Record<TaskStatus, number> & { total: number }>();
   for (const id of tripIds) {
     counts.set(id, { total: 0, pending: 0, submitted: 0, resolved: 0, declined: 0 });
@@ -45,9 +47,7 @@ export async function fetchTripsWithCounts(
     if (row.status in c) c[row.status] += 1;
   }
 
-  // Lodge names + creator names (service-safe fields only).
-  const lodgeIds = Array.from(new Set(tripRows.map((t) => t.lodge_id)));
-  const { data: lodges } = await s.from("lodges").select("id,name").in("id", lodgeIds);
+  // Lodge names (service-safe fields only).
   const lodgeName = new Map(
     ((lodges ?? []) as Array<{ id: string; name: string }>).map((l) => [l.id, l.name])
   );

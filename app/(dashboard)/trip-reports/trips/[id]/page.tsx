@@ -11,6 +11,9 @@ import {
   STATUS_BADGE,
   STATUS_LABEL,
   TASK_STATUSES,
+  canAddTripTasks,
+  canEditTask,
+  departmentLabel,
   formatDate,
   isTaskStatus,
   photoList,
@@ -20,21 +23,30 @@ import {
   type TaskStatus,
   type Trip,
 } from "@/lib/tasks";
+import { AssignTaskDrawer } from "../../assign-task-drawer";
+import { EditTaskButton } from "../../edit-task-button";
 
 export default async function TripDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireUser();
-  const { id } = await params;
-  const s = await createClient();
+  const [{ user, profile }, { id }, s] = await Promise.all([
+    requireUser(),
+    params,
+    createClient(),
+  ]);
+  const role = profile?.role as string | undefined;
 
-  const { data: tripRow } = await s
-    .from("trips")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
+  // Trip and its tasks only need the id: fetch together.
+  const [{ data: tripRow }, { data: taskData }] = await Promise.all([
+    s.from("trips").select("*").eq("id", id).maybeSingle(),
+    s
+      .from("tasks")
+      .select("*")
+      .eq("trip_id", id)
+      .order("created_at", { ascending: false }),
+  ]);
   const trip = tripRow as Trip | null;
 
   if (!trip) {
@@ -50,12 +62,6 @@ export default async function TripDetailPage({
 
   const { data: lodge } = await s.from("lodges").select("name").eq("id", trip.lodge_id).maybeSingle();
   const lodgeName = (lodge as { name: string } | null)?.name ?? "Lodge";
-
-  const { data: taskData } = await s
-    .from("tasks")
-    .select("*")
-    .eq("trip_id", id)
-    .order("created_at", { ascending: false });
   const tasks = (taskData ?? []) as Task[];
 
   const counts = Object.fromEntries(TASK_STATUSES.map((t) => [t, 0])) as Record<TaskStatus, number>;
@@ -72,6 +78,10 @@ export default async function TripDetailPage({
   }
   const who = (uid: string | null) => (uid ? names.get(uid) ?? "Unknown" : "-");
   const authority = trip.authority?.trim() || who(trip.created_by) || "Management";
+  const dateRange = tripDateRange(trip.start_date, trip.end_date);
+  // The trip's creator (or a super role) can keep adding tasks at any time,
+  // including after earlier tasks were submitted or resolved.
+  const canAdd = canAddTripTasks(trip, user.id, role);
 
   return (
     <div>
@@ -83,7 +93,21 @@ export default async function TripDetailPage({
       <PageHeader
         eyebrow={<span>Inspection trip</span>}
         title={`${authority} - ${lodgeName}`}
-        description={tripDateRange(trip.start_date, trip.end_date)}
+        description={dateRange}
+        action={
+          canAdd ? (
+            <AssignTaskDrawer
+              lodges={[{ id: trip.lodge_id, name: lodgeName }]}
+              defaultLodge={trip.lodge_id}
+              existingTrip={{
+                id: trip.id,
+                lodgeId: trip.lodge_id,
+                lodgeName,
+                summary: `${authority} - ${dateRange}`,
+              }}
+            />
+          ) : undefined
+        }
       />
 
       {/* trip summary counts */}
@@ -123,6 +147,7 @@ export default async function TripDetailPage({
           {tasks.map((t) => {
             const refs = photoList(t.assigned_photos).map((p) => photoUrl(s, p));
             const accent = STATUS_ACCENT[t.status] ?? STATUS_ACCENT.pending;
+            const dept = departmentLabel(t.department);
             return (
               <article key={t.id} className={`flex flex-col gap-3 rounded-xl border border-l-4 border-sand-200 bg-white p-5 shadow-card ${accent.bar}`}>
                 <div className="flex flex-wrap items-center gap-2">
@@ -133,6 +158,12 @@ export default async function TripDetailPage({
                     <span className={`h-1.5 w-1.5 rounded-full ${accent.dot}`} />
                     {STATUS_LABEL[t.status]}
                   </span>
+                  {dept && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-sand-200 bg-sand-100 px-2.5 py-0.5 text-xs font-semibold text-sand-700">
+                      <Icon name="tag" className="h-3.5 w-3.5" />
+                      {dept}
+                    </span>
+                  )}
                   {t.due_date && (
                     <span className="ml-auto text-xs text-sand-500">Due {formatDate(t.due_date)}</span>
                   )}
@@ -146,6 +177,11 @@ export default async function TripDetailPage({
                         <img src={u} alt="" loading="lazy" className="h-full w-full object-cover" />
                       </a>
                     ))}
+                  </div>
+                )}
+                {canEditTask(t, user.id, role) && (
+                  <div className="mt-auto pt-1">
+                    <EditTaskButton task={t} />
                   </div>
                 )}
               </article>
