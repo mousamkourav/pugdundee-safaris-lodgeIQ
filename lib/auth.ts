@@ -9,7 +9,8 @@ export type Role =
   | "lodge_manager"
   | "operations_manager"
   | "lodge_accounts"
-  | "sales_member";
+  | "sales_member"
+  | "task_creator";
 
 // Human-readable labels for each role (used in the users admin dropdown).
 export const ROLE_LABELS: Record<Role, string> = {
@@ -20,6 +21,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   operations_manager: "Operations manager",
   lodge_accounts: "Lodge accounts",
   sales_member: "Sales member",
+  task_creator: "Task creator",
 };
 
 // Roles that can see ALL lodges.
@@ -63,6 +65,7 @@ export const isSalesUser = (role?: string | null) =>
 
 // A sales member never sees Lodge Reporting.
 export const isSalesOnly = (role?: string | null) => role === "sales_member";
+export const isTaskCreatorOnly = (role?: string | null) => role === "task_creator";
 
 // Where a user lands after sign-in.
 //   super roles -> module picker; sales members -> Sales; everyone else -> Lodge Reporting.

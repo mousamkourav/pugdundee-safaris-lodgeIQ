@@ -188,7 +188,8 @@ export function photoUrl(client: SupabaseClient, path: string): string {
 
 // ---- Permission rules (mirrored server-side in every action) ----
 
-export const canAssignTasks = (role?: string | null) => isSuperAdmin(role);
+export const canAssignTasks = (role?: string | null) =>
+  isSuperAdmin(role) || role === "task_creator";
 export const canDeleteTasks = (role?: string | null) => isSuperAdmin(role);
 // Task details (title, description, priority, due date, department) may be
 // edited ONLY by the task's creator - not by other admins. Mirrors step 4 of
