@@ -68,9 +68,11 @@ export const isSalesOnly = (role?: string | null) => role === "sales_member";
 export const isTaskCreatorOnly = (role?: string | null) => role === "task_creator";
 
 // Where a user lands after sign-in.
-//   super roles -> module picker; sales members -> Sales; everyone else -> Lodge Reporting.
+//   super roles -> module picker; sales members -> Sales; task creators -> Trip
+//   reports (the only page they use); everyone else -> Lodge Reporting.
 export function homePathFor(role?: string | null) {
   if (isSalesOnly(role)) return "/sales";
+  if (isTaskCreatorOnly(role)) return "/trip-reports";
   if (isSuperAdmin(role)) return "/hub";
   return "/dashboard";
 }

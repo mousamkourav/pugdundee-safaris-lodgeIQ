@@ -2,17 +2,19 @@
 
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
-import { getCurrentUser, isSuperAdmin } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   MAX_PHOTOS,
   TASK_MANAGER_ROLES,
   canAddTripTasks,
+  canAssignTasks,
   isTaskDepartment,
   isTaskPriority,
   isUuid,
   isValidPhotoPath,
+  lockedDepartmentFor,
   type ActionResult,
   type NewTaskInput,
 } from "@/lib/tasks";
@@ -20,7 +22,8 @@ import {
 // Trip = one authority visit to one lodge over a date range, holding many tasks.
 // createTrip inserts the trip header, then all its tasks (each linked by
 // trip_id and inheriting the trip's lodge), then notifies the lodge managers
-// once with a summary. Only super_admin / senior_manager may create trips.
+// once with a summary. Only canAssignTasks roles (super_admin, senior_manager,
+// task_creator) may create trips.
 
 const fail = (error: string): ActionResult => ({ ok: false, error });
 
@@ -40,7 +43,8 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // lodge/trip, which the caller adds) or an error string.
 function validateTask(
   t: NewTaskInput,
-  lodgeId: string
+  lodgeId: string,
+  lockedDept: string | null
 ):
   | string
   | {
@@ -57,6 +61,8 @@ function validateTask(
   if (!title) return "Every task needs a title.";
   if (!isTaskPriority(t.priority)) return `Choose a priority for "${title}".`;
   if (!isTaskDepartment(t.department)) return `Choose a department for "${title}".`;
+  if (lockedDept && t.department !== lockedDept)
+    return `"${title}": your role can only assign F&B tasks.`;
   const due = cleanText(t.due_date, 10);
   if (due && !DATE_RE.test(due)) return `Invalid due date for "${title}".`;
 
@@ -159,8 +165,8 @@ export async function createTrip(input: {
     s.from("lodges").select("id,name").eq("id", lodgeId).maybeSingle(),
   ]);
   if (!cu?.user) return fail("Please sign in again.");
-  if (!isSuperAdmin(cu.profile?.role))
-    return fail("Only senior managers can assign trips.");
+  if (!canAssignTasks(cu.profile?.role))
+    return fail("You do not have permission to assign trips.");
 
   const start = cleanText(input.start_date, 10);
   const end = cleanText(input.end_date, 10);
@@ -175,7 +181,7 @@ export async function createTrip(input: {
   // Validate every task before writing anything.
   const rows = [];
   for (const t of rawTasks) {
-    const v = validateTask(t, lodgeId);
+    const v = validateTask(t, lodgeId, lockedDepartmentFor(cu.profile?.role));
     if (typeof v === "string") return fail(v);
     rows.push(v);
   }
@@ -274,7 +280,7 @@ export async function addTasksToTrip(input: {
 
   const rows = [];
   for (const t of rawTasks) {
-    const v = validateTask(t, lodgeId);
+    const v = validateTask(t, lodgeId, lockedDepartmentFor(cu.profile?.role));
     if (typeof v === "string") return fail(v);
     rows.push(v);
   }

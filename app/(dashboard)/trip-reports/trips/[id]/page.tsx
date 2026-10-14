@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { PageHeader } from "@/components/page-header";
 import { Icon } from "@/components/icons";
+import { PhotoGrid } from "@/components/photo-lightbox";
 import {
   PRIORITY_BADGE,
   PRIORITY_LABEL,
@@ -16,6 +16,7 @@ import {
   departmentLabel,
   formatDate,
   isTaskStatus,
+  lockedDepartmentFor,
   photoList,
   photoUrl,
   tripDateRange,
@@ -25,6 +26,7 @@ import {
 } from "@/lib/tasks";
 import { AssignTaskDrawer } from "../../assign-task-drawer";
 import { EditTaskButton } from "../../edit-task-button";
+import { profileNames } from "../../trips-data";
 
 export default async function TripDetailPage({
   params,
@@ -37,6 +39,7 @@ export default async function TripDetailPage({
     createClient(),
   ]);
   const role = profile?.role as string | undefined;
+  const lockedDept = lockedDepartmentFor(role);
 
   // Trip and its tasks only need the id: fetch together.
   const [{ data: tripRow }, { data: taskData }] = await Promise.all([
@@ -68,16 +71,14 @@ export default async function TripDetailPage({
   for (const t of tasks) if (isTaskStatus(t.status)) counts[t.status] += 1;
 
   // creator/authority display name
-  const nameIds = Array.from(
-    new Set(tasks.flatMap((t) => [t.created_by, t.submitted_by, t.resolved_by]).filter((v): v is string => !!v))
-  );
-  const names = new Map<string, string>();
-  if (nameIds.length) {
-    const { data: people } = await createAdminClient().from("profiles").select("id,full_name").in("id", nameIds);
-    for (const p of (people ?? []) as Array<{ id: string; full_name: string | null }>) names.set(p.id, p.full_name ?? "Unknown");
-  }
-  const who = (uid: string | null) => (uid ? names.get(uid) ?? "Unknown" : "-");
-  const authority = trip.authority?.trim() || who(trip.created_by) || "Management";
+  // The trip's creator is included so the fallback name works even before
+  // the trip has any tasks.
+  const names = await profileNames([
+    trip.created_by,
+    ...tasks.flatMap((t) => [t.created_by, t.submitted_by, t.resolved_by]),
+  ]);
+  const creatorName = trip.created_by ? names.get(trip.created_by) ?? null : null;
+  const authority = trip.authority?.trim() || creatorName || "Management";
   const dateRange = tripDateRange(trip.start_date, trip.end_date);
   // The trip's creator (or a super role) can keep adding tasks at any time,
   // including after earlier tasks were submitted or resolved.
@@ -105,6 +106,7 @@ export default async function TripDetailPage({
                 lodgeName,
                 summary: `${authority} - ${dateRange}`,
               }}
+              lockedDepartment={lockedDept}
             />
           ) : undefined
         }
@@ -170,18 +172,10 @@ export default async function TripDetailPage({
                 </div>
                 <h3 className="text-base font-semibold text-sand-900">{t.title}</h3>
                 {t.description && <p className="whitespace-pre-line text-sm text-sand-700">{t.description}</p>}
-                {refs.length > 0 && (
-                  <div className="grid grid-cols-3 gap-2">
-                    {refs.map((u) => (
-                      <a key={u} href={u} target="_blank" rel="noopener noreferrer" className="block aspect-[4/3] overflow-hidden rounded-lg border border-sand-200 bg-sand-100">
-                        <img src={u} alt="" loading="lazy" className="h-full w-full object-cover" />
-                      </a>
-                    ))}
-                  </div>
-                )}
+                <PhotoGrid urls={refs} />
                 {canEditTask(t, user.id) && (
                   <div className="mt-auto pt-1">
-                    <EditTaskButton task={t} />
+                    <EditTaskButton task={t} lockedDepartment={lockedDept} />
                   </div>
                 )}
               </article>

@@ -18,7 +18,13 @@ type EditableTask = Pick<
 // "Edit details" button + modal, shown only to the task's creator. Only
 // the detail fields are editable; photos, status and completion stay as-is.
 // The server action re-checks permission; showing the button is not a guard.
-export function EditTaskButton({ task }: { task: EditableTask }) {
+export function EditTaskButton({
+  task,
+  lockedDepartment,
+}: {
+  task: EditableTask;
+  lockedDepartment?: string | null;
+}) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? "");
@@ -34,7 +40,7 @@ export function EditTaskButton({ task }: { task: EditableTask }) {
     setDescription(task.description ?? "");
     setPriority(task.priority);
     setDueDate(task.due_date ?? "");
-    setDepartment(task.department ?? "");
+    setDepartment(lockedDepartment ?? task.department ?? "");
     setError(null);
     setOpen(true);
   }
@@ -141,6 +147,7 @@ export function EditTaskButton({ task }: { task: EditableTask }) {
                     onChange={setDepartment}
                     disabled={busy}
                     className={INPUT}
+                    locked={lockedDepartment}
                   />
                 </div>
                 <div>

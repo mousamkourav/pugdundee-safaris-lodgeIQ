@@ -1,9 +1,11 @@
 "use client";
 
-import { DEPARTMENT_LABEL, TASK_DEPARTMENTS } from "@/lib/tasks";
+import { DEPARTMENT_LABEL, TASK_DEPARTMENTS, departmentLabel } from "@/lib/tasks";
 
 // Department dropdown shared by the assign, add-to-trip and edit task forms.
 // Controlled when `value` is passed; uncontrolled (form field) otherwise.
+// With `locked` (see lockedDepartmentFor) it renders a fixed, read-only field
+// instead of a dropdown; the server actions enforce the same lock.
 export function DepartmentSelect({
   value,
   onChange,
@@ -12,6 +14,7 @@ export function DepartmentSelect({
   disabled,
   className,
   id,
+  locked,
 }: {
   value?: string;
   onChange?: (v: string) => void;
@@ -20,7 +23,23 @@ export function DepartmentSelect({
   disabled?: boolean;
   className?: string;
   id?: string;
+  locked?: string | null;
 }) {
+  if (locked) {
+    return (
+      <>
+        <div
+          id={id}
+          aria-readonly="true"
+          className={(className ?? "") + " flex items-center justify-between gap-2 bg-sand-100"}
+        >
+          <span className="font-medium">{departmentLabel(locked) ?? locked}</span>
+          <span className="text-xs text-sand-500">Fixed for your role</span>
+        </div>
+        {name && <input type="hidden" name={name} value={locked} />}
+      </>
+    );
+  }
   return (
     <select
       id={id}

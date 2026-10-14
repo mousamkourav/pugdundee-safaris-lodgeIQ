@@ -68,6 +68,13 @@ export const isTaskDepartment = (v: unknown): v is TaskDepartment =>
 export const departmentLabel = (v: string | null | undefined): string | null =>
   isTaskDepartment(v) ? DEPARTMENT_LABEL[v] : null;
 
+// A task_creator (the traveling chef) may only create / edit F&B tasks.
+export const TASK_CREATOR_DEPARTMENT: TaskDepartment = "fnb";
+
+// The one department a role is locked to, or null when any is allowed.
+export const lockedDepartmentFor = (role?: string | null): TaskDepartment | null =>
+  role === "task_creator" ? TASK_CREATOR_DEPARTMENT : null;
+
 export type Task = {
   id: string;
   lodge_id: string;

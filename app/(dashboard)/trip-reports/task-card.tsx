@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Icon } from "@/components/icons";
+import { PhotoGrid } from "@/components/photo-lightbox";
 import {
   PRIORITY_BADGE,
   PRIORITY_LABEL,
@@ -31,6 +32,7 @@ export type TaskCardData = {
   canDelete: boolean;
   canEdit?: boolean;
   lodgeName?: string;
+  lockedDepartment?: string | null;
 };
 
 const DEPT_BADGE =
@@ -44,13 +46,7 @@ function Thumbs({ label, urls, icon }: { label: string; urls: string[]; icon: st
         <Icon name={icon} className="h-3.5 w-3.5" />
         {label} ({urls.length})
       </p>
-      <div className="grid grid-cols-3 gap-2">
-        {urls.map((u) => (
-          <a key={u} href={u} target="_blank" rel="noopener noreferrer" className="block aspect-[4/3] overflow-hidden rounded-lg border border-sand-200 bg-sand-100">
-            <img src={u} alt="" loading="lazy" className="h-full w-full object-cover" />
-          </a>
-        ))}
-      </div>
+      <PhotoGrid urls={urls} />
     </div>
   );
 }
@@ -247,7 +243,7 @@ export function TaskCard(d: TaskCardData) {
 
               {(d.canSubmit || d.canReview || d.canDelete || d.canEdit) && (
                 <div className="space-y-3 border-t border-sand-100 pt-4">
-                  {d.canEdit && <EditTaskButton task={t} />}
+                  {d.canEdit && <EditTaskButton task={t} lockedDepartment={d.lockedDepartment} />}
                   {d.canSubmit && (
                     <CompleteTaskForm taskId={t.id} lodgeId={t.lodge_id} resubmit={t.status === "declined"} />
                   )}

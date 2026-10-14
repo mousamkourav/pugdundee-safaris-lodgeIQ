@@ -33,9 +33,11 @@ const PRIORITY_CHIP: Record<string, string> = {
 export function AssignTaskForm({
   lodges,
   defaultLodge,
+  lockedDepartment,
 }: {
   lodges: LodgeLite[];
   defaultLodge: string;
+  lockedDepartment?: string | null;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [photos, setPhotos] = useState<PickedPhoto[]>([]);
@@ -123,7 +125,7 @@ export function AssignTaskForm({
         </div>
         <div>
           <label className={LABEL}>Department *</label>
-          <DepartmentSelect name="department" disabled={disabled} className={INPUT} />
+          <DepartmentSelect name="department" disabled={disabled} className={INPUT} locked={lockedDepartment} />
         </div>
       </div>
 

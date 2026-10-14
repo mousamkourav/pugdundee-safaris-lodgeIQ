@@ -51,13 +51,13 @@ type Draft = {
   photos: PickedPhoto[];
 };
 
-function emptyDraft(): Draft {
+function emptyDraft(department = ""): Draft {
   return {
     title: "",
     description: "",
     priority: "medium",
     due_date: "",
-    department: "",
+    department,
     photos: [],
   };
 }
@@ -88,25 +88,32 @@ export function AssignTripForm({
   authorityChips,
   onDone,
   existingTrip,
+  lockedDepartment,
+  defaultAuthority = "",
 }: {
   lodges: LodgeLite[];
   defaultLodge: string;
   authorityChips?: string[];
   onDone?: () => void;
   existingTrip?: ExistingTrip;
+  // Set for task_creator: every task is fixed to this department.
+  lockedDepartment?: string | null;
+  // Pre-filled inspection lead: the signed-in user's full name (editable).
+  defaultAuthority?: string;
 }) {
+  const blankDraft = () => emptyDraft(lockedDepartment ?? "");
 
   // Step 1 - trip
   const [step, setStep] = useState<1 | 2>(existingTrip ? 2 : 1);
   const [lodgeId, setLodgeId] = useState(existingTrip?.lodgeId ?? defaultLodge);
-  const [authority, setAuthority] = useState("");
+  const [authority, setAuthority] = useState(defaultAuthority);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [focus, setFocus] = useState("");
 
   // Step 2 - tasks
   const [queued, setQueued] = useState<Queued[]>([]);
-  const [draft, setDraft] = useState<Draft>(emptyDraft());
+  const [draft, setDraft] = useState<Draft>(blankDraft);
 
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -140,7 +147,7 @@ export function AssignTripForm({
         photos: draft.photos,
       },
     ]);
-    setDraft(emptyDraft());
+    setDraft(blankDraft());
   }
 
   function removeQueued(id: string) {
@@ -222,9 +229,9 @@ export function AssignTripForm({
       // success - clean up previews and reset
       tasks.forEach((t) => t.photos.forEach((p) => URL.revokeObjectURL(p.preview)));
       setQueued([]);
-      setDraft(emptyDraft());
+      setDraft(blankDraft());
       setStep(existingTrip ? 2 : 1);
-      setAuthority("");
+      setAuthority(defaultAuthority);
       setStartDate("");
       setEndDate("");
       setFocus("");
@@ -426,6 +433,7 @@ export function AssignTripForm({
                 onChange={(v) => setDraft({ ...draft, department: v })}
                 disabled={disabled}
                 className={INPUT}
+                locked={lockedDepartment}
               />
             </div>
 

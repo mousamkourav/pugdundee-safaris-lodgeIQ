@@ -14,11 +14,15 @@ export function AssignTaskDrawer({
   defaultLodge,
   authorityChips,
   existingTrip,
+  lockedDepartment,
+  defaultAuthority,
 }: {
   lodges: LodgeLite[];
   defaultLodge: string;
   authorityChips?: string[];
   existingTrip?: ExistingTrip;
+  lockedDepartment?: string | null;
+  defaultAuthority?: string;
 }) {
   const heading = existingTrip ? "Add tasks to this trip" : "Assign trip & tasks";
   const subheading = existingTrip
@@ -97,6 +101,8 @@ export function AssignTaskDrawer({
               defaultLodge={defaultLodge}
               authorityChips={authorityChips}
               existingTrip={existingTrip}
+              lockedDepartment={lockedDepartment}
+              defaultAuthority={defaultAuthority}
               onDone={() => setOpen(false)}
             />
           </div>

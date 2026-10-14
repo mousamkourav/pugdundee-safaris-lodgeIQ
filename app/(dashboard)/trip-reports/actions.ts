@@ -9,6 +9,7 @@ import {
   MAX_PHOTOS,
   TASK_BUCKET,
   TASK_MANAGER_ROLES,
+  canAssignTasks,
   canEditTask,
   canReviewTask,
   canSubmitTask,
@@ -16,6 +17,7 @@ import {
   isTaskPriority,
   isUuid,
   isValidPhotoPath,
+  lockedDepartmentFor,
   photoList,
   taskFolder,
   type ActionResult,
@@ -164,7 +166,10 @@ export async function createTask(input: {
     s.from("lodges").select("id,name").eq("id", lodgeId).maybeSingle(),
   ]);
   if (!cu?.user) return fail("Please sign in again.");
-  if (!isSuperAdmin(cu.profile?.role)) return fail("Only senior managers can assign tasks.");
+  if (!canAssignTasks(cu.profile?.role)) return fail("You do not have permission to assign tasks.");
+  const lockedDept = lockedDepartmentFor(cu.profile?.role);
+  if (lockedDept && input.department !== lockedDept)
+    return fail("Your role can only assign F&B tasks.");
 
   const title = cleanText(input.title, 200);
   if (!title) return fail("Title is required.");
@@ -243,6 +248,9 @@ export async function updateTask(input: {
   if (!canEditTask(task, cu.user.id)) {
     return fail("Only the person who assigned this task can edit it.");
   }
+  const lockedDept = lockedDepartmentFor(cu.profile?.role);
+  if (lockedDept && input.department !== lockedDept)
+    return fail("Your role can only assign F&B tasks.");
 
   const s = await createClient();
   const { data, error } = await s
