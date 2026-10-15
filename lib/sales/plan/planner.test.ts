@@ -22,6 +22,8 @@ const ctx: BuilderContext = {
     { id: "PTL_AC", property_id: "PTL", name: "AC Cottage", sort: 0 },
   ],
   templates: [],
+  content: [],
+  cancellation: [],
 };
 
 function sheetPlan(): Plan {

@@ -130,10 +130,16 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
             today={todayIST()}
           />
           {canEdit && (
-            <Link href={`/sales/new?from=${q.id}`} className={ui.btnSecondary}>
-              <Icon name="clipboard" className="h-[18px] w-[18px]" />
-              Edit as new version
-            </Link>
+            <>
+              <Link href={`/sales/new?from=${q.id}`} className={ui.btnSecondary}>
+                <Icon name="clipboard" className="h-[18px] w-[18px]" />
+                Edit itinerary
+              </Link>
+              <Link href={`/sales/new?from=${q.id}&step=draft`} className={ui.btnSecondary}>
+                <Icon name="fileText" className="h-[18px] w-[18px]" />
+                Edit final draft
+              </Link>
+            </>
           )}
         </div>
       </div>

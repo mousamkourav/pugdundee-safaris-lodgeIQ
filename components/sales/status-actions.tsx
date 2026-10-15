@@ -77,13 +77,17 @@ export function StatusActions({
   function submit(input: StatusInput | "reassign") {
     setError(null);
     start(async () => {
-      const res = input === "reassign" ? await reassignQuery(queryId, member, remark) : await changeStatus(queryId, input);
-      if (res.error) {
-        setError(res.error);
-        return;
+      try {
+        const res = input === "reassign" ? await reassignQuery(queryId, member, remark) : await changeStatus(queryId, input);
+        if (res.error) {
+          setError(res.error);
+          return;
+        }
+        setDialog(null);
+        router.refresh();
+      } catch {
+        setError("Could not reach the server. Check your connection and try again.");
       }
-      setDialog(null);
-      router.refresh();
     });
   }
 

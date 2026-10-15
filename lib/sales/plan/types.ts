@@ -44,6 +44,16 @@ export interface PlanDay {
   notes: string[]; // planner remarks, e.g. "core closed, buffer used"
 }
 
+// Edits made on the Final draft step. Only fields the sales member changed
+// are stored; everything else is generated from master data.
+export interface PlanDraft {
+  title?: string;
+  about?: string;
+  inclusions?: string[];
+  exclusions?: string[];
+  notes?: string[];
+}
+
 export interface Plan {
   schema_version: 1;
   guest: PlanGuest;
@@ -57,6 +67,21 @@ export interface Plan {
   markup_pct: number | null;
   adjustment: { amount: number; reason: string } | null;
   currency: "INR" | "USD";
+  draft?: PlanDraft;
+}
+
+export interface ContentBlock {
+  kind: string;
+  body: string;
+  park_id: string | null;
+  property_id: string | null;
+  is_default: boolean;
+}
+
+export interface CancellationSlab {
+  min_days: number;
+  max_days: number | null;
+  pct: number;
 }
 
 // Everything the builder needs, loaded once on the server. Plain data.
@@ -66,4 +91,6 @@ export interface BuilderContext {
   locations: { id: string; name: string; type: string; property_id: string | null }[];
   rooms: { id: string; property_id: string; name: string; sort: number }[];
   templates: { kind: string; title: string; body: string; park_id: string | null; property_id: string | null; is_default: boolean }[];
+  content: ContentBlock[]; // guest-facing text blocks (inclusions, notes, terms)
+  cancellation: CancellationSlab[];
 }

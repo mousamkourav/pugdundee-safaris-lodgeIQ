@@ -246,6 +246,10 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
   };
 }
 
+// Everything that changes the day plan. If this changes, the days are rebuilt.
+export const routeKey = (p: Plan) =>
+  JSON.stringify([p.arrival_date, p.arrival_location_id, p.departure_location_id, p.stops, p.vehicle_type, p.guest.rooms]);
+
 // Problems with the route itself (before pricing).
 export function routeProblems(plan: Plan, ctx: BuilderContext): string[] {
   const out: string[] = [];

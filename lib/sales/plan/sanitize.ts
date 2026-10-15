@@ -1,6 +1,6 @@
 // Rebuilds a plan from untrusted JSON (the browser) keeping only known keys
 // with the right types. Anything malformed becomes a safe default.
-import type { DaySafari, Plan, PlanDay, PlanStop } from "./types";
+import type { DaySafari, Plan, PlanDay, PlanDraft, PlanStop } from "./types";
 
 const str = (v: unknown, max = 500) => (typeof v === "string" ? v.slice(0, max) : "");
 const strOrNull = (v: unknown) => (typeof v === "string" && v ? v.slice(0, 100) : null);
@@ -49,6 +49,16 @@ export function sanitizePlan(input: unknown): Plan | null {
     };
   });
 
+  const dr = obj(p.draft);
+  const list = (v: unknown) => (Array.isArray(v) ? v.map((x) => str(x, 500).trim()).filter(Boolean).slice(0, 40) : undefined);
+  const draft: PlanDraft = {};
+  if (typeof dr.title === "string" && dr.title.trim()) draft.title = str(dr.title, 200).trim();
+  if (typeof dr.about === "string") draft.about = str(dr.about, 4000);
+  const inc = list(dr.inclusions), exc = list(dr.exclusions), notes = list(dr.notes);
+  if (inc) draft.inclusions = inc;
+  if (exc) draft.exclusions = exc;
+  if (notes) draft.notes = notes;
+
   const adj = obj(p.adjustment);
   const adjAmount = Number(adj.amount);
 
@@ -76,5 +86,6 @@ export function sanitizePlan(input: unknown): Plan | null {
     markup_pct: p.markup_pct === null || p.markup_pct === undefined || p.markup_pct === "" ? null : Math.max(-50, Math.min(200, Number(p.markup_pct) || 0)),
     adjustment: Number.isFinite(adjAmount) && adjAmount !== 0 ? { amount: Math.round(adjAmount), reason: str(adj.reason, 300).trim() } : null,
     currency: p.currency === "USD" ? "USD" : "INR",
+    ...(Object.keys(draft).length ? { draft } : {}),
   };
 }

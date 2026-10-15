@@ -13,10 +13,12 @@ import { aiEnabled } from "./ai-actions";
 export default async function NewItineraryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string }>;
+  searchParams: Promise<{ from?: string; step?: string }>;
 }) {
   const { profile } = await requireUser();
-  const fromId = (await searchParams).from ?? null;
+  const sp = await searchParams;
+  const fromId = sp.from ?? null;
+  const startStep = sp.step === "draft" ? 2 : sp.step === "plan" ? 1 : 0;
   const today = todayIST();
   const { ctx, error } = await loadBuilderContext();
 
@@ -46,7 +48,7 @@ export default async function NewItineraryPage({
       <div>
         <p className="eyebrow">Sales</p>
         <h1 className="mt-1 text-2xl">{queryNo ? `New version of ${queryNo}` : "Create itinerary"}</h1>
-        {queryNo && <p className="mt-1 text-sm text-sand-500">Saving creates a new version; earlier versions are kept.</p>}
+        {queryNo && <p className="mt-1 text-sm text-sand-500">Saving creates a new version; earlier versions are kept, and the old client links keep working.</p>}
       </div>
       {error && <p className={ui.alertError}>Could not load all master data: {error}</p>}
       {!ready ? (
@@ -62,7 +64,7 @@ export default async function NewItineraryPage({
           )}
         </div>
       ) : (
-        <Builder ctx={ctx} initial={initial} queryId={fromId} today={today} aiAvailable={aiAvailable} />
+        <Builder ctx={ctx} initial={initial} queryId={fromId} queryNo={queryNo} today={today} aiAvailable={aiAvailable} startStep={startStep} />
       )}
     </div>
   );

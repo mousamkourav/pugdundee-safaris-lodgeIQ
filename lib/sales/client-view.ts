@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { addDays } from "@/lib/sales/pricing/dates";
 import { MEDIA_BUCKET } from "@/lib/sales/master/types";
 import type { Plan } from "@/lib/sales/plan/types";
+import { defaultDraft, withEdits } from "@/lib/sales/plan/draft";
 import type { Instalment, PriceResult } from "@/lib/sales/pricing/types";
 
 type Row = Record<string, unknown>;
@@ -42,7 +43,6 @@ export interface ClientView {
   consultant: { name: string; phone: string };
 }
 
-const lines = (s: string) => s.split("\n").map((x) => x.replace(/^[-*\u2022]\s*/, "").trim()).filter(Boolean);
 
 export async function loadClientView(token: string): Promise<ClientView | null> {
   if (!/^[0-9a-f]{32}$/.test(token)) return null;
@@ -98,46 +98,22 @@ export async function loadClientView(token: string): Promise<ClientView | null> 
   const brandRow = rows(brand)[0] as { storage_path: string } | undefined;
   const heroUrl = brandRow ? url(brandRow.storage_path) : lodges.find((l) => l.photos.length)?.photos[0] ?? null;
 
-  // Content: the generic block for each kind, plus any for these parks/lodges.
   const blockRows = rows(blocks) as { kind: string; body: string; park_id: string | null; property_id: string | null; is_default: boolean }[];
-  const textsFor = (kind: string) => {
-    const generic = blockRows.filter((b) => b.kind === kind && !b.park_id && !b.property_id);
-    const main = generic.find((b) => b.is_default) ?? generic[0];
-    const specific = blockRows.filter((b) => b.kind === kind && ((b.park_id && parkIds.includes(b.park_id)) || (b.property_id && propertyIds.includes(b.property_id))));
-    return [main, ...specific].filter(Boolean).map((b) => b!.body);
-  };
-
   const s = ((settings.data as { data?: Row } | null)?.data ?? {}) as Row;
   const company = (s.company ?? {}) as Row;
   const nights = plan.stops.reduce((t, x) => t + x.nights, 0);
-  const safaris = plan.days.reduce((t, d) => t + d.safaris.length, 0);
-  const parkList = plan.stops.map((x) => parkNames[x.park_id]).filter((x, i, a) => x && a.indexOf(x) === i);
-  const mealNames: Record<string, string> = { AP: "all meals", MAP: "breakfast and dinner", CP: "breakfast", EP: "room only" };
-
-  const about =
-    textsFor("about_trip")[0] ??
-    `A ${nights}-night journey through ${parkList.join(", ")}, staying at ${lodges.map((l) => l.name).join(" and ")}, with resident naturalists on every safari.`;
-  const inclusions = textsFor("inclusions").flatMap(lines);
-  const exclusions = textsFor("exclusions").flatMap(lines);
-  const defaultInclusions = [
-    `${nights} nights at ${lodges.map((l) => l.name).join(" and ")}`,
-    ...[...new Set(plan.stops.map((x) => x.meal_plan))].map((m) => `Meals: ${mealNames[m] ?? m}`),
-    ...(safaris ? [`${safaris} jeep safaris with naturalist and park guide`] : []),
-    ...(plan.days.some((d) => d.transfer) ? ["All road transfers shown in the itinerary"] : []),
-    "Applicable taxes",
-  ];
-  const defaultExclusions = ["Flights and train tickets", "Camera fees charged by the parks", "Drinks, laundry and personal expenses", "Tips and gratuities", "Anything not listed under inclusions"];
-
   const slabs = (Array.isArray(s.cancellation_slabs) ? s.cancellation_slabs : []) as { min_days?: number; max_days?: number | null; pct?: number }[];
-  const cancellation = textsFor("cancellation_terms").flatMap(lines);
-  const cancellationFromSlabs = slabs
-    .slice()
-    .sort((a, b) => Number(b.min_days ?? 0) - Number(a.min_days ?? 0))
-    .map((c) =>
-      c.max_days == null
-        ? `${c.min_days} days or more before arrival: ${c.pct}% of the total`
-        : `${c.min_days} to ${c.max_days} days before arrival: ${c.pct}% of the total`
-    );
+
+  // Same text as the builder's Final draft step, including the sales member's edits.
+  const sections = withEdits(
+    defaultDraft(plan, {
+      parkNames,
+      lodgeNames,
+      blocks: blockRows,
+      cancellationSlabs: slabs.map((c) => ({ min_days: Number(c.min_days ?? 0), max_days: c.max_days == null ? null : Number(c.max_days), pct: Number(c.pct ?? 0) })),
+    }),
+    plan.draft
+  );
 
   const fx = pricing.fx ?? null;
   const usd = pricing.currency === "USD" && !!fx;
@@ -151,7 +127,7 @@ export async function loadClientView(token: string): Promise<ClientView | null> 
     versionNo: version.version_no,
     guestName: query.guest_name,
     plan,
-    title: `${parkList.join(" & ")} Safari`,
+    title: sections.title,
     arrival: pricing.arrival,
     departure: pricing.departure,
     nights,
@@ -167,12 +143,12 @@ export async function loadClientView(token: string): Promise<ClientView | null> 
     parkNames,
     lodgeNames,
     sections: {
-      about,
-      inclusions: inclusions.length ? inclusions : defaultInclusions,
-      exclusions: exclusions.length ? exclusions : defaultExclusions,
-      notes: textsFor("important_notes").flatMap(lines),
-      paymentTerms: textsFor("payment_terms")[0] ?? "",
-      cancellation: cancellation.length ? cancellation : cancellationFromSlabs,
+      about: sections.about,
+      inclusions: sections.inclusions,
+      exclusions: sections.exclusions,
+      notes: sections.notes,
+      paymentTerms: sections.paymentTerms,
+      cancellation: sections.cancellation,
     },
     company: { name: String(company.name || "Pugdundee Safaris"), email: String(company.email || ""), phone: String(company.phone || "") },
     consultant: { name: String(consultantRow?.full_name || ""), phone: String(consultantRow?.phone || "") },

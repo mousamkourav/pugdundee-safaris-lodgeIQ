@@ -156,15 +156,20 @@ export function MasterForm({
     setError(null);
     setSaved(false);
     start(async () => {
-      const res = await action(fd);
-      if (res.error) {
-        setError(res.error);
+      try {
+        const res = await action(fd);
+        if (res.error) {
+          setError(res.error);
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          return;
+        }
+        if (afterSaveHref) router.push(afterSaveHref);
+        else setSaved(true);
+        router.refresh();
+      } catch {
+        setError("Could not reach the server. Check your connection and try again.");
         window.scrollTo({ top: 0, behavior: "smooth" });
-        return;
       }
-      if (afterSaveHref) router.push(afterSaveHref);
-      else setSaved(true);
-      router.refresh();
     });
   }
 
@@ -174,13 +179,17 @@ export function MasterForm({
     if (!window.confirm(msg)) return;
     setError(null);
     start(async () => {
-      const res = await deleteAction();
-      if (res.error) {
-        setError(res.error);
-        return;
+      try {
+        const res = await deleteAction();
+        if (res.error) {
+          setError(res.error);
+          return;
+        }
+        router.push(backHref);
+        router.refresh();
+      } catch {
+        setError("Could not reach the server. Check your connection and try again.");
       }
-      router.push(backHref);
-      router.refresh();
     });
   }
 

@@ -1,5 +1,6 @@
 "use server";
 
+import { safe } from "@/lib/sales/safe";
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, isSalesUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -14,7 +15,7 @@ export type SaveResult = { id?: string; error?: string; problems?: string[] };
 // Saves a new query (queryId null) or a new version of an existing one.
 // The price is always recalculated here from current master data; the
 // browser's numbers are never trusted.
-export async function saveItinerary(planJson: string, queryId: string | null): Promise<SaveResult> {
+async function saveItineraryUnsafe(planJson: string, queryId: string | null): Promise<SaveResult> {
   const cu = await getCurrentUser();
   if (!cu?.user || !isSalesUser(cu.profile?.role)) return { error: "You do not have access to Sales." };
 
@@ -89,4 +90,9 @@ export async function saveItinerary(planJson: string, queryId: string | null): P
   }
   revalidatePath("/sales", "layout");
   return { id };
+}
+
+// Public actions: same as above, but failures come back as { error } instead of crashing.
+export async function saveItinerary(planJson: string, queryId: string | null): Promise<SaveResult> {
+  return safe("saveItinerary", () => saveItineraryUnsafe(planJson, queryId));
 }

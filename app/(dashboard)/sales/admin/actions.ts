@@ -1,5 +1,6 @@
 "use server";
 
+import { safe } from "@/lib/sales/safe";
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, isSuperAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -22,7 +23,7 @@ function explain(message: string): string {
   return message;
 }
 
-export async function saveRecord(entityKey: string, id: string | null, fd: FormData): Promise<ActionResult> {
+async function saveRecordUnsafe(entityKey: string, id: string | null, fd: FormData): Promise<ActionResult> {
   const denied = await requireSuper();
   if (denied) return { error: denied };
   const entity = getEntity(entityKey);
@@ -58,7 +59,7 @@ export async function saveRecord(entityKey: string, id: string | null, fd: FormD
   return { ok: true, id: savedId ?? undefined };
 }
 
-export async function deleteRecord(entityKey: string, id: string): Promise<ActionResult> {
+async function deleteRecordUnsafe(entityKey: string, id: string): Promise<ActionResult> {
   const denied = await requireSuper();
   if (denied) return { error: denied };
   const entity = getEntity(entityKey);
@@ -73,7 +74,7 @@ export async function deleteRecord(entityKey: string, id: string): Promise<Actio
   return { ok: true };
 }
 
-export async function saveSettings(fd: FormData): Promise<ActionResult> {
+async function saveSettingsUnsafe(fd: FormData): Promise<ActionResult> {
   const denied = await requireSuper();
   if (denied) return { error: denied };
 
@@ -99,4 +100,17 @@ export async function saveSettings(fd: FormData): Promise<ActionResult> {
 
   revalidatePath("/sales/admin/settings");
   return { ok: true };
+}
+
+// Public actions: same as above, but failures come back as { error } instead of crashing.
+export async function saveRecord(entityKey: string, id: string | null, fd: FormData): Promise<ActionResult> {
+  return safe("saveRecord", () => saveRecordUnsafe(entityKey, id, fd));
+}
+
+export async function deleteRecord(entityKey: string, id: string): Promise<ActionResult> {
+  return safe("deleteRecord", () => deleteRecordUnsafe(entityKey, id));
+}
+
+export async function saveSettings(fd: FormData): Promise<ActionResult> {
+  return safe("saveSettings", () => saveSettingsUnsafe(fd));
 }

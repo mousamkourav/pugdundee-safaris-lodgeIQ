@@ -1,5 +1,6 @@
 "use server";
 
+import { safe } from "@/lib/sales/safe";
 import { getCurrentUser, isSalesUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { scrubForAI, type ParsedTrip } from "@/lib/sales/plan/parse-text";
@@ -17,9 +18,13 @@ const TIMEOUT_MS = 10_000;
 
 export async function aiEnabled(): Promise<boolean> {
   if (!process.env.GEMINI_API_KEY) return false;
-  const supabase = await createClient();
-  const { data } = await supabase.from("sales_settings").select("data").eq("id", 1).maybeSingle();
-  return !!((data as { data?: { ai_parsing_enabled?: boolean } } | null)?.data?.ai_parsing_enabled);
+  try {
+    const supabase = await createClient();
+    const { data } = await supabase.from("sales_settings").select("data").eq("id", 1).maybeSingle();
+    return !!((data as { data?: { ai_parsing_enabled?: boolean } } | null)?.data?.ai_parsing_enabled);
+  } catch {
+    return false; // AI is optional: if the setting cannot be read, carry on without it
+  }
 }
 
 const int = (v: unknown, min: number, max: number) => {
@@ -51,7 +56,7 @@ function toParsed(raw: unknown): ParsedTrip {
   };
 }
 
-export async function aiReadTrip(input: string): Promise<{ parsed?: ParsedTrip; error?: string }> {
+async function aiReadTripUnsafe(input: string): Promise<{ parsed?: ParsedTrip; error?: string }> {
   const cu = await getCurrentUser();
   if (!cu?.user || !isSalesUser(cu.profile?.role)) return { error: "No access." };
   if (!(await aiEnabled())) return { error: "AI reading is switched off." };
@@ -103,4 +108,9 @@ export async function aiReadTrip(input: string): Promise<{ parsed?: ParsedTrip; 
   } finally {
     clearTimeout(timer);
   }
+}
+
+// Public action: any unexpected failure comes back as { error }.
+export async function aiReadTrip(input: string): Promise<{ parsed?: ParsedTrip; error?: string }> {
+  return safe("aiReadTrip", () => aiReadTripUnsafe(input));
 }

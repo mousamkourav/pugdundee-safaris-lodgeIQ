@@ -68,7 +68,7 @@ export function aliasesOf(name: string): string[] {
   const parts = core.split(/[\s\-/]+/).filter((w) => w.length >= 4);
   return [...new Set([full, core, ...parts].filter((x) => x.length >= 3))];
 }
-function locationAliases(name: string, code?: string | null): string[] {
+export function locationAliases(name: string, code?: string | null): string[] {
   const full = name.toLowerCase().trim();
   const core = full.replace(/\b(international|domestic|airport|railway station|railway|station|junction|jn|city|bus stand)\b/g, " ").replace(/\s+/g, " ").trim();
   return [...new Set([full, core, ...(code ? [code.toLowerCase()] : [])].filter((x) => x.length >= 3))];
@@ -267,7 +267,7 @@ export interface ApplyResult {
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 // Match a free-text name (from the rules or from Gemini) to master data.
-function matchByName<T extends { name: string }>(items: T[], name: string | undefined, aliases: (n: string) => string[]): T | undefined {
+export function matchByName<T extends { name: string }>(items: T[], name: string | undefined, aliases: (n: string) => string[]): T | undefined {
   if (!name) return undefined;
   const n = norm(name);
   return (

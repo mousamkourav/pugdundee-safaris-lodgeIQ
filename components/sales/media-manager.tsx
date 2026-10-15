@@ -58,6 +58,7 @@ export function MediaManager({
     const paths: string[] = [];
     const failed: string[] = [];
 
+    try {
     for (const p of picked) {
       const ext = EXT[p.blob.type] ?? "jpg";
       const path = `${owner}/${ownerId ?? "brand"}/${newId()}.${ext}`;
@@ -77,19 +78,27 @@ export function MediaManager({
       }
     }
 
+    } catch {
+      failed.push("the connection was lost");
+    }
+
     picked.forEach((p) => URL.revokeObjectURL(p.preview));
     setPicked([]);
     setUploading(false);
-    if (failed.length) setError(`${failed.length} photo(s) could not be uploaded: ${failed[0]}`);
+    if (failed.length) setError(`${failed.length} photo(s) could not be uploaded: ${failed[0]}. Please try again.`);
     router.refresh();
   }
 
   function run(fn: () => Promise<{ error?: string }>) {
     setError(null);
     start(async () => {
-      const res = await fn();
-      if (res.error) setError(res.error);
-      router.refresh();
+      try {
+        const res = await fn();
+        if (res.error) setError(res.error);
+        router.refresh();
+      } catch {
+        setError("Could not reach the server. Check your connection and try again.");
+      }
     });
   }
 

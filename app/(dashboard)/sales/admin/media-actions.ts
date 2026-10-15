@@ -1,5 +1,6 @@
 "use server";
 
+import { safe } from "@/lib/sales/safe";
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, isSuperAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -40,7 +41,7 @@ function done(): ActionResult {
 
 // Files are uploaded straight from the browser to Storage (server actions have
 // a 1 MB body limit); this records the uploaded paths.
-export async function addMedia(owner: MediaOwner, ownerId: string | null, paths: string[]): Promise<ActionResult> {
+async function addMediaUnsafe(owner: MediaOwner, ownerId: string | null, paths: string[]): Promise<ActionResult> {
   const denied = await guard();
   if (denied) return { error: denied };
   if (!OWNERS.includes(owner)) return { error: "Unknown photo owner." };
@@ -64,7 +65,7 @@ export async function addMedia(owner: MediaOwner, ownerId: string | null, paths:
   return done();
 }
 
-export async function setCover(id: string): Promise<ActionResult> {
+async function setCoverUnsafe(id: string): Promise<ActionResult> {
   const denied = await guard();
   if (denied) return { error: denied };
   const row = await getRow(id);
@@ -80,7 +81,7 @@ export async function setCover(id: string): Promise<ActionResult> {
   return done();
 }
 
-export async function moveMedia(id: string, direction: -1 | 1): Promise<ActionResult> {
+async function moveMediaUnsafe(id: string, direction: -1 | 1): Promise<ActionResult> {
   const denied = await guard();
   if (denied) return { error: denied };
   const row = await getRow(id);
@@ -103,7 +104,7 @@ export async function moveMedia(id: string, direction: -1 | 1): Promise<ActionRe
   return done();
 }
 
-export async function updateCaption(id: string, caption: string): Promise<ActionResult> {
+async function updateCaptionUnsafe(id: string, caption: string): Promise<ActionResult> {
   const denied = await guard();
   if (denied) return { error: denied };
   const supabase = await createClient();
@@ -113,7 +114,7 @@ export async function updateCaption(id: string, caption: string): Promise<Action
   return done();
 }
 
-export async function deleteMedia(id: string): Promise<ActionResult> {
+async function deleteMediaUnsafe(id: string): Promise<ActionResult> {
   const denied = await guard();
   if (denied) return { error: denied };
   const row = await getRow(id);
@@ -130,4 +131,25 @@ export async function deleteMedia(id: string): Promise<ActionResult> {
     if (rest[0]) await supabase.from("sales_media").update({ is_cover: true }).eq("id", rest[0].id);
   }
   return done();
+}
+
+// Public actions: same as above, but failures come back as { error } instead of crashing.
+export async function addMedia(owner: MediaOwner, ownerId: string | null, paths: string[]): Promise<ActionResult> {
+  return safe("addMedia", () => addMediaUnsafe(owner, ownerId, paths));
+}
+
+export async function setCover(id: string): Promise<ActionResult> {
+  return safe("setCover", () => setCoverUnsafe(id));
+}
+
+export async function moveMedia(id: string, direction: -1 | 1): Promise<ActionResult> {
+  return safe("moveMedia", () => moveMediaUnsafe(id, direction));
+}
+
+export async function updateCaption(id: string, caption: string): Promise<ActionResult> {
+  return safe("updateCaption", () => updateCaptionUnsafe(id, caption));
+}
+
+export async function deleteMedia(id: string): Promise<ActionResult> {
+  return safe("deleteMedia", () => deleteMediaUnsafe(id));
 }

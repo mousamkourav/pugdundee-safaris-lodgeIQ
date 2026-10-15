@@ -1,5 +1,6 @@
 "use server";
 
+import { safe } from "@/lib/sales/safe";
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, isSalesUser, isSuperAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -19,7 +20,7 @@ const clean = (v: string | undefined, max = 1000) => (v ?? "").trim().slice(0, m
 // it allows only open->booked/lost, booked->cancelled, lost/cancelled->open,
 // demands remarks and payment details, and writes the history row. These
 // checks just give friendlier messages first.
-export async function changeStatus(queryId: string, input: StatusInput): Promise<Result> {
+async function changeStatusUnsafe(queryId: string, input: StatusInput): Promise<Result> {
   const cu = await getCurrentUser();
   if (!cu?.user || !isSalesUser(cu.profile?.role)) return { error: "You do not have access to Sales." };
 
@@ -76,7 +77,7 @@ export async function changeStatus(queryId: string, input: StatusInput): Promise
   return { ok: true };
 }
 
-export async function reassignQuery(queryId: string, memberId: string, remark: string): Promise<Result> {
+async function reassignQueryUnsafe(queryId: string, memberId: string, remark: string): Promise<Result> {
   const cu = await getCurrentUser();
   if (!cu?.user || !isSuperAdmin(cu.profile?.role)) return { error: "Only admins can reassign queries." };
   if (!memberId) return { error: "Choose a member." };
@@ -94,4 +95,13 @@ export async function reassignQuery(queryId: string, memberId: string, remark: s
   revalidatePath(`/sales/queries/${queryId}`);
   revalidatePath("/sales", "layout");
   return { ok: true };
+}
+
+// Public actions: same as above, but failures come back as { error } instead of crashing.
+export async function changeStatus(queryId: string, input: StatusInput): Promise<Result> {
+  return safe("changeStatus", () => changeStatusUnsafe(queryId, input));
+}
+
+export async function reassignQuery(queryId: string, memberId: string, remark: string): Promise<Result> {
+  return safe("reassignQuery", () => reassignQueryUnsafe(queryId, memberId, remark));
 }

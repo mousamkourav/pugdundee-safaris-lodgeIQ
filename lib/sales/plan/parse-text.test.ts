@@ -35,6 +35,8 @@ const ctx: BuilderContext = {
     { id: "PTL_AC", property_id: "PTL", name: "AC Cottage", sort: 0 },
   ],
   templates: [],
+  content: [],
+  cancellation: [],
 };
 const TODAY = "2026-10-05";
 const read = (t: string) => extractTrip(t, ctx, TODAY);

@@ -10,7 +10,7 @@ const n = (v: unknown, f = 0) => (v === null || v === undefined || v === "" ? f 
 
 export async function loadBuilderContext(): Promise<{ ctx: BuilderContext; error: string | null }> {
   const supabase = await createClient();
-  const [{ data: pricing, error: pricingError }, props, locs, rooms, tpl] = await Promise.all([
+  const [{ data: pricing, error: pricingError }, props, locs, rooms, tpl, content, settings] = await Promise.all([
     loadPricingData(),
     supabase.from("sales_properties").select("id, name, park_id, kind, fallback_priority, sort").eq("active", true),
     supabase.from("sales_locations").select("id, name, type, property_id").eq("active", true).order("name"),
@@ -21,8 +21,16 @@ export async function loadBuilderContext(): Promise<{ ctx: BuilderContext; error
       .eq("active", true)
       .like("kind", "day_%")
       .order("sort"),
+    supabase
+      .from("sales_content_blocks")
+      .select("kind, body, park_id, property_id, is_default")
+      .eq("active", true)
+      .not("kind", "like", "day_%")
+      .order("sort"),
+    supabase.from("sales_settings").select("data").eq("id", 1).maybeSingle(),
   ]);
-  const err = pricingError ?? [props, locs, rooms, tpl].find((r) => r.error)?.error?.message ?? null;
+  const err = pricingError ?? [props, locs, rooms, tpl, content, settings].find((r) => r.error)?.error?.message ?? null;
+  const slabs = ((settings.data as { data?: { cancellation_slabs?: unknown } } | null)?.data?.cancellation_slabs ?? []) as Row[];
   const rows = (r: { data: unknown }) => (r.data ?? []) as Row[];
 
   return {
@@ -46,6 +54,18 @@ export async function loadBuilderContext(): Promise<{ ctx: BuilderContext; error
         park_id: sn(r.park_id),
         property_id: sn(r.property_id),
         is_default: !!r.is_default,
+      })),
+      content: rows(content).map((r) => ({
+        kind: s(r.kind),
+        body: s(r.body),
+        park_id: sn(r.park_id),
+        property_id: sn(r.property_id),
+        is_default: !!r.is_default,
+      })),
+      cancellation: (Array.isArray(slabs) ? slabs : []).map((c) => ({
+        min_days: n(c.min_days),
+        max_days: c.max_days === null || c.max_days === undefined || c.max_days === "" ? null : n(c.max_days),
+        pct: n(c.pct),
       })),
     },
   };
