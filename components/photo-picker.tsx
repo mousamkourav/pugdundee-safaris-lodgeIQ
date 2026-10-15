@@ -2,7 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { compressImage, ImageDecodeError } from "@/lib/image-compress";
+import {
+  compressImage,
+  ImageDecodeError,
+  ImageTooLargeError,
+} from "@/lib/image-compress";
 import { Icon } from "@/components/icons";
 
 export type PickedPhoto = { key: string; blob: Blob; preview: string };
@@ -16,6 +20,7 @@ export function PhotoPicker({
   label = "Photos",
   required = false,
   disabled = false,
+  maxBytes,
 }: {
   photos: PickedPhoto[];
   setPhotos: Dispatch<SetStateAction<PickedPhoto[]>>;
@@ -23,6 +28,8 @@ export function PhotoPicker({
   label?: string;
   required?: boolean;
   disabled?: boolean;
+  // Hard per-photo size ceiling (bytes). Omit for the default compression.
+  maxBytes?: number;
 }) {
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
@@ -56,7 +63,7 @@ export function PhotoPicker({
     const added: PickedPhoto[] = [];
     for (const f of take) {
       try {
-        const blob = await compressImage(f);
+        const blob = await compressImage(f, { maxBytes });
         added.push({
           key: `${f.name}-${f.lastModified}-${Math.random().toString(36).slice(2)}`,
           blob,
@@ -64,7 +71,7 @@ export function PhotoPicker({
         });
       } catch (err) {
         errs.push(
-          err instanceof ImageDecodeError
+          err instanceof ImageDecodeError || err instanceof ImageTooLargeError
             ? err.message
             : `"${f.name}" could not be processed.`
         );

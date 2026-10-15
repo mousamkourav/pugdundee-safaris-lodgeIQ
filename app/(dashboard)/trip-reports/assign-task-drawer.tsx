@@ -3,20 +3,31 @@
 import { useEffect, useState } from "react";
 import type { LodgeLite } from "@/lib/lodges";
 import { Icon } from "@/components/icons";
-import { AssignTripForm } from "./assign-trip-form";
+import { AssignTripForm, type ExistingTrip } from "./assign-trip-form";
 
 // Header button + right-hand slide-over hosting the two-step "Assign Trip &
 // Tasks" flow. The panel stays mounted while closed so a half-filled form (and
-// its picked photos) survives closing and reopening.
+// its picked photos) survives closing and reopening. With `existingTrip` it
+// hosts the "add more tasks to this trip" flow instead.
 export function AssignTaskDrawer({
   lodges,
   defaultLodge,
   authorityChips,
+  existingTrip,
+  lockedDepartment,
+  defaultAuthority,
 }: {
   lodges: LodgeLite[];
   defaultLodge: string;
   authorityChips?: string[];
+  existingTrip?: ExistingTrip;
+  lockedDepartment?: string | null;
+  defaultAuthority?: string;
 }) {
+  const heading = existingTrip ? "Add tasks to this trip" : "Assign trip & tasks";
+  const subheading = existingTrip
+    ? `New tasks are linked to this trip at ${existingTrip.lodgeName}.`
+    : "Log a lodge visit and queue the tasks assigned during it.";
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -39,7 +50,7 @@ export function AssignTaskDrawer({
         className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-olive-600 px-5 py-2 text-sm font-semibold text-white shadow-card transition hover:bg-olive-700 active:bg-olive-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-500 focus-visible:ring-offset-2 sm:w-auto"
       >
         <Icon name="plus" className="h-4 w-4" />
-        Assign trip &amp; tasks
+        {existingTrip ? "Add tasks" : heading}
       </button>
 
       <div
@@ -71,11 +82,9 @@ export function AssignTaskDrawer({
             </span>
             <div className="min-w-0 flex-1">
               <h2 id="assign-trip-title" className="text-lg leading-6 sm:text-xl">
-                Assign trip &amp; tasks
+                {heading}
               </h2>
-              <p className="mt-0.5 text-sm text-sand-500">
-                Log a lodge visit and queue the tasks assigned during it.
-              </p>
+              <p className="mt-0.5 text-sm text-sand-500">{subheading}</p>
             </div>
             <button
               type="button"
@@ -91,6 +100,9 @@ export function AssignTaskDrawer({
               lodges={lodges}
               defaultLodge={defaultLodge}
               authorityChips={authorityChips}
+              existingTrip={existingTrip}
+              lockedDepartment={lockedDepartment}
+              defaultAuthority={defaultAuthority}
               onDone={() => setOpen(false)}
             />
           </div>

@@ -10,6 +10,11 @@ type CookieToSet = {
 // Paths a sales member may open. Everything else belongs to Lodge Reporting
 // and sends them to /sales.
 const SALES_MEMBER_PATHS = ["/sales", "/hub", "/account", "/notifications"];
+// Paths a task creator may open. Everything else sends them to /trip-reports.
+const TASK_CREATOR_PATHS = ["/trip-reports", "/hub", "/account", "/notifications"];
+
+const within = (path: string, list: string[]) =>
+  list.some((p) => path === p || path.startsWith(p + "/"));
 
 // Short-lived cookie caching "<user id>:<role>" so the role is not looked up
 // on every request. Routing only: the real protection is RLS + page guards,
@@ -76,11 +81,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Keep sales members inside the Sales module.
-  const salesMemberAllowed = SALES_MEMBER_PATHS.some(
-    (p) => path === p || path.startsWith(p + "/")
-  );
-  if (user && !isPublicRoute && !salesMemberAllowed) {
+  // Keep sales members inside the Sales module and task creators inside Trip
+  // reports. Paths both roles may open skip the role lookup entirely.
+  const allowedForAll =
+    within(path, SALES_MEMBER_PATHS) && within(path, TASK_CREATOR_PATHS);
+  if (user && !isPublicRoute && !allowedForAll) {
     let role: string | null = null;
     const cached = request.cookies.get(ROLE_COOKIE)?.value;
     if (cached && cached.startsWith(user.id + ":")) {
@@ -103,9 +108,15 @@ export async function middleware(request: NextRequest) {
       }
     }
 
-    if (role === "sales_member") {
+    const home =
+      role === "sales_member" && !within(path, SALES_MEMBER_PATHS)
+        ? "/sales"
+        : role === "task_creator" && !within(path, TASK_CREATOR_PATHS)
+          ? "/trip-reports"
+          : null;
+    if (home) {
       const url = request.nextUrl.clone();
-      url.pathname = "/sales";
+      url.pathname = home;
       url.search = "";
       const redirect = NextResponse.redirect(url);
       // Carry over any refreshed auth cookies (and the role cookie).
@@ -120,7 +131,7 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     // Exclude API routes (they handle their own auth - e.g. the cron endpoint),
-    // Next internals, and static image files.
-    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // Next internals, robots.txt and static image files.
+    "/((?!api|_next/static|_next/image|favicon.ico|robots.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

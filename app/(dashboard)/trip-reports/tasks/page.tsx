@@ -1,8 +1,7 @@
-﻿import Link from "next/link";
-import { requireUser, isAdmin } from "@/lib/auth";
-import { getAccessibleLodges } from "@/lib/lodges";
+import Link from "next/link";
+import { requireUser, isAdmin, isTaskCreatorOnly } from "@/lib/auth";
+import { getAccessibleLodges, lodgeSlug } from "@/lib/lodges";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { PageHeader } from "@/components/page-header";
 import { Icon } from "@/components/icons";
 import {
@@ -11,54 +10,63 @@ import {
   STATUS_LABEL,
   PRIORITY_LABEL,
   canDeleteTasks,
+  canEditTask,
   canReviewTask,
   canSubmitTask,
   isTaskStatus,
   isTaskPriority,
+  lockedDepartmentFor,
   photoList,
   photoUrl,
   type Task,
 } from "@/lib/tasks";
 import { TaskCard } from "../task-card";
+import { assignerOptions, creatorParam, findLodge, profileNames } from "../trips-data";
 
-type SP = { status?: string; priority?: string; lodge?: string; q?: string };
+type SP = { status?: string; priority?: string; lodge?: string; by?: string; q?: string };
 
 export default async function AllTasksPage({
   searchParams,
 }: {
   searchParams: Promise<SP>;
 }) {
-  const { user, profile } = await requireUser();
-  const sp = await searchParams;
-  const lodges = await getAccessibleLodges();
+  const [{ user, profile }, sp, lodges] = await Promise.all([
+    requireUser(),
+    searchParams,
+    getAccessibleLodges(),
+  ]);
   const role = profile?.role as string | undefined;
   const admin = isAdmin(role);
   const canDelete = canDeleteTasks(role);
+  const lockedDept = lockedDepartmentFor(role);
 
   const fStatus = isTaskStatus(sp.status) ? sp.status : null;
   const fPriority = isTaskPriority(sp.priority) ? sp.priority : null;
-  const fLodge = sp.lodge && lodges.some((l) => l.id === sp.lodge) ? sp.lodge : null;
+  // Lodge accepts a slug (current links) or an id (older links); none = all.
+  const fLodge = findLodge(sp.lodge, lodges);
+  const fLodgeSlug = fLodge ? lodgeSlug(lodges.find((l) => l.id === fLodge)?.name ?? "") : null;
+  const showCreatorFilter = !isTaskCreatorOnly(role);
+  const fBy = showCreatorFilter ? creatorParam(sp.by) : null;
 
   const s = await createClient();
   let q = s.from("tasks").select("*").order("created_at", { ascending: false }).limit(500);
   if (fStatus) q = q.eq("status", fStatus);
   if (fPriority) q = q.eq("priority", fPriority);
   if (fLodge) q = q.eq("lodge_id", fLodge);
-  const { data } = await q;
+  if (fBy) q = q.eq("created_by", fBy);
+  const [{ data }, creators] = await Promise.all([
+    q,
+    showCreatorFilter ? assignerOptions() : Promise.resolve([]),
+  ]);
   const tasks = (data ?? []) as Task[];
 
-  const ids = Array.from(new Set(tasks.flatMap((t) => [t.created_by, t.submitted_by, t.resolved_by]).filter((v): v is string => !!v)));
-  const names = new Map<string, string>();
-  if (ids.length) {
-    const { data: people } = await createAdminClient().from("profiles").select("id,full_name").in("id", ids);
-    for (const p of (people ?? []) as Array<{ id: string; full_name: string | null }>) names.set(p.id, p.full_name ?? "Unknown");
-  }
+  const names = await profileNames(tasks.flatMap((t) => [t.created_by, t.submitted_by, t.resolved_by]));
   const who = (id: string | null) => (id ? names.get(id) ?? "Unknown" : "-");
   const lodgeNameById = new Map(lodges.map((l) => [l.id, l.name]));
 
   const qs = (patch: Partial<SP>) => {
     const params = new URLSearchParams();
-    const merged: SP = { status: fStatus ?? undefined, priority: fPriority ?? undefined, lodge: fLodge ?? undefined, ...patch };
+    const merged: SP = { status: fStatus ?? undefined, priority: fPriority ?? undefined, lodge: fLodgeSlug ?? undefined, by: fBy ?? undefined, ...patch };
     for (const [k, v] of Object.entries(merged)) if (v) params.set(k, v);
     const str = params.toString();
     return "/trip-reports/tasks" + (str ? "?" + str : "");
@@ -68,7 +76,7 @@ export default async function AllTasksPage({
     "rounded-full border px-3 py-1 text-sm font-medium transition " +
     (active ? "border-olive-600 bg-olive-50 text-olive-800" : "border-sand-200 bg-white text-sand-600 hover:bg-sand-50");
 
-  const anyFilter = fStatus || fPriority || fLodge;
+  const anyFilter = fStatus || fPriority || fLodge || fBy;
 
   return (
     <div>
@@ -76,7 +84,7 @@ export default async function AllTasksPage({
         <Icon name="chevronLeft" className="h-4 w-4" />
         Back to trip reports
       </Link>
-      <PageHeader eyebrow={<span>All tasks</span>} title="Task directory" description="Every task across lodges. Filter by status, priority or lodge." />
+      <PageHeader eyebrow={<span>All tasks</span>} title="Task directory" description="Every task across lodges. Filter by status, priority, lodge or who assigned it." />
 
       <div className="flex flex-col gap-6 lg:flex-row">
         <aside className="lg:w-60 lg:shrink-0 space-y-5">
@@ -104,7 +112,18 @@ export default async function AllTasksPage({
               <div className="flex flex-wrap gap-2">
                 <Link href={qs({ lodge: undefined })} className={chip(!fLodge)}>All</Link>
                 {lodges.map((l) => (
-                  <Link key={l.id} href={qs({ lodge: l.id })} className={chip(fLodge === l.id)}>{l.name}</Link>
+                  <Link key={l.id} href={qs({ lodge: lodgeSlug(l.name) })} className={chip(fLodge === l.id)}>{l.name}</Link>
+                ))}
+              </div>
+            </div>
+          )}
+          {showCreatorFilter && creators.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-sand-500">Assigned by</p>
+              <div className="flex flex-wrap gap-2">
+                <Link href={qs({ by: undefined })} className={chip(!fBy)}>All</Link>
+                {creators.map((c) => (
+                  <Link key={c.value} href={qs({ by: c.value })} className={chip(fBy === c.value)}>{c.label}</Link>
                 ))}
               </div>
             </div>
@@ -138,7 +157,9 @@ export default async function AllTasksPage({
                     canSubmit={canSubmitTask(t)}
                     canReview={canReviewTask(t, user.id)}
                     canDelete={canDelete}
+                    canEdit={canEditTask(t, user.id)}
                     lodgeName={lodgeNameById.get(t.lodge_id)}
+                    lockedDepartment={lockedDept}
                   />
                 );
               })}

@@ -37,3 +37,31 @@ export async function changePassword(formData: FormData) {
   }
   redirect("/account?changed=1");
 }
+
+export async function updateProfile(formData: FormData) {
+  const cu = await getCurrentUser();
+  if (!cu?.user) redirect("/login");
+
+  const full_name = String(formData.get("full_name") ?? "").trim().slice(0, 120);
+  const designation = String(formData.get("designation") ?? "").trim().slice(0, 120);
+  const phone = String(formData.get("phone") ?? "").trim().slice(0, 30);
+  const avatar_url = String(formData.get("avatar_url") ?? "").trim().slice(0, 500);
+
+  if (!full_name) {
+    redirect("/account?perror=" + encodeURIComponent("Name cannot be empty"));
+  }
+
+  const supabase = await createClient();
+  const patch: Record<string, string | null> = {
+    full_name,
+    designation: designation || null,
+    phone: phone || null,
+  };
+  if (avatar_url) patch.avatar_url = avatar_url;
+
+  const { error } = await supabase.from("profiles").update(patch).eq("id", cu.user.id);
+  if (error) {
+    redirect("/account?perror=" + encodeURIComponent(error.message));
+  }
+  redirect("/account?psaved=1");
+}

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/lib/tasks";
 import { Icon } from "@/components/icons";
 import { approveTask, declineTask, deleteTask } from "./actions";
@@ -15,7 +14,6 @@ export function ReviewButtons({
   canReview: boolean;
   canDelete: boolean;
 }) {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [declining, setDeclining] = useState(false);
   const [reason, setReason] = useState("");
@@ -31,7 +29,8 @@ export function ReviewButtons({
       }
       setDeclining(false);
       setReason("");
-      router.refresh();
+      // No router.refresh(): the action's revalidatePath already returns the
+      // re-rendered page; refreshing again would render it a second time.
     });
   }
 

@@ -29,17 +29,17 @@ export const NAV: NavGroup[] = [
     title: "Overview",
     module: "reporting",
     items: [
-      { label: "Dashboard", href: "/dashboard", icon: "grid" },
-      { label: "Notifications", href: "/notifications", icon: "bell" },
+      { label: "Dashboard", href: "/dashboard", icon: "grid", roles: ["super_admin", "senior_manager", "delhi_accounts", "lodge_manager", "operations_manager", "lodge_accounts"] },
+      { label: "Notifications", href: "/notifications", icon: "bell", roles: ["super_admin", "senior_manager", "delhi_accounts", "lodge_manager", "operations_manager", "lodge_accounts"] },
     ],
   },
   {
     title: "Reporting",
     module: "reporting",
     items: [
-      { label: "Enter monthly report", href: "/monthly", icon: "clipboard" },
-      { label: "Monthly summary", href: "/reports", icon: "fileText" },
-      { label: "Detailed report", href: "/report-detail", icon: "fileSearch" },
+      { label: "Enter monthly report", href: "/monthly", icon: "clipboard", roles: ["super_admin", "senior_manager", "delhi_accounts", "lodge_manager", "operations_manager", "lodge_accounts"] },
+      { label: "Monthly summary", href: "/reports", icon: "fileText", roles: ["super_admin", "senior_manager", "delhi_accounts", "lodge_manager", "operations_manager", "lodge_accounts"] },
+      { label: "Detailed report", href: "/report-detail", icon: "fileSearch", roles: ["super_admin", "senior_manager", "delhi_accounts", "lodge_manager", "operations_manager", "lodge_accounts"] },
       { label: "Compare lodges", href: "/analytics", icon: "barChart", roles: ADMIN },
     ],
   },
@@ -55,8 +55,8 @@ export const NAV: NavGroup[] = [
     title: "Assets & compliance",
     module: "reporting",
     items: [
-      { label: "Assets & service log", href: "/assets", icon: "wrench" },
-      { label: "Insurances & licences", href: "/compliance", icon: "shield" },
+      { label: "Assets & service log", href: "/assets", icon: "wrench", roles: ["super_admin", "senior_manager", "delhi_accounts", "lodge_manager", "operations_manager", "lodge_accounts"] },
+      { label: "Insurances & licences", href: "/compliance", icon: "shield", roles: ["super_admin", "senior_manager", "delhi_accounts", "lodge_manager", "operations_manager", "lodge_accounts"] },
     ],
   },
   {

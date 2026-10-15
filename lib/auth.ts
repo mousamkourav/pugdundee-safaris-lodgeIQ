@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
@@ -8,7 +9,8 @@ export type Role =
   | "lodge_manager"
   | "operations_manager"
   | "lodge_accounts"
-  | "sales_member";
+  | "sales_member"
+  | "task_creator";
 
 // Human-readable labels for each role (used in the users admin dropdown).
 export const ROLE_LABELS: Record<Role, string> = {
@@ -19,6 +21,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   operations_manager: "Operations manager",
   lodge_accounts: "Lodge accounts",
   sales_member: "Sales member",
+  task_creator: "Task creator",
 };
 
 // Roles that can see ALL lodges.
@@ -29,7 +32,9 @@ export const SUPER_ROLES: Role[] = ["super_admin", "senior_manager"];
 // admins (rates, members, all queries); sales_member sees only their own queries.
 export const SALES_ROLES: Role[] = ["super_admin", "senior_manager", "sales_member"];
 
-export async function getCurrentUser() {
+// cache(): the dashboard layout and the page both call this during one request;
+// dedupe so the Auth + profile round-trips to Supabase happen once, not twice.
+export const getCurrentUser = cache(async function getCurrentUser() {
   const supabase = await createClient();
   const {
     data: { user },
@@ -41,7 +46,7 @@ export async function getCurrentUser() {
     .eq("id", user.id)
     .single();
   return { user, profile };
-}
+});
 
 export async function requireUser() {
   const res = await getCurrentUser();
@@ -60,11 +65,14 @@ export const isSalesUser = (role?: string | null) =>
 
 // A sales member never sees Lodge Reporting.
 export const isSalesOnly = (role?: string | null) => role === "sales_member";
+export const isTaskCreatorOnly = (role?: string | null) => role === "task_creator";
 
 // Where a user lands after sign-in.
-//   super roles -> module picker; sales members -> Sales; everyone else -> Lodge Reporting.
+//   super roles -> module picker; sales members -> Sales; task creators -> Trip
+//   reports (the only page they use); everyone else -> Lodge Reporting.
 export function homePathFor(role?: string | null) {
   if (isSalesOnly(role)) return "/sales";
+  if (isTaskCreatorOnly(role)) return "/trip-reports";
   if (isSuperAdmin(role)) return "/hub";
   return "/dashboard";
 }

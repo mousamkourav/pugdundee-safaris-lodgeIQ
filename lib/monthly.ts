@@ -725,3 +725,30 @@ export function setDeep(
     }
   }
 }
+
+// ---- Report ownership ----
+// Only a report's creator may edit its data. Admin roles keep their overrides
+// (approve/decline edit requests, reopen, delete) but cannot edit another
+// person's report fields.
+//
+// Owner = created_by, falling back to submitted_by for older rows saved before
+// created_by was always set. Rows with neither (historical imports) are
+// "unowned": any non-admin user with access to the lodge (RLS decides) may edit
+// them, and their first save records them as created_by.
+type OwnedRow = { created_by?: unknown; submitted_by?: unknown } | null | undefined;
+
+export function reportOwner(row: OwnedRow): string | null {
+  const id = row?.created_by ?? row?.submitted_by ?? null;
+  return typeof id === "string" && id ? id : null;
+}
+
+export function canEditReportData(
+  row: OwnedRow,
+  userId: string | null | undefined,
+  admin: boolean
+): boolean {
+  if (!userId) return false;
+  if (!row) return true; // nothing saved yet: whoever starts it becomes the creator
+  const owner = reportOwner(row);
+  return owner ? owner === userId : !admin;
+}
