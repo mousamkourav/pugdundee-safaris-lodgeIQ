@@ -78,8 +78,9 @@ interface Hit {
   index: number;
   end: number;
   name: string;
+  lodge?: string;
 }
-function findAll(text: string, items: { name: string; aliases: string[] }[]): Hit[] {
+function findAll(text: string, items: { name: string; aliases: string[]; lodge?: string }[]): Hit[] {
   const hits: Hit[] = [];
   for (const it of items) {
     for (const a of it.aliases.sort((x, y) => y.length - x.length)) {
@@ -87,7 +88,7 @@ function findAll(text: string, items: { name: string; aliases: string[] }[]): Hi
       let m: RegExpExecArray | null;
       while ((m = re.exec(text))) {
         if (!hits.some((h) => m!.index < h.end && m!.index + m![0].length > h.index)) {
-          hits.push({ index: m.index, end: m.index + m[0].length, name: it.name });
+          hits.push({ index: m.index, end: m.index + m[0].length, name: it.name, lodge: it.lodge });
         }
       }
     }
@@ -95,20 +96,121 @@ function findAll(text: string, items: { name: string; aliases: string[] }[]): Hi
   return hits.sort((a, b) => a.index - b.index);
 }
 
+
+// ---------------------------------------------------------------- vocabulary
+
+// Words in lodge names that do not identify a lodge on their own.
+const GENERIC = new Set(["lodge", "escape", "hideaway", "house", "tree", "treehouse", "earth", "backwater", "camp", "resort", "jungle", "eco", "the", "safari", "retreat"]);
+
+// What people type for a lodge: "Kings Lodge", "kings", "Waghoba", "Treehouse Hideaway".
+export function lodgeAliases(name: string, parkAliases: string[]): string[] {
+  const full = name.toLowerCase().trim();
+  const words = full.split(/\s+/);
+  const out = new Set<string>([full, full.replace(/\s+/g, "")]);
+  if (words.length >= 3) out.add(words.join(" ").replace(/^(\w+) (\w+)/, "$1$2")); // "treehouse hideaway"
+  const stripped = words.filter((w) => !["lodge", "escape", "camp", "resort", "retreat"].includes(w)).join(" ");
+  const distinctive = (a: string) => a.split(" ").some((w) => w.length >= 5 && !GENERIC.has(w));
+  if (stripped && stripped !== full && distinctive(stripped)) out.add(stripped); // "kanha earth", "waghoba eco"
+  if (words.length >= 2 && distinctive(words.slice(0, 2).join(" "))) out.add(words.slice(0, 2).join(" ")); // "denwa backwater"
+  if (words[0].length >= 5 && !GENERIC.has(words[0]) && !parkAliases.includes(words[0])) out.add(words[0]); // "waghoba", "kings", "denwa"
+  return [...out].filter((a) => a.length >= 4);
+}
+
+// Optimal string alignment distance (a swap of two letters counts as one edit).
+function editDistance(a: string, b: string) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return d[a.length][b.length];
+}
+
+// Short forms the team uses for cities and airports.
+const ABBREVIATIONS: Record<string, string> = { jbp: "jabalpur", ngp: "nagpur", bpl: "bhopal", rpr: "raipur", hjr: "khajuraho" };
+
+// Correct misspelt park and lodge words ("bandavgarh" -> "bandhavgarh") and
+// expand short forms, before anything else reads the text.
+function normaliseText(input: string, vocabulary: string[], notes: string[]) {
+  let text = input.replace(/[\u2018\u2019\u02bc]/g, "'").replace(/\s+/g, " ").trim();
+  text = text.replace(/\b[a-z]{3}\b/gi, (w) => ABBREVIATIONS[w.toLowerCase()] ?? w);
+  const vocab = [...new Set(vocabulary.filter((v) => /^[a-z]+$/.test(v) && v.length >= 5))];
+  text = text.replace(/\b[a-zA-Z]{5,}\b/g, (word) => {
+    const w = word.toLowerCase();
+    if (vocab.includes(w)) return word;
+    let best: string | null = null;
+    let bestD = 99;
+    for (const v of vocab) {
+      if (v[0] !== w[0] || Math.abs(v.length - w.length) > 2) continue;
+      const d = editDistance(w, v);
+      if (d < bestD) {
+        bestD = d;
+        best = v;
+      }
+    }
+    // Long names (8+ letters) allow 2 slips. Short ones allow only swapped letters
+    // ("kanah") or one missing/extra letter, never a different letter ("punch" stays "punch").
+    const sameLetters = best !== null && best.length === w.length && [...best].sort().join("") === [...w].sort().join("");
+    const ok = best !== null && (w.length >= 8 ? bestD <= 2 : bestD === 1 && (best.length !== w.length || sameLetters));
+    if (best && ok) {
+      notes.push(`Read "${word}" as "${best}".`);
+      return best;
+    }
+    return word;
+  });
+  return text;
+}
+
 // ---------------------------------------------------------------- extract
 
 export function extractTrip(input: string, ctx: BuilderContext, today: ISODate): ParsedTrip {
-  const text = input.replace(/\s+/g, " ").trim();
-  const low = text.toLowerCase();
   const out: ParsedTrip = { parks: [], notes: [] };
 
-  // ---- guests
-  const adultsM = low.match(new RegExp(`\\b${NUM}\\s*(?:adults?|pax|people|persons|guests|travell?ers|ppl)\\b`));
-  const familyM = low.match(new RegExp(`\\bfamily of\\s*${NUM}\\b`));
-  const kidsM = low.match(new RegExp(`\\b${NUM}\\s*(?:kids?|children|childs?|child)\\b`));
-  const agesM = low.match(/\b(?:aged?|ages?)\s*:?\s*(\d{1,2}(?:\s*(?:,|and|&|\/)\s*\d{1,2})*)/);
+  // Everything the text can refer to: parks, and lodges (which imply their park).
+  const parkItems = ctx.pricing.parks.map((p) => ({ name: p.name, aliases: aliasesOf(p.name) }));
+  const allParkAliases = parkItems.flatMap((p) => p.aliases);
+  const lodgeItems = ctx.properties
+    .map((l) => {
+      const park = ctx.pricing.parks.find((p) => p.id === l.park_id);
+      return park ? { name: park.name, lodge: l.name, aliases: lodgeAliases(l.name, allParkAliases) } : null;
+    })
+    .filter((x): x is { name: string; lodge: string; aliases: string[] } => !!x);
+  // Only distinctive words are spelling-corrected towards ("bandhavgarh", "waghoba"), never
+  // ordinary words like "lodge", "house" or "tiger".
+  const COMMON = new Set([...GENERIC, "national", "park", "tiger", "reserve", "sanctuary", "wildlife", "forest", "hotel"]);
+  const vocabulary = [...allParkAliases, ...lodgeItems.flatMap((l) => l.aliases)].flatMap((a) => a.split(/[\s-]+/)).filter((w) => !COMMON.has(w));
 
-  let ages: number[] = agesM ? agesM[1].split(/\s*(?:,|and|&|\/)\s*/).map(Number).filter((n) => n >= 0 && n < 18) : [];
+  const text = normaliseText(input, vocabulary, out.notes);
+  const low = text.toLowerCase();
+
+  // ---- guests
+  const adultsM =
+    low.match(new RegExp(`\\b${NUM}\\s*(?:adults?|pax|people|persons|guests|travell?ers|ppl)\\b`)) ?? low.match(/\b(\d{1,2})\s*a\b(?![\w'])/);
+  const familyM = low.match(new RegExp(`\\bfamily of\\s*${NUM}\\b`));
+  const kidsM = low.match(new RegExp(`\\b${NUM}\\s*(?:kids?|children|childs?|child|infants?)\\b`));
+  const LIST = "(\\d{1,2}(?:\\s*(?:,|and|&|/)\\s*\\d{1,2})*)";
+  const ageSources = [
+    low.match(new RegExp(`\\b(?:aged?|ages?)\\s*:?\\s*${LIST}`)),
+    low.match(new RegExp(`\\b(?:kids?|children|child)\\s*\\(\\s*(?:aged?\\s*)?${LIST}\\s*(?:y(?:ea)?rs?)?\\s*\\)`)),
+    low.match(new RegExp(`\\b(?:kids?|children)\\s+(\\d{1,2}(?:\\s*(?:,|and|&|/)\\s*\\d{1,2})+)\\b`)),
+    low.match(/\b(?:child|kid|son|daughter)\s+(?:of\s+)?(\d{1,2})\s*(?:y(?:ea)?rs?|yo)\b/),
+  ];
+  let ages: number[] = [];
+  for (const m of ageSources) {
+    if (m) {
+      ages = m[1].split(/\s*(?:,|and|&|\/)\s*/).map(Number).filter((n) => n >= 0 && n < 18);
+      break;
+    }
+  }
+  if (!ages.length) {
+    // "a 6 year old", "6-year-old", "6 yr old"
+    const yo = [...low.matchAll(/\b(\d{1,2})\s*-?\s*(?:y(?:ea)?r?s?)\s*-?\s*old\b/g)].map((m) => Number(m[1])).filter((n) => n < 18);
+    ages = yo;
+  }
   const kidCount = kidsM ? toNum(kidsM[1]) : ages.length;
   if (kidCount > 0) {
     if (ages.length !== kidCount) {
@@ -126,7 +228,9 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
   else if (/\bcouple\b/.test(low)) out.adults = 2;
   else if (/\b(solo|single traveller|single traveler)\b/.test(low)) out.adults = 1;
 
-  const roomsM = low.match(new RegExp(`\\b${NUM}\\s*(?:rooms?|cottages?|tents?|suites?|villas?|tree ?houses?)\\b`));
+  const roomsM = low.match(
+    new RegExp(`\\b${NUM}\\s*(?:(?:double|twin|single|triple|deluxe|ac|a/c|family|standard|luxury|separate)\\s+)*(?:rooms?|cottages?|tents?|suites?|villas?|tree ?houses?|bungalows?)\\b`)
+  );
   if (roomsM) out.rooms = toNum(roomsM[1]);
 
   if (/\b(indian|domestic|resident)s?\b/.test(low)) out.nationality = "indian";
@@ -138,13 +242,16 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
   else if (/\b(ep|room only|european plan)\b/.test(low)) out.meal_plan = "EP";
 
   // ---- dates (first date found = arrival; a range also gives departure)
-  const range = low.match(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s*(?:-|to|till|until)\\s*(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH}\\.?,?\\s*(\\d{4})?`));
+  // Years: 4 digits ("2027"), or 2 digits after an apostrophe ("'27").
+  const YEAR = `(?:\\s*'\\s*(\\d{2})(?!\\d)|,?\\s*(\\d{4}))?`;
+  const yearOf = (two?: string, four?: string) => (four ? Number(four) : two ? 2000 + Number(two) : null);
+  const monthOf = (m: string) => MONTHS[m] ?? MONTHS[m.slice(0, 3)];
+  const range = low.match(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s*(?:-|to|till|until)\\s*(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH}\\.?${YEAR}`));
   const candidates: { at: number; date: ISODate }[] = [];
   const push = (at: number, d: ISODate | null) => d && candidates.push({ at, date: d });
   if (range) {
-    const m = MONTHS[range[3]] ?? MONTHS[range[3].slice(0, 3)];
-    const y = range[4] ? Number(range[4]) : null;
-    const a = makeDate(y, m, Number(range[1]), today);
+    const m = monthOf(range[3]);
+    const a = makeDate(yearOf(range[4], range[5]), m, Number(range[1]), today);
     const b = a ? makeDate(Number(a.slice(0, 4)), m, Number(range[2]), a) : null;
     if (a && b && b > a) {
       out.arrival_date = a;
@@ -157,38 +264,36 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
     while ((m = iso.exec(low))) push(m.index, makeDate(Number(m[1]), Number(m[2]), Number(m[3]), today));
     const dmy = /\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})\b/g; // Indian order: day first
     while ((m = dmy.exec(low))) push(m.index, makeDate(Number(m[3]), Number(m[2]), Number(m[1]), today));
-    const dMon = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?${MONTH}\\.?,?\\s*(\\d{4})?`, "g");
-    while ((m = dMon.exec(low))) push(m.index, makeDate(m[3] ? Number(m[3]) : null, MONTHS[m[2]] ?? MONTHS[m[2].slice(0, 3)], Number(m[1]), today));
-    const monD = new RegExp(`\\b${MONTH}\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b,?\\s*(\\d{4})?`, "g");
-    while ((m = monD.exec(low))) push(m.index, makeDate(m[3] ? Number(m[3]) : null, MONTHS[m[1]] ?? MONTHS[m[1].slice(0, 3)], Number(m[2]), today));
+    const dMon = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s*(?:of\\s+)?${MONTH}\\.?${YEAR}`, "g");
+    while ((m = dMon.exec(low))) push(m.index, makeDate(yearOf(m[3], m[4]), monthOf(m[2]), Number(m[1]), today));
+    const monD = new RegExp(`\\b${MONTH}\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b${YEAR}`, "g");
+    while ((m = monD.exec(low))) push(m.index, makeDate(yearOf(m[3], m[4]), monthOf(m[1]), Number(m[2]), today));
     candidates.sort((a, b) => a.at - b.at);
     if (candidates[0]) out.arrival_date = candidates[0].date;
     if (candidates[1] && candidates[1].date > candidates[0].date) out.departure_date = candidates[1].date;
   }
 
-  // ---- parks with nights, in the order written
-  // Adjacent mentions of the same park ("tadoba andhari") count as one.
-  const parkHits = findAll(text, ctx.pricing.parks.map((p) => ({ name: p.name, aliases: aliasesOf(p.name) }))).reduce<Hit[]>((acc, h) => {
+  // ---- parks and lodges with nights, in the order written.
+  // Lodges are matched first so "Pench Tree Lodge" is one mention, not "Pench" + noise.
+  const parkHits = findAll(text, [...lodgeItems, ...parkItems]).reduce<Hit[]>((acc, h) => {
     const last = acc[acc.length - 1];
-    if (last && last.name === h.name && /^[\s\-/]*$/.test(text.slice(last.end, h.index))) last.end = h.end;
-    else acc.push({ ...h });
+    // Adjacent mentions of the same park ("tadoba andhari", "Kings Lodge, Bandhavgarh") count as one.
+    if (last && last.name === h.name && /^[\s\-/,]*(?:in|at)?[\s\-/,]*$/i.test(text.slice(last.end, h.index)) && (!last.lodge || !h.lodge || last.lodge === h.lodge)) {
+      last.end = h.end;
+      last.lodge ??= h.lodge;
+    } else acc.push({ ...h });
     return acc;
   }, []);
-  // Each night count ("4 nights", "4N", "x4") belongs to the park right after
-  // it ("4N Kanha") or right before it ("Kanha 4 nights"). Lodge names in
-  // between are ignored ("3 nights at Kings Lodge in Bandhavgarh"). When a
-  // count could go either way, the writer's usual style decides.
-  const lodgeAliasList = ctx.properties.map((p) => p.name.toLowerCase());
-  const gapIsGlue = (gap: string) => {
-    let g = gap.toLowerCase();
-    for (const a of lodgeAliasList) g = g.split(a).join(" ");
-    return /^[\s\W]*(?:(?:in|at|@|of|for|stay(?:ing)?)[\s\W]+)*$/.test(g + " ");
-  };
+
+  // Each night count ("4 nights", "4N", "x4") belongs to the place right after
+  // it ("4N Kanha") or right before it ("Kanha 4 nights"). When a count could
+  // go either way, the writer's usual style decides.
+  const gapIsGlue = (gap: string) => /^[\s\W]*(?:(?:in|at|@|of|for|stay(?:ing)?)[\s\W]+)*$/.test(gap.toLowerCase() + " ");
   const tokens: { start: number; end: number; value: number; before?: number; after?: number }[] = [];
   const tokRe = new RegExp(`(?:\\bx\\s*${NUM}\\b|\\b${NUM}\\s*(?:n|nts?|nights?)\\b)`, "gi");
   let tm: RegExpExecArray | null;
   while ((tm = tokRe.exec(text))) {
-    const value = toNum(tm[1] ?? tm[2]);
+    const value = toNum((tm[1] ?? tm[2]).toLowerCase());
     if (!Number.isFinite(value)) continue;
     const t = { start: tm.index, end: tm.index + tm[0].length, value } as (typeof tokens)[number];
     const nextPark = parkHits.findIndex((h) => h.index >= t.end);
@@ -206,42 +311,39 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
     if (target !== undefined && !nightsFor.has(target)) nightsFor.set(target, t.value);
   }
   parkHits.forEach((h) => {
-    if (out.parks.some((p) => p.name === h.name)) return; // mentioned twice: keep the first position
+    const existing = out.parks.find((p) => p.name === h.name);
+    if (existing) {
+      existing.lodge ??= h.lodge; // mentioned twice: keep the first position
+      return;
+    }
     const nights = parkHits.map((x, i) => (x.name === h.name ? nightsFor.get(i) : undefined)).find((n) => n !== undefined);
-    out.parks.push({ name: h.name, nights });
+    out.parks.push({ name: h.name, nights, lodge: h.lodge });
   });
 
   if (out.parks.length === 1 && !out.parks[0].nights && out.arrival_date && out.departure_date) {
     out.parks[0].nights = nightsBetween(out.arrival_date, out.departure_date);
   }
 
-  // ---- lodges mentioned by name
-  const lodgeHits = findAll(text, ctx.properties.map((p) => ({ name: p.name, aliases: [p.name.toLowerCase()] })));
-  for (const l of lodgeHits) {
-    const prop = ctx.properties.find((p) => p.name === l.name);
-    const parkName = ctx.pricing.parks.find((p) => p.id === prop?.park_id)?.name;
-    const stop = out.parks.find((p) => p.name === parkName);
-    if (stop) stop.lodge = l.name;
-    else if (parkName) out.parks.push({ name: parkName, lodge: l.name });
-  }
-
-  // ---- arrival / departure places
-  // Airports first, so "Nagpur" means the airport when a station has the same city name.
+  // ---- arrival / departure places (codes like NAG and JLR count too)
   const rank: Record<string, number> = { airport: 0, railway: 1, city: 2, other: 3 };
   const places = ctx.locations.filter((l) => l.type !== "property").sort((a, b) => (rank[a.type] ?? 9) - (rank[b.type] ?? 9));
-  const placeHits = findAll(text, places.map((l) => ({ name: l.name, aliases: locationAliases(l.name) })));
-  const arriveWords = /(arriv\w*|land\w*|pick ?up|from|start\w*|reach\w*|coming (?:in )?(?:to|at))\W*(?:at|in|to)?\W*$/i;
-  const departWords = /(depart\w*|leav\w*|drop\w*|fly(?:ing)? out|back to|end\w*|exit\w*|return\w*|onward)\W*(?:at|in|to|from|via)?\W*$/i;
-  const bothWords = /^\W*(in\s*(?:\/|&|and)\s*out|in-out|round ?trip|both ways)/i;
+  const placeHits = findAll(text, places.map((l) => ({ name: l.name, aliases: locationAliases(l.name, l.code) })));
+  const arriveWords = /(arriv\w*|arr\.?|land\w*|pick(?:ing)?[\s-]?up(?:\s+(?:from|at))?|from|ex|start\w*|reach\w*|coming (?:in )?(?:to|at))\W*(?:at|in|to)?\W*$/i;
+  const departWords = /(depart\w*|dep\.?|leav\w*|drop(?:ping)?(?:\s+off)?|fly(?:ing)?\s+(?:out|back)|back to|end\w*|exit\w*|return\w*|onward)\W*(?:at|in|to|from|via|of)?\W*$/i;
+  const bothWords = /^\W*(in\s*(?:\/|&|and)?\s*out|in-out|round ?trip|both ways)\b/i;
   const unclassified: string[] = [];
   for (const h of placeHits) {
     const before = text.slice(Math.max(0, h.index - 25), h.index);
     const after = text.slice(h.end, h.end + 15);
+    // Words before the place win; a word after only counts if it follows
+    // directly ("Nagpur out"), not when it starts the next phrase (", drop at Raipur").
     if (bothWords.test(after) || /\bin and out of\W*$/i.test(before)) {
       out.arrival_place ??= h.name;
       out.departure_place ??= h.name;
-    } else if (/^\W*(out|exit|departure)\b/i.test(after) || departWords.test(before)) out.departure_place ??= h.name;
-    else if (/^\W*(in|arrival)\b/i.test(after) || arriveWords.test(before)) out.arrival_place ??= h.name;
+    } else if (departWords.test(before)) out.departure_place ??= h.name;
+    else if (arriveWords.test(before)) out.arrival_place ??= h.name;
+    else if (/^\s*(out|exit|departure|drop)\b/i.test(after)) out.departure_place ??= h.name;
+    else if (/^\s*(in|arrival|pick ?up)\b/i.test(after)) out.arrival_place ??= h.name;
     else unclassified.push(h.name);
   }
   for (const name of unclassified) {

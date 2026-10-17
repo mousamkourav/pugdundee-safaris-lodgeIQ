@@ -13,7 +13,7 @@ export async function loadBuilderContext(): Promise<{ ctx: BuilderContext; error
   const [{ data: pricing, error: pricingError }, props, locs, rooms, tpl, content, settings] = await Promise.all([
     loadPricingData(),
     supabase.from("sales_properties").select("id, name, park_id, kind, fallback_priority, sort").eq("active", true),
-    supabase.from("sales_locations").select("id, name, type, property_id").eq("active", true).order("name"),
+    supabase.from("sales_locations").select("id, name, type, property_id, code").eq("active", true).order("name"),
     supabase.from("sales_room_categories").select("id, property_id, name, sort").eq("active", true),
     supabase
       .from("sales_content_blocks")
@@ -45,7 +45,7 @@ export async function loadBuilderContext(): Promise<{ ctx: BuilderContext; error
         fallback_priority: n(r.fallback_priority, 100),
         sort: n(r.sort),
       })),
-      locations: rows(locs).map((r) => ({ id: s(r.id), name: s(r.name), type: s(r.type), property_id: sn(r.property_id) })),
+      locations: rows(locs).map((r) => ({ id: s(r.id), name: s(r.name), type: s(r.type), property_id: sn(r.property_id), code: sn(r.code) })),
       rooms: rows(rooms).map((r) => ({ id: s(r.id), property_id: s(r.property_id), name: s(r.name), sort: n(r.sort) })),
       templates: rows(tpl).map((r) => ({
         kind: s(r.kind),

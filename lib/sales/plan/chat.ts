@@ -114,7 +114,8 @@ export function chatTurn(
   }
   const nameM =
     msg.match(/\b(?:guest(?:'s)?\s+name|name)\s*(?:is|:|-)\s*([^,.;\n]{2,60})/i) ??
-    msg.match(/\bfor\s+((?:mr|mrs|ms|miss|dr)\.?\s+[A-Za-z][^,.;\n]{1,50})/i);
+    msg.match(/\bfor\s+((?:mr|mrs|ms|miss|dr)\.?\s+[A-Za-z][^,.;\n]{1,50})/i) ??
+    msg.match(/^((?:mr|mrs|ms|miss|dr)\.?\s+[A-Za-z][A-Za-z&' -]{1,40}?)\s*(?=[,;\n]|$)/i); // "Mr Shah, 2 adults..."
   if (nameM) {
     next.guest.name = nameM[1].trim();
     chips.push(`guest ${next.guest.name}`);
@@ -298,7 +299,7 @@ export function chatTurn(
   if (!understood) {
     text = /^(yes|ok|okay|looks good|go ahead|review|next|done|perfect|great)\b/i.test(low) && step.ready
       ? "Opening the plan for review."
-      : `I did not catch any trip details there. ${step.text}`;
+      : `I did not catch any trip details there. Try writing it like "Kanha 3 nights, Bandhavgarh 2 nights, 2 adults, arriving Jabalpur 10 Feb". ${step.text}`;
   }
   const action = !understood && step.ready && /^(yes|ok|okay|looks good|go ahead|review|next|done|perfect|great)\b/i.test(low) ? "review" : undefined;
 

@@ -88,7 +88,7 @@ export interface CancellationSlab {
 export interface BuilderContext {
   pricing: PricingData;
   properties: { id: string; name: string; park_id: string | null; kind: string; fallback_priority: number; sort: number }[];
-  locations: { id: string; name: string; type: string; property_id: string | null }[];
+  locations: { id: string; name: string; type: string; property_id: string | null; code?: string | null }[];
   rooms: { id: string; property_id: string; name: string; sort: number }[];
   templates: { kind: string; title: string; body: string; park_id: string | null; property_id: string | null; is_default: boolean }[];
   content: ContentBlock[]; // guest-facing text blocks (inclusions, notes, terms)

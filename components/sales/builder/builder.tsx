@@ -202,7 +202,11 @@ export function Builder({
     setChatBusy(true);
     try {
       let r = chatTurn(plan, flags, text, ctx, today);
-      if (!r.understood && aiAvailable && text.trim().length > 8) {
+      // Ask the AI when the reader missed the important parts, not only when it
+      // understood nothing: e.g. it caught "2 adults" but not the parks or the date.
+      const missedParks = !r.plan.stops.length && /\d|night|park|lodge|safari|trip|stay/i.test(text);
+      const missedDate = flags.pending === "date" && !r.flags.dateSet;
+      if ((!r.understood || missedParks || missedDate) && aiAvailable && text.trim().length > 8) {
         try {
           const ai = await aiReadTrip(text);
           if (ai.parsed) {

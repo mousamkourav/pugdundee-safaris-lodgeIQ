@@ -102,6 +102,13 @@ test("quick-reply buttons and a name typed at any time", () => {
   assert.match(r.reply.text, /did not catch/);
 });
 
+test("a name at the start of the enquiry", () => {
+  const say = conversation();
+  const r = say("Mr Shah, 2 adults, Tadoba 3 nights");
+  assert.equal(r.plan.guest.name, "Mr Shah");
+  assert.equal(r.plan.guest.adults, 2);
+});
+
 test("contact details and names in the message", () => {
   const say = conversation();
   const r = say("for Mrs. Anderson, judy@example.com, +44 7700 900123, Tadoba 3 nights");
