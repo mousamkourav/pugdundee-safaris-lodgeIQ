@@ -97,6 +97,18 @@ async function reassignQueryUnsafe(queryId: string, memberId: string, remark: st
   return { ok: true };
 }
 
+async function deleteDraftUnsafe(queryId: string): Promise<Result> {
+  const cu = await getCurrentUser();
+  if (!cu?.user || !isSalesUser(cu.profile?.role)) return { error: "You do not have access to Sales." };
+  const supabase = await createClient();
+  // RLS lets members delete only their own drafts; admins can delete any query.
+  const { data, error } = await supabase.from("sales_queries").delete().eq("id", queryId).eq("status", "draft").select("id");
+  if (error) return { error: error.message };
+  if (!data || !data.length) return { error: "Only drafts can be deleted, and only by their owner." };
+  revalidatePath("/sales", "layout");
+  return { ok: true };
+}
+
 // Public actions: same as above, but failures come back as { error } instead of crashing.
 export async function changeStatus(queryId: string, input: StatusInput): Promise<Result> {
   return safe("changeStatus", () => changeStatusUnsafe(queryId, input));
@@ -104,4 +116,7 @@ export async function changeStatus(queryId: string, input: StatusInput): Promise
 
 export async function reassignQuery(queryId: string, memberId: string, remark: string): Promise<Result> {
   return safe("reassignQuery", () => reassignQueryUnsafe(queryId, memberId, remark));
+}
+export async function deleteDraft(queryId: string): Promise<Result> {
+  return safe("deleteDraft", () => deleteDraftUnsafe(queryId));
 }

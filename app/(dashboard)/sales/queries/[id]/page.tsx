@@ -7,6 +7,7 @@ import { Icon } from "@/components/icons";
 import { StatusBadge } from "@/components/sales/status-badge";
 import { StatusActions } from "@/components/sales/status-actions";
 import { ShareLink } from "@/components/sales/share-link";
+import { DraftActions } from "@/components/sales/draft-actions";
 import { todayIST } from "@/lib/sales/plan/load-context";
 import { getMemberNames } from "@/lib/sales/members";
 import { rupees, fmtDate, fmtRange, daysSince } from "@/lib/sales/format";
@@ -83,6 +84,7 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
   const plan = current?.plan;
   const pricing = current?.pricing;
   const canAct = admin || q.assigned_to === user.id;
+  const isDraft = q.status === "draft";
   const canEdit = canAct && (q.status === "open" || q.status === "booked");
 
   const { data: rData } = await supabase.from("sales_reasons").select("kind, label").eq("active", true).order("sort");
@@ -116,6 +118,9 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
             {q.assigned_to && <> &middot; Assigned to <b className="text-olive-800">{names[q.assigned_to] ?? "member"}</b></>}
           </p>
         </div>
+        {isDraft ? (
+          canAct && <DraftActions queryId={q.id} />
+        ) : (
         <div className="flex flex-wrap gap-2">
           <StatusActions
             queryId={q.id}
@@ -142,11 +147,19 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
             </>
           )}
         </div>
+        )}
       </div>
+
+      {isDraft && (
+        <p className={`${ui.alertWarning} flex gap-2`}>
+          <Icon name="alert" className="mt-0.5 h-4 w-4 shrink-0" />
+          This is a draft: it is not counted as a quote and has no client link yet. Continue editing and choose Save and get the client link when it is ready.
+        </p>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
         <div className="min-w-0 space-y-6">
-          {pricing && (
+          {pricing && pricing.byProperty && (
             <section className={`${ui.card} p-5`}>
               <div className="flex flex-wrap items-end justify-between gap-2">
                 <h2 className="text-lg">Price (version {current.version_no})</h2>
@@ -238,7 +251,7 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
         </div>
 
         <div className="space-y-6">
-          {current && (
+          {current && !isDraft && (
             <section className={`${ui.card} p-5`}>
               <h2 className="text-lg">Client itinerary</h2>
               <p className="mb-3 mt-1 text-sm text-sand-500">Version {current.version_no}, with photos and payment terms. Costs by lodge are never shown to the guest.</p>

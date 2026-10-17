@@ -12,6 +12,7 @@ import { QUERY_LIST_COLUMNS, type QueryRow } from "@/lib/sales/status";
 type Range = "month" | "all";
 
 interface Totals {
+  draft: number;
   created: number;
   open: number;
   booked: number;
@@ -22,8 +23,13 @@ interface Totals {
 }
 
 function summarise(rows: QueryRow[]): Totals {
-  const t: Totals = { created: 0, open: 0, booked: 0, lost: 0, cancelled: 0, bookedValue: 0, pendingValue: 0 };
+  const t: Totals = { draft: 0, created: 0, open: 0, booked: 0, lost: 0, cancelled: 0, bookedValue: 0, pendingValue: 0 };
   for (const r of rows) {
+    // Drafts have not been quoted yet: counted on their own, not in created or conversion.
+    if (r.status === "draft") {
+      t.draft += 1;
+      continue;
+    }
     t.created += 1;
     t[r.status] += 1;
     if (r.status === "booked") t.bookedValue += Number(r.booked_amount ?? r.total_amount ?? 0);
@@ -111,11 +117,14 @@ export default async function SalesDashboard({
 
       {error && <p className={ui.alertError}>Could not load queries: {error.message}</p>}
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
         <StatCard label="Created" value={t.created} />
         <StatCard label="Booked" value={t.booked} valueClass="!text-success" hint={`Conversion ${pct(t.booked, t.created)}%`} />
         <StatCard label="Open" value={t.open} valueClass="!text-warning" />
         <StatCard label="Lost / cancelled" value={`${t.lost} / ${t.cancelled}`} />
+        <Link href="/sales/queries?status=draft" className="block">
+          <StatCard label="Drafts" value={t.draft} hint="Saved, not yet sent" />
+        </Link>
         <StatCard label="Booked value" value={rupees(t.bookedValue)} highlight />
         <StatCard label="Pending value" value={rupees(t.pendingValue)} hint="Open queries in this period" />
       </div>

@@ -29,7 +29,7 @@ interface Stored {
 
 function Stepper({ step, canGo, go }: { step: number; canGo: (n: number) => boolean; go: (n: number) => void }) {
   return (
-    <ol className={`${ui.card} mb-5 flex items-center gap-2 overflow-x-auto p-3 sm:p-4`}>
+    <ol className={`${ui.card} flex items-center gap-2 overflow-x-auto px-3 py-2`}>
       {STEPS.map((label, i) => {
         const done = i < step;
         const active = i === step;
@@ -56,11 +56,12 @@ function Stepper({ step, canGo, go }: { step: number; canGo: (n: number) => bool
 
 function PriceBar({ plan, result, blockers }: { plan: Plan; result: PriceResult | null; blockers: string[] }) {
   const nights = plan.stops.reduce((t, s) => t + s.nights, 0);
+  const needed = (result?.missing ?? []).filter((m) => plan.manual_prices?.[m.key] === undefined).length;
   return (
-    <div className={`${ui.card} space-y-3 p-4`}>
+    <div className={`${ui.card} space-y-2 p-3`}>
       <div className="flex items-end justify-between gap-3">
         <div>
-          <p className="eyebrow">Total</p>
+          <p className="eyebrow">{needed ? "Total so far" : "Total"}</p>
           <p className="tabular font-display text-2xl font-semibold text-olive-800">{result && !blockers.length ? rupees(result.totals.grand) : "-"}</p>
           {result && !blockers.length && <p className="text-xs text-sand-500">{rupees(result.perPerson)} per person</p>}
         </div>
@@ -69,6 +70,11 @@ function PriceBar({ plan, result, blockers }: { plan: Plan; result: PriceResult 
           {result?.arrival && <p>{fmtDate(result.arrival)} - {fmtDate(result.departure)}</p>}
         </div>
       </div>
+      {needed > 0 && !blockers.length && (
+        <p className={`${ui.alertWarning} text-xs`}>
+          {needed} price{needed === 1 ? "" : "s"} not in master data yet. The total leaves {needed === 1 ? "it" : "them"} out until typed in on Plan & price.
+        </p>
+      )}
       {blockers.length > 0 && (
         <ul className={`${ui.alertWarning} list-disc space-y-0.5 pl-5 text-xs`}>
           {blockers.slice(0, 4).map((b, i) => <li key={i}>{b}</li>)}
@@ -86,6 +92,7 @@ export function Builder({
   today,
   aiAvailable = false,
   startStep = 0,
+  queryStatus = null,
 }: {
   ctx: BuilderContext;
   initial: Plan;
@@ -94,6 +101,7 @@ export function Builder({
   today: string;
   aiAvailable?: boolean;
   startStep?: number;
+  queryStatus?: string | null;
 }) {
   const router = useRouter();
   const storageKey = `lq-itinerary-draft:${queryId ?? "new"}`;
@@ -111,6 +119,9 @@ export function Builder({
   const [saveProblems, setSaveProblems] = useState<string[]>([]);
   const [nameError, setNameError] = useState<string | null>(null);
   const [saving, startSave] = useTransition();
+  const [currentId, setCurrentId] = useState<string | null>(queryId);
+  const [currentStatus, setCurrentStatus] = useState<string | null>(queryStatus);
+  const [notice, setNotice] = useState<string | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
 
   const setPlan = useCallback((u: (p: Plan) => Plan) => {
@@ -145,6 +156,8 @@ export function Builder({
   }, [plan, problems, stale, ctx, today]);
   const blockers = stale ? ["The route changed. Update the day plan first."] : [...problems, ...(result?.errors ?? [])];
   const ready = !!result && !blockers.length;
+  const pricesNeeded = (result?.missing ?? []).filter((m) => plan.manual_prices?.[m.key] === undefined);
+  const canDraft = currentStatus === null || currentStatus === "draft";
 
   // ---- autosave on this computer, and offer to restore after a crash or a closed tab
   useEffect(() => {
@@ -245,33 +258,51 @@ export function Builder({
   }
 
   // ---- save
-  function save() {
+  function save(mode: "draft" | "final") {
     setSaveError(null);
     setSaveProblems([]);
     setNameError(null);
-    if (!plan.guest.name.trim()) {
-      setNameError("Enter the guest's name to save.");
-      go(2);
-      return;
-    }
-    if (plan.guest.email && !EMAIL_RE.test(plan.guest.email)) {
-      setSaveError("The guest's email address does not look right. Fix it on the Trip step.");
-      return;
-    }
-    if (plan.adjustment && !plan.adjustment.reason.trim()) {
-      setSaveError("The manual adjustment needs a reason (Plan & price step).");
+    setNotice(null);
+    if (mode === "final") {
+      if (!plan.guest.name.trim()) {
+        setNameError("Enter the guest's name to save.");
+        go(2);
+        return;
+      }
+      if (pricesNeeded.length) {
+        setSaveError(`${pricesNeeded.length} price${pricesNeeded.length === 1 ? " is" : "s are"} still needed (Plan & price step). Fill ${pricesNeeded.length === 1 ? "it" : "them"} in, or save a draft for now.`);
+        return;
+      }
+      if (plan.guest.email && !EMAIL_RE.test(plan.guest.email)) {
+        setSaveError("The guest's email address does not look right. Fix it on the Trip step.");
+        return;
+      }
+      if (plan.adjustment && !plan.adjustment.reason.trim()) {
+        setSaveError("The manual adjustment needs a reason (Plan & price step).");
+        return;
+      }
+    } else if (!plan.stops.length && !plan.guest.name.trim()) {
+      setSaveError("Add at least the guest name or a park before saving a draft.");
       return;
     }
     startSave(async () => {
       try {
-        const res = await saveItinerary(JSON.stringify(plan), queryId);
+        const res = await saveItinerary(JSON.stringify(plan), currentId, mode);
         if (res.error) setSaveError(res.error);
         else if (res.problems?.length) setSaveProblems(res.problems);
         else if (res.id) {
           clearStored();
           setDirty(false);
-          router.push(`/sales/queries/${res.id}`);
-          router.refresh();
+          if (mode === "final") {
+            router.push(`/sales/queries/${res.id}`);
+            router.refresh();
+          } else {
+            // Stay here and keep working; later saves update the same draft.
+            setCurrentId(res.id);
+            setCurrentStatus("draft");
+            window.history.replaceState(null, "", `/sales/new?from=${res.id}`);
+            setNotice(`Draft saved at ${new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}. Find it under Queries > Draft.`);
+          }
         }
       } catch {
         setSaveError(OFFLINE);
@@ -307,7 +338,19 @@ export function Builder({
         </div>
       )}
 
-      <Stepper step={step} canGo={canGo} go={go} />
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <Stepper step={step} canGo={canGo} go={go} />
+        </div>
+        {canDraft && (
+          <button type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} disabled={saving} onClick={() => save("draft")}>
+            <Icon name="fileText" className="h-4 w-4" />
+            {saving ? "Saving..." : "Save draft"}
+          </button>
+        )}
+      </div>
+      {notice && <p className={`${ui.alertSuccess} mb-3`}>{notice}</p>}
+      {saveError && step !== 2 && <p className={`${ui.alertError} mb-3`}>{saveError}</p>}
 
       {stale && (
         <div className={`${ui.alertWarning} mb-4 flex flex-wrap items-center justify-between gap-3`}>
@@ -346,15 +389,20 @@ export function Builder({
       )}
 
       {step === 1 && (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <PlanStep plan={plan} setPlan={setPlan} ctx={ctx} result={result} onDayEdited={() => setDaysEdited(true)} />
-          <aside className="space-y-3 lg:sticky lg:top-24 lg:self-start">
-            <PriceBar plan={plan} result={result} blockers={blockers} />
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" className={ui.btnSecondary} onClick={() => go(0)}>Back to trip</button>
-              <button type="button" className={ui.btnPrimary} disabled={!ready} onClick={() => go(2)}>Final draft</button>
+        <div className="space-y-3">
+          <PlanStep plan={plan} setPlan={setPlan} ctx={ctx} result={result} />
+          <div className="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sand-200 bg-white/95 px-3 py-2 shadow-card backdrop-blur">
+            <div className="text-sm">
+              <span className="eyebrow mr-2">{pricesNeeded.length ? "Total so far" : "Total"}</span>
+              <span className="tabular font-display text-lg font-semibold text-olive-800">{result ? rupees(result.totals.grand) : "-"}</span>
+              {result && <span className="ml-2 text-xs text-sand-500">{rupees(result.perPerson)} per person</span>}
+              {pricesNeeded.length > 0 && <span className="ml-2 text-xs font-medium text-warning">{pricesNeeded.length} price{pricesNeeded.length === 1 ? "" : "s"} needed</span>}
             </div>
-          </aside>
+            <div className="flex gap-2">
+              <button type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} onClick={() => go(0)}>Back to trip</button>
+              <button type="button" className={`${ui.btnPrimary} ${ui.btnSm}`} disabled={!ready} onClick={() => go(2)}>Final draft</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -370,11 +418,22 @@ export function Builder({
                 <ul className="mt-1 list-disc pl-5">{saveProblems.map((p, i) => <li key={i}>{p}</li>)}</ul>
               </div>
             )}
-            <button type="button" className={`${ui.btnPrimary} w-full`} disabled={saving || !ready} onClick={save}>
-              {saving ? "Saving..." : queryId ? "Save as new version" : "Save and get the client link"}
+            {pricesNeeded.length > 0 && (
+              <p className={`${ui.alertWarning} text-xs`}>
+                {pricesNeeded.length} price{pricesNeeded.length === 1 ? " is" : "s are"} still needed before this can go to the guest.{" "}
+                <button type="button" className="font-semibold underline" onClick={() => go(1)}>Enter prices</button>
+              </p>
+            )}
+            <button type="button" className={`${ui.btnPrimary} w-full`} disabled={saving || !ready || pricesNeeded.length > 0} onClick={() => save("final")}>
+              {saving ? "Saving..." : currentStatus && currentStatus !== "draft" ? "Save as new version" : "Save and get the client link"}
             </button>
+            {canDraft && (
+              <button type="button" className={`${ui.btnSecondary} w-full`} disabled={saving} onClick={() => save("draft")}>
+                Save draft, finish later
+              </button>
+            )}
             <button type="button" className={`${ui.btnSecondary} w-full`} onClick={() => go(1)}>Back to plan & price</button>
-            <p className="text-xs text-sand-500">Saving creates an Open query{queryId ? " version" : ""} with a link you can send to the guest. Earlier versions are kept.</p>
+            <p className="text-xs text-sand-500">The client link is created when you save for the guest. Drafts are never shown to guests. Earlier versions are kept.</p>
           </aside>
         </div>
       )}

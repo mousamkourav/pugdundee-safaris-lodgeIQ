@@ -210,6 +210,19 @@ export interface TripInput {
   adjustment?: { amount: number; reason: string } | null;
   currency?: "INR" | "USD";
   booking_date: ISODate; // "today" when the quote is made
+  // Prices typed by the sales person where master data has no rate, by MissingPrice.key.
+  manual_prices?: Record<string, number>;
+  // Items added by hand to a day (not from master data), already totalled.
+  custom_items?: { date: ISODate; title: string; amount: number }[];
+}
+
+// A rate the master data does not have. The sales person can type a price for it.
+export interface MissingPrice {
+  key: string;
+  kind: "room" | "safari" | "transfer";
+  label: string;
+  unit: string; // what the typed price covers
+  date: ISODate | null;
 }
 
 // ---------- result ----------
@@ -226,7 +239,9 @@ export interface PriceLine {
   tax: number; // tax portion of amount
   property_id: string | null; // which lodge bills it
   ref_id: string | null; // room_category / park / transfer rate / addon / offer id
-  missing?: boolean; // no rate found: amount is 0 and an error is reported
+  missing?: boolean; // no rate found and no typed price: amount is 0 and an error is reported
+  manual?: boolean; // priced with a price typed by the sales person
+  key?: string; // for missing / manual lines: the MissingPrice key
 }
 
 export interface PropertyTotals {
@@ -270,6 +285,8 @@ export interface PriceResult {
   grandInCurrency: number;
   payments: Instalment[];
   appliedOffers: string[];
+  missing: MissingPrice[]; // every rate master data does not have, whether a price was typed or not
+  manualCount: number; // lines priced by hand
   errors: string[]; // must be fixed before the quote is sent
   warnings: string[]; // worth checking
 }

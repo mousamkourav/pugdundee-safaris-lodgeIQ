@@ -106,6 +106,12 @@ test("a name at the start of the enquiry", () => {
   const say = conversation();
   const r = say("Mr Shah, 2 adults, Tadoba 3 nights");
   assert.equal(r.plan.guest.name, "Mr Shah");
+  const say2 = conversation();
+  const r2 = say2("Mr Shah from UK, 2 adults, Tadoba 3 nights, +44 7400 123456");
+  assert.equal(r2.plan.guest.name, "Mr Shah");
+  assert.equal(r2.plan.guest.country, "GB");
+  assert.equal(r2.plan.guest.nationality, "foreign");
+  assert.equal(r2.plan.guest.phone, "+447400123456");
   assert.equal(r.plan.guest.adults, 2);
 });
 
@@ -121,8 +127,10 @@ test("problems are explained, not hidden", () => {
   const noTransfers = { ...ctx, pricing: { ...ctx.pricing, transferRates: [] } };
   let plan = emptyPlan(TODAY);
   let r = chatTurn(plan, initialFlags(plan), "2 adults, arriving Nagpur 16 Jan 2027, Tadoba 4 nights, Nagpur out", noTransfers, TODAY);
-  assert.match(r.reply.text, /Before I can quote/);
-  assert.ok(r.reply.warnings!.some((w) => w.includes("No transfer rate") && w.includes("on their own")));
+  // missing transfer prices do not block: total so far, and what is still needed
+  assert.match(r.reply.text, /Total so far/);
+  assert.ok(r.reply.warnings!.some((w) => w.includes("not in master data") && w.includes("Transfer Nagpur Airport to Waghoba Eco Lodge")));
+  assert.ok(r.reply.quick!.some((q) => q.action === "review"));
   r = chatTurn(r.plan, r.flags, "on their own", noTransfers, TODAY);
   assert.equal(r.plan.arrival_location_id, null);
   assert.match(r.reply.text, /Total/);

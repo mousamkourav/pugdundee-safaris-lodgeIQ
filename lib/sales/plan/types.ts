@@ -7,8 +7,10 @@ import type { ISODate, PricingData, Nationality } from "@/lib/sales/pricing/type
 export interface PlanGuest {
   name: string;
   email: string;
-  phone: string;
-  nationality: Nationality;
+  phone: string; // international format, e.g. +919876543210
+  phone_country: string; // ISO code of the phone number, e.g. IN
+  country: string; // nationality as an ISO code, e.g. GB ("" = not given)
+  nationality: Nationality; // derived for pricing: IN = indian, anything else = foreign
   adults: number;
   children: number[]; // ages
   rooms: number;
@@ -32,6 +34,18 @@ export interface DaySafari {
   zone: "core" | "buffer";
 }
 
+// Something added to a day by hand: an add-on from master data, or anything
+// typed in (an activity, a hotel not in master data, a meal, a note).
+export interface PlanItem {
+  id: string;
+  type: "addon" | "activity" | "hotel" | "transfer" | "meal" | "note";
+  title: string;
+  detail: string;
+  price: number | null; // total in rupees incl. tax; null = no charge / included
+  addon_id: string | null;
+  qty: number | null; // add-ons only; null = automatic (guests, rooms...)
+}
+
 export interface PlanDay {
   date: ISODate;
   kind: DayKind;
@@ -42,6 +56,7 @@ export interface PlanDay {
   title: string;
   text: string;
   notes: string[]; // planner remarks, e.g. "core closed, buffer used"
+  items: PlanItem[];
 }
 
 // Edits made on the Final draft step. Only fields the sales member changed
@@ -68,6 +83,7 @@ export interface Plan {
   adjustment: { amount: number; reason: string } | null;
   currency: "INR" | "USD";
   draft?: PlanDraft;
+  manual_prices: Record<string, number>; // prices typed for rates master data does not have
 }
 
 export interface ContentBlock {

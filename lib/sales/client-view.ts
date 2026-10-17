@@ -61,6 +61,7 @@ export async function loadClientView(token: string): Promise<ClientView | null> 
   const { data: q } = await db.from("sales_queries").select("query_no, guest_name, assigned_to, status").eq("id", version.query_id).maybeSingle();
   if (!q) return null;
   const query = q as { query_no: string; guest_name: string; assigned_to: string | null; status: string };
+  if (query.status === "draft") return null; // drafts are not ready for guests
 
   const propertyIds = [...new Set(plan.stops.map((s) => s.property_id))];
   const parkIds = [...new Set(plan.stops.map((s) => s.park_id))];

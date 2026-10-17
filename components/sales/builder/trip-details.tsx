@@ -7,6 +7,8 @@ import { defaultStop, lodgesInPark, mealPlansOf, roomsOf } from "@/lib/sales/pla
 import type { BuilderContext, Plan, PlanStop } from "@/lib/sales/plan/types";
 import type { ChatFlags } from "@/lib/sales/plan/chat";
 import { Field } from "./field";
+import { CountrySelect, PhoneField } from "./guest-fields";
+import { countryName } from "@/lib/sales/countries";
 
 const SOURCES = ["Website", "Email", "Phone", "Travel agent", "Repeat guest", "Referral", "Other"];
 const MEAL_LABEL: Record<string, string> = { AP: "AP - full board", MAP: "MAP - breakfast + dinner", CP: "CP - breakfast", EP: "EP - room only" };
@@ -30,6 +32,9 @@ export function TripDetails({
   markFlag: (k: keyof Omit<ChatFlags, "pending" | "nightsUnknown">) => void;
 }) {
   const [childrenText, setChildrenText] = useState(plan.guest.children.join(", "));
+  // Only decides how the section STARTS (open for a new guest); after that the
+  // user opens and closes it. Tying it to the name would snap it shut while typing.
+  const [guestStartsOpen] = useState(!plan.guest.name);
   useEffect(() => setChildrenText(plan.guest.children.join(", ")), [plan.guest.children]);
 
   const setGuest = (patch: Partial<Plan["guest"]>) => setPlan((p) => ({ ...p, guest: { ...p.guest, ...patch } }));
@@ -50,81 +55,107 @@ export function TripDetails({
   }
 
   return (
-    <div className="space-y-5">
-      <section className={`${ui.card} space-y-4 p-4 sm:p-5`}>
-        <h2 className="text-base">Guest</h2>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Guest name" required wide hint="Needed to save.">
+    <div className="space-y-3">
+      <details className={`${ui.card} group`} open={guestStartsOpen}>
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3">
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-olive-800">Guest</span>
+            <span className="block truncate text-xs text-sand-500">
+              {plan.guest.name || "No name yet"} &middot; {plan.guest.adults} adult{plan.guest.adults === 1 ? "" : "s"}
+              {plan.guest.children.length ? `, ${plan.guest.children.length} child${plan.guest.children.length === 1 ? "" : "ren"}` : ""} &middot; {plan.guest.rooms} room{plan.guest.rooms === 1 ? "" : "s"}
+              {plan.guest.country ? ` \u00b7 ${countryName(plan.guest.country)}` : ""}
+            </span>
+          </span>
+          <Icon name="chevronLeft" className="h-4 w-4 shrink-0 -rotate-90 text-sand-500 transition group-open:rotate-90" />
+        </summary>
+        <div className="grid gap-3 border-t border-sand-200 p-4 sm:grid-cols-2">
+          <Field label="Guest name" required wide>
             <input className={ui.inputSm} value={plan.guest.name} onChange={(e) => setGuest({ name: e.target.value })} placeholder="e.g. Judy & Cathy Miller" />
+          </Field>
+          <Field label="Nationality">
+            <CountrySelect
+              value={plan.guest.country}
+              onChange={(code) => setGuest({ country: code, nationality: code === "IN" ? "indian" : "foreign", ...(plan.guest.phone ? {} : { phone_country: code || "IN" }) })}
+            />
           </Field>
           <Field label="Email" error={emailError}>
             <input className={ui.inputSm} type="email" value={plan.guest.email} onChange={(e) => setGuest({ email: e.target.value.trim() })} />
           </Field>
-          <Field label="Phone">
-            <input className={ui.inputSm} value={plan.guest.phone} onChange={(e) => setGuest({ phone: e.target.value })} />
+          <Field label="Mobile" wide>
+            <PhoneField value={plan.guest.phone} country={plan.guest.phone_country || plan.guest.country || "IN"} onChange={(phone, cc) => setGuest({ phone, phone_country: cc })} />
           </Field>
-          <Field label="Adults" required>
-            <input
-              className={ui.inputSm}
-              type="number"
-              min={1}
-              value={plan.guest.adults}
-              onChange={(e) => {
-                setGuest({ adults: Math.max(1, Math.min(50, Number(e.target.value) || 1)) });
-                markFlag("adultsSet");
-              }}
-            />
-          </Field>
-          <Field label="Rooms" required>
-            <input
-              className={ui.inputSm}
-              type="number"
-              min={1}
-              value={plan.guest.rooms}
-              onChange={(e) => {
-                setGuest({ rooms: Math.max(1, Math.min(30, Number(e.target.value) || 1)) });
-                markFlag("roomsSet");
-              }}
-            />
-          </Field>
-          <Field label="Children's ages" hint="e.g. 8, 12">
-            <input
-              className={ui.inputSm}
-              value={childrenText}
-              onChange={(e) => setChildrenText(e.target.value)}
-              onBlur={() => {
-                const ages = childrenText.split(",").map((x) => x.trim()).filter(Boolean).map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n < 18);
-                setGuest({ children: ages });
-                setChildrenText(ages.join(", "));
-              }}
-            />
-          </Field>
-          <Field label="Nationality">
-            <select className={`${ui.select} w-full`} value={plan.guest.nationality} onChange={(e) => setGuest({ nationality: e.target.value as "indian" | "foreign" })}>
-              <option value="foreign">Foreign</option>
-              <option value="indian">Indian</option>
-            </select>
-          </Field>
+          <div className="grid grid-cols-3 gap-2 sm:col-span-2">
+            <Field label="Adults" required>
+              <input
+                className={ui.inputSm}
+                type="number"
+                min={1}
+                value={plan.guest.adults}
+                onChange={(e) => {
+                  setGuest({ adults: Math.max(1, Math.min(50, Number(e.target.value) || 1)) });
+                  markFlag("adultsSet");
+                }}
+              />
+            </Field>
+            <Field label="Rooms" required>
+              <input
+                className={ui.inputSm}
+                type="number"
+                min={1}
+                value={plan.guest.rooms}
+                onChange={(e) => {
+                  setGuest({ rooms: Math.max(1, Math.min(30, Number(e.target.value) || 1)) });
+                  markFlag("roomsSet");
+                }}
+              />
+            </Field>
+            <Field label="Kids' ages">
+              <input
+                className={ui.inputSm}
+                value={childrenText}
+                placeholder="8, 12"
+                onChange={(e) => setChildrenText(e.target.value)}
+                onBlur={() => {
+                  const ages = childrenText.split(",").map((x) => x.trim()).filter(Boolean).map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n < 18);
+                  setGuest({ children: ages });
+                  setChildrenText(ages.join(", "));
+                }}
+              />
+            </Field>
+          </div>
           <Field label="Source">
-            <select className={`${ui.select} w-full`} value={plan.guest.source} onChange={(e) => setGuest({ source: e.target.value })}>
+            <select className={`${ui.select} w-full !py-2`} value={plan.guest.source} onChange={(e) => setGuest({ source: e.target.value })}>
               <option value="">- Choose -</option>
               {SOURCES.map((s) => <option key={s}>{s}</option>)}
             </select>
           </Field>
-          {plan.guest.source === "Travel agent" && (
+          {plan.guest.source === "Travel agent" ? (
             <Field label="Agent name">
               <input className={ui.inputSm} value={plan.guest.agent_name} onChange={(e) => setGuest({ agent_name: e.target.value })} />
             </Field>
+          ) : (
+            <div />
           )}
           <Field label="Internal notes" wide>
             <textarea className={ui.inputSm} rows={2} value={plan.guest.notes} onChange={(e) => setGuest({ notes: e.target.value })} placeholder="Preferences, occasions, dietary needs" />
           </Field>
         </div>
-      </section>
+      </details>
 
-      <section className={`${ui.card} space-y-4 p-4 sm:p-5`}>
-        <h2 className="text-base">Route</h2>
-        <div className="grid gap-4 sm:grid-cols-2">
+      <details className={`${ui.card} group`} open>
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3">
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-olive-800">Route</span>
+            <span className="block truncate text-xs text-sand-500">
+              {plan.stops.length
+                ? plan.stops.map((s) => `${ctx.pricing.parks.find((p) => p.id === s.park_id)?.name.split(/[ -]/)[0] ?? "?"} ${s.nights}N`).join(" + ")
+                : "No parks yet"}
+            </span>
+          </span>
+          <Icon name="chevronLeft" className="h-4 w-4 shrink-0 -rotate-90 text-sand-500 transition group-open:rotate-90" />
+        </summary>
+        <div className="space-y-3 border-t border-sand-200 p-4">
+        <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Arrival date" required error={dateError}>
             <input
               className={ui.inputSm}
@@ -246,7 +277,8 @@ export function TripDetails({
             {ctx.pricing.parks.filter((p) => lodgesInPark(ctx, p.id).length).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
-      </section>
+        </div>
+      </details>
     </div>
   );
 }

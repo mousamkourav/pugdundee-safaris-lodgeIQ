@@ -12,7 +12,7 @@ export const MEAL_ORDER = ["AP", "MAP", "CP", "EP"];
 export function emptyPlan(today: ISODate): Plan {
   return {
     schema_version: 1,
-    guest: { name: "", email: "", phone: "", nationality: "foreign", adults: 2, children: [], rooms: 1, source: "", agent_name: "", notes: "" },
+    guest: { name: "", email: "", phone: "", phone_country: "IN", country: "", nationality: "foreign", adults: 2, children: [], rooms: 1, source: "", agent_name: "", notes: "" },
     arrival_date: addDays(today, 90),
     arrival_location_id: null,
     departure_location_id: null,
@@ -23,6 +23,7 @@ export function emptyPlan(today: ISODate): Plan {
     markup_pct: null,
     adjustment: null,
     currency: "INR",
+    manual_prices: {},
   };
 }
 
@@ -90,7 +91,23 @@ export function stopDates(plan: Pick<Plan, "arrival_date" | "stops">) {
   });
 }
 
+// Items added by hand survive a rebuild: same date, else same day number, else the last day.
+function carryItems(oldDays: PlanDay[], days: PlanDay[]): PlanDay[] {
+  if (!days.length) return days;
+  const out = days.map((d) => ({ ...d, items: [] as PlanDay["items"] }));
+  oldDays.forEach((od, i) => {
+    if (!od.items?.length) return;
+    const target = out.find((d) => d.date === od.date) ?? out[i] ?? out[out.length - 1];
+    target.items.push(...od.items);
+  });
+  return out;
+}
+
 export function buildDays(plan: Plan, ctx: BuilderContext): PlanDay[] {
+  return carryItems(plan.days ?? [], buildDaysFresh(plan, ctx));
+}
+
+function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
   const days: PlanDay[] = [];
   const legs = stopDates(plan);
   const vehicle = plan.vehicle_type;
@@ -109,6 +126,7 @@ export function buildDays(plan: Plan, ctx: BuilderContext): PlanDay[] {
         title: "",
         text: "",
         notes: [],
+        items: [],
       }, vehicle)
     );
     for (let n = 1; n < stop.nights; n++) {
@@ -125,6 +143,7 @@ export function buildDays(plan: Plan, ctx: BuilderContext): PlanDay[] {
           title: "",
           text: "",
           notes,
+          items: [],
         }, vehicle)
       );
     }
@@ -144,6 +163,7 @@ export function buildDays(plan: Plan, ctx: BuilderContext): PlanDay[] {
         title: "",
         text: "",
         notes: [],
+        items: [],
       }, vehicle)
     );
   }
@@ -227,9 +247,15 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
   }));
   const safaris: SafariInput[] = [];
   const transfers: TransferInput[] = [];
+  const addons: { addon_id: string; date: string; qty?: number }[] = [];
+  const custom: { date: string; title: string; amount: number }[] = [];
   for (const d of plan.days) {
     if (d.park_id) for (const s of d.safaris) safaris.push({ date: d.date, park_id: d.park_id, zone: s.zone, session: s.session });
     if (d.transfer) transfers.push({ date: d.date, ...d.transfer, vehicle_type: plan.vehicle_type ?? undefined });
+    for (const it of d.items ?? []) {
+      if (it.addon_id) addons.push({ addon_id: it.addon_id, date: d.date, qty: it.qty ?? undefined });
+      else if (it.price) custom.push({ date: d.date, title: it.title, amount: it.price });
+    }
   }
   return {
     adults: plan.guest.adults,
@@ -238,6 +264,9 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
     stays,
     safaris,
     transfers,
+    addons,
+    custom_items: custom,
+    manual_prices: plan.manual_prices ?? {},
     offer_ids: plan.offer_ids,
     markup_pct: plan.markup_pct,
     adjustment: plan.adjustment,

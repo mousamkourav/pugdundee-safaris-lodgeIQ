@@ -144,6 +144,17 @@ export function FinalDraft({
                       }}
                       aria-label={`Day ${i + 1} text`}
                     />
+                    {(d.items ?? []).length > 0 && (
+                      <ul className="space-y-0.5 rounded-lg bg-sand-50 px-3 py-2 text-sm">
+                        {d.items.map((it) => (
+                          <li key={it.id}>
+                            <span className="font-medium text-olive-800">{it.title}</span>
+                            {it.detail && <span className="text-sand-600"> - {it.detail}</span>}
+                          </li>
+                        ))}
+                        <li className="pt-1 text-[11px] text-sand-500">Added items are shown to the guest without prices. Change them on Plan &amp; price.</li>
+                      </ul>
+                    )}
                     {d.property_id && plan.days.findIndex((x) => x.property_id === d.property_id) === i && (
                       <p className="text-xs text-sand-500">The guest page shows photos and the description of {lodgeName(d.property_id)} here.</p>
                     )}

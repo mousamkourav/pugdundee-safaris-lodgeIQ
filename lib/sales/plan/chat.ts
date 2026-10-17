@@ -7,6 +7,7 @@
 // =====================================================================
 
 import { rupees } from "@/lib/sales/format";
+import { countryName, findPhone } from "@/lib/sales/countries";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 import type { ISODate } from "@/lib/sales/pricing/types";
 import { aliasesOf, extractTrip, locationAliases, matchByName, mergeParsed, type ParsedTrip } from "./parse-text";
@@ -107,17 +108,19 @@ export function chatTurn(
     next.guest.email = email[0];
     chips.push(`email ${email[0]}`);
   }
-  const phone = msg.match(/(?:\+|\b)\d[\d\s-]{8,}\d\b/);
-  if (phone && phone[0].replace(/\D/g, "").length >= 10) {
-    next.guest.phone = phone[0].trim();
-    chips.push(`phone ${next.guest.phone}`);
+  const phone = findPhone(msg, next.guest.phone_country || next.guest.country || "IN");
+  if (phone) {
+    next.guest.phone = phone.phone;
+    next.guest.phone_country = phone.country;
+    chips.push(`phone ${phone.phone}`);
   }
   const nameM =
     msg.match(/\b(?:guest(?:'s)?\s+name|name)\s*(?:is|:|-)\s*([^,.;\n]{2,60})/i) ??
     msg.match(/\bfor\s+((?:mr|mrs|ms|miss|dr)\.?\s+[A-Za-z][^,.;\n]{1,50})/i) ??
     msg.match(/^((?:mr|mrs|ms|miss|dr)\.?\s+[A-Za-z][A-Za-z&' -]{1,40}?)\s*(?=[,;\n]|$)/i); // "Mr Shah, 2 adults..."
   if (nameM) {
-    next.guest.name = nameM[1].trim();
+    // "Mr Shah from UK" -> name "Mr Shah" (the country goes to Nationality)
+    next.guest.name = nameM[1].replace(/\s+(from|of|ex)\s+.*$/i, "").trim();
     chips.push(`guest ${next.guest.name}`);
   }
 
@@ -184,7 +187,12 @@ export function chatTurn(
     next.guest.rooms = Math.max(1, Math.ceil(next.guest.adults / 2));
     chips.push(`${next.guest.rooms} room${next.guest.rooms === 1 ? "" : "s"} (2 per room; say "3 rooms" to change)`);
   }
-  if (parsed.nationality) {
+  if (parsed.country) {
+    next.guest.country = parsed.country;
+    next.guest.nationality = parsed.country === "IN" ? "indian" : "foreign";
+    if (!next.guest.phone) next.guest.phone_country = parsed.country;
+    chips.push(`guests from ${countryName(parsed.country)}`);
+  } else if (parsed.nationality) {
     next.guest.nationality = parsed.nationality;
     chips.push(parsed.nationality === "indian" ? "Indian guests" : "foreign guests");
   }
@@ -357,21 +365,21 @@ export function nextQuestion(
 
   const r = priceTrip(planToTrip(plan, today), ctx.pricing);
   if (r.errors.length) {
-    const hints = r.errors.map((e) =>
-      e.startsWith("No transfer rate")
-        ? `${e} Add it in Master data > Transfer rates, or say "on their own".`
-        : e.startsWith("No ") && e.includes("rate for")
-          ? `${e} Add it in Master data, or change the dates.`
-          : e
-    );
-    return { text: "Almost there. Before I can quote this:", pending: null, warnings: hints, ready: false };
+    return { text: "Before I can quote this, please check:", pending: null, warnings: r.errors, ready: false };
   }
+  const stillNeeded = plan.manual_prices ? r.missing.filter((m) => plan.manual_prices[m.key] === undefined) : r.missing;
+  const missingNote = stillNeeded.length
+    ? [
+        `${stillNeeded.length} price${stillNeeded.length === 1 ? " is" : "s are"} not in master data yet: ${stillNeeded.map((m) => m.label).join("; ")}. ` +
+          `You can type ${stillNeeded.length === 1 ? "it" : "them"} on the Plan & price step, save a draft and finish later, or say "on their own" for transfers.`,
+      ]
+    : [];
   const nights = plan.stops.reduce((t, s) => t + s.nights, 0);
   const safaris = plan.days.reduce((t, d) => t + d.safaris.length, 0);
   const guests = plan.guest.adults + plan.guest.children.length;
   let text =
     `${nights} night${nights === 1 ? "" : "s"}, ${safaris} safari${safaris === 1 ? "" : "s"}, ${guests} guest${guests === 1 ? "" : "s"} in ${plan.guest.rooms} room${plan.guest.rooms === 1 ? "" : "s"}. ` +
-    `Total ${rupees(r.totals.grand)} (${rupees(r.perPerson)} per person).`;
+    `${stillNeeded.length ? "Total so far" : "Total"} ${rupees(r.totals.grand)} (${rupees(r.perPerson)} per person)${stillNeeded.length ? ", without the missing prices" : ""}.`;
   let pending: ChatFlags["pending"] = null;
   if (!plan.guest.name.trim()) {
     text += " What is the guest's name? It is needed to save.";
@@ -379,5 +387,5 @@ export function nextQuestion(
   } else {
     text += ' Tell me any change, like "make Pench 2 nights" or "add Kanha 3 nights", or review the plan.';
   }
-  return { text, pending, quick: [{ label: "Review the plan", action: "review" }], warnings: r.warnings, ready: true };
+  return { text, pending, quick: [{ label: "Review the plan", action: "review" }], warnings: [...missingNote, ...r.warnings], ready: true };
 }

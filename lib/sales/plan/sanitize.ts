@@ -1,6 +1,6 @@
 // Rebuilds a plan from untrusted JSON (the browser) keeping only known keys
 // with the right types. Anything malformed becomes a safe default.
-import type { DaySafari, Plan, PlanDay, PlanDraft, PlanStop } from "./types";
+import type { DaySafari, Plan, PlanDay, PlanDraft, PlanItem, PlanStop } from "./types";
 
 const str = (v: unknown, max = 500) => (typeof v === "string" ? v.slice(0, max) : "");
 const strOrNull = (v: unknown) => (typeof v === "string" && v ? v.slice(0, 100) : null);
@@ -46,6 +46,20 @@ export function sanitizePlan(input: unknown): Plan | null {
       title: str(d.title, 200),
       text: str(d.text, 4000),
       notes: (Array.isArray(d.notes) ? d.notes : []).map((z) => str(z, 300)).slice(0, 10),
+      items: (Array.isArray(d.items) ? d.items : []).slice(0, 30).map((y): PlanItem => {
+        const it = obj(y);
+        const price = Number(it.price);
+        const qty = Number(it.qty);
+        return {
+          id: str(it.id, 60) || Math.random().toString(36).slice(2),
+          type: ["addon", "activity", "hotel", "transfer", "meal", "note"].includes(String(it.type)) ? (it.type as PlanItem["type"]) : "activity",
+          title: str(it.title, 200).trim() || "Item",
+          detail: str(it.detail, 1000),
+          price: Number.isFinite(price) && price > 0 ? Math.min(Math.round(price), 100_000_000) : null,
+          addon_id: strOrNull(it.addon_id),
+          qty: Number.isInteger(qty) && qty > 0 ? Math.min(qty, 500) : null,
+        };
+      }),
     };
   });
 
@@ -67,8 +81,11 @@ export function sanitizePlan(input: unknown): Plan | null {
     guest: {
       name: str(g.name, 200).trim(),
       email: str(g.email, 200).trim(),
-      phone: str(g.phone, 50).trim(),
-      nationality: g.nationality === "indian" ? "indian" : "foreign",
+      phone: str(g.phone, 20).replace(/[^\d+]/g, ""),
+      phone_country: /^[A-Z]{2}$/.test(String(g.phone_country)) ? String(g.phone_country) : "IN",
+      country: /^[A-Z]{2}$/.test(String(g.country)) ? String(g.country) : "",
+      // pricing follows the country when it is known
+      nationality: g.country === "IN" ? "indian" : /^[A-Z]{2}$/.test(String(g.country)) ? "foreign" : g.nationality === "indian" ? "indian" : "foreign",
       adults: int(g.adults, 1, 50, 2),
       children: (Array.isArray(g.children) ? g.children : []).map((a) => int(a, 0, 17, 0)).slice(0, 20),
       rooms: int(g.rooms, 1, 30, 1),
@@ -86,6 +103,12 @@ export function sanitizePlan(input: unknown): Plan | null {
     markup_pct: p.markup_pct === null || p.markup_pct === undefined || p.markup_pct === "" ? null : Math.max(-50, Math.min(200, Number(p.markup_pct) || 0)),
     adjustment: Number.isFinite(adjAmount) && adjAmount !== 0 ? { amount: Math.round(adjAmount), reason: str(adj.reason, 300).trim() } : null,
     currency: p.currency === "USD" ? "USD" : "INR",
+    manual_prices: Object.fromEntries(
+      Object.entries(obj(p.manual_prices))
+        .filter(([k, v]) => k.length <= 300 && Number.isFinite(Number(v)) && Number(v) >= 0)
+        .slice(0, 100)
+        .map(([k, v]) => [k, Math.min(Math.round(Number(v)), 100_000_000)])
+    ),
     ...(Object.keys(draft).length ? { draft } : {}),
   };
 }

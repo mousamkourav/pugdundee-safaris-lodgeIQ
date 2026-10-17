@@ -24,6 +24,7 @@ export default async function NewItineraryPage({
 
   let initial: Plan = emptyPlan(today);
   let queryNo: string | null = null;
+  let queryStatus: string | null = null;
   if (fromId) {
     const supabase = await createClient();
     const { data: q } = await supabase.from("sales_queries").select("id, query_no, status").eq("id", fromId).maybeSingle();
@@ -38,6 +39,7 @@ export default async function NewItineraryPage({
     const plan = sanitizePlan((v as { plan?: unknown } | null)?.plan);
     if (plan) initial = plan;
     queryNo = (q as { query_no: string }).query_no;
+    queryStatus = (q as { status: string }).status;
   }
 
   const aiAvailable = await aiEnabled();
@@ -47,7 +49,7 @@ export default async function NewItineraryPage({
     <div className="space-y-6">
       <div>
         <p className="eyebrow">Sales</p>
-        <h1 className="mt-1 text-2xl">{queryNo ? `New version of ${queryNo}` : "Create itinerary"}</h1>
+        <h1 className="mt-1 text-xl">{queryNo ? (queryStatus === "draft" ? `Draft ${queryNo}` : `New version of ${queryNo}`) : "Create itinerary"}</h1>
         {queryNo && <p className="mt-1 text-sm text-sand-500">Saving creates a new version; earlier versions are kept, and the old client links keep working.</p>}
       </div>
       {error && <p className={ui.alertError}>Could not load all master data: {error}</p>}
@@ -64,7 +66,7 @@ export default async function NewItineraryPage({
           )}
         </div>
       ) : (
-        <Builder ctx={ctx} initial={initial} queryId={fromId} queryNo={queryNo} today={today} aiAvailable={aiAvailable} startStep={startStep} />
+        <Builder ctx={ctx} initial={initial} queryId={fromId} queryNo={queryNo} today={today} aiAvailable={aiAvailable} startStep={startStep} queryStatus={queryStatus} />
       )}
     </div>
   );

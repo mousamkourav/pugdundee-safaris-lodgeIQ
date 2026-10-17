@@ -12,12 +12,14 @@
 import type { ISODate } from "@/lib/sales/pricing/types";
 import { defaultStop, mealPlansOf, roomsOf } from "./planner";
 import type { BuilderContext, Plan } from "./types";
+import { findCountry, countryName } from "@/lib/sales/countries";
 
 export interface ParsedTrip {
   adults?: number;
   children?: number[]; // ages
   rooms?: number;
   nationality?: "indian" | "foreign";
+  country?: string; // ISO code when a nationality or country is named
   arrival_date?: ISODate;
   departure_date?: ISODate;
   arrival_place?: string;
@@ -233,7 +235,11 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
   );
   if (roomsM) out.rooms = toNum(roomsM[1]);
 
-  if (/\b(indian|domestic|resident)s?\b/.test(low)) out.nationality = "indian";
+  const country = findCountry(text);
+  if (country) {
+    out.country = country;
+    out.nationality = country === "IN" ? "indian" : "foreign";
+  } else if (/\b(indian|domestic|resident)s?\b/.test(low)) out.nationality = "indian";
   else if (/\b(foreign(?:er|ers)?|international|overseas|nri)\b/.test(low)) out.nationality = "foreign";
 
   if (/\b(full board|all meals|\bap\b|american plan)/.test(low)) out.meal_plan = "AP";
@@ -399,7 +405,11 @@ export function applyParsed(plan: Plan, parsed: ParsedTrip, ctx: BuilderContext)
     next.guest.rooms = Math.max(1, Math.ceil(parsed.adults / 2));
     understood.push(`${next.guest.rooms} room${next.guest.rooms === 1 ? "" : "s"} (assumed, 2 per room)`);
   }
-  if (parsed.nationality) {
+  if (parsed.country) {
+    next.guest.country = parsed.country;
+    next.guest.nationality = parsed.country === "IN" ? "indian" : "foreign";
+    understood.push(`guests from ${countryName(parsed.country)}`);
+  } else if (parsed.nationality) {
     next.guest.nationality = parsed.nationality;
     understood.push(parsed.nationality === "indian" ? "Indian guests" : "foreign guests");
   }
@@ -477,6 +487,7 @@ export function mergeParsed(rule: ParsedTrip, ai: ParsedTrip): ParsedTrip {
     children: rule.children?.length ? rule.children : ai.children,
     rooms: rule.rooms ?? ai.rooms,
     nationality: rule.nationality ?? ai.nationality,
+    country: rule.country ?? ai.country,
     arrival_date: rule.arrival_date ?? ai.arrival_date,
     departure_date: rule.departure_date ?? ai.departure_date,
     arrival_place: rule.arrival_place ?? ai.arrival_place,

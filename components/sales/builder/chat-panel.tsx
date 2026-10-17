@@ -37,8 +37,8 @@ export function ChatPanel({
   const last = messages[messages.length - 1];
 
   return (
-    <section className={`${ui.card} flex h-[min(70vh,640px)] min-h-[420px] flex-col overflow-hidden`} aria-label="Trip assistant">
-      <header className="flex items-center gap-2 border-b border-sand-200 px-4 py-3">
+    <section className={`${ui.card} flex h-[min(62vh,560px)] min-h-[380px] flex-col overflow-hidden`} aria-label="Trip assistant">
+      <header className="flex items-center gap-2 border-b border-sand-200 px-3 py-2">
         <span className="grid h-8 w-8 place-items-center rounded-full bg-olive-600 text-white">
           <Icon name="send" className="h-4 w-4" />
         </span>
@@ -48,7 +48,7 @@ export function ChatPanel({
         </div>
       </header>
 
-      <div className="flex-1 space-y-4 overflow-y-auto bg-sand-50 p-4" aria-live="polite">
+      <div className="flex-1 space-y-3 overflow-y-auto bg-sand-50 p-3" aria-live="polite">
         {messages.map((m, i) =>
           m.role === "user" ? (
             <div key={i} className="flex justify-end">

@@ -68,3 +68,23 @@ test("Pench on a Wednesday: afternoon core closed and no buffer rate -> morning 
   assert.deepEqual(wed.safaris, [{ session: "morning", zone: "core" }]);
   assert.ok(wed.notes[0].startsWith("No afternoon safari"));
 });
+
+test("items added by hand survive a rebuild and are priced", async () => {
+  const { sanitizePlan } = await import("./sanitize");
+  const p = sheetPlan();
+  p.days[1].items = [{ id: "a", type: "activity", title: "Bush dinner", detail: "By the lake", price: 8000, addon_id: null, qty: null }];
+  p.days[6].items = [{ id: "b", type: "note", title: "Birthday cake", detail: "", price: null, addon_id: null, qty: null }];
+  // shorten Pench by a night: day 7 no longer exists -> its item moves to the last day
+  p.stops[1].nights = 2;
+  p.days = buildDays(p, ctx);
+  assert.equal(p.days.length, 7);
+  assert.equal(p.days[1].items[0].title, "Bush dinner"); // same date kept
+  assert.ok(p.days.some((d) => d.items.some((i) => i.title === "Birthday cake")));
+  const r = priceTrip(planToTrip(p, "2026-10-05"), data);
+  assert.equal(r.totals.addon, 8000);
+  // a saved plan keeps items and typed prices through the sanitizer
+  p.manual_prices = { "transfer|2027-01-16|NAG|L_WEL": 7000 };
+  const back = sanitizePlan(JSON.parse(JSON.stringify(p)))!;
+  assert.equal(back.days[1].items[0].price, 8000);
+  assert.equal(back.manual_prices["transfer|2027-01-16|NAG|L_WEL"], 7000);
+});

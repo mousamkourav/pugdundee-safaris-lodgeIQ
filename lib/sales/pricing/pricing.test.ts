@@ -89,7 +89,7 @@ test("Pench Wednesday: afternoon closed, morning fine", () => {
 
 test("missing rate is an error, not a silent zero", () => {
   const r = priceTrip({ ...trip, stays: [{ ...trip.stays[0], check_in: "2027-07-10" }] }, data);
-  assert.ok(r.errors.some((e) => e.startsWith("No AP rate")));
+  assert.ok(r.missing.some((m) => m.kind === "room" && m.label.includes("AC Cottage")));
 });
 
 test("7 guests need two jeeps; 3 adults in 2 rooms = one double + one single", () => {
@@ -124,4 +124,25 @@ test("per-person basis: all guests by default, adults only when set", () => {
   assert.equal(all.perPerson, Math.round(all.totals.grand / 3));
   const adults = priceTrip(withChild, { ...data, settings: { ...data.settings, per_person_basis: "adults" } });
   assert.equal(adults.perPerson, Math.round(adults.totals.grand / 2));
+});
+
+test("missing rates become 'price needed' items, and typed prices are used", () => {
+  const noTransfers = { ...data, transferRates: [] };
+  const r = priceTrip(trip, noTransfers);
+  assert.equal(r.missing.length, 3);
+  assert.ok(r.missing.every((m) => m.kind === "transfer"));
+  assert.deepEqual(r.errors, []); // missing prices are not errors
+  const prices = Object.fromEntries(r.missing.map((m, i) => [m.key, [7875, 11025, 9450][i]]));
+  const r2 = priceTrip({ ...trip, manual_prices: prices }, noTransfers);
+  assert.deepEqual(r2.errors, []);
+  assert.equal(r2.totals.grand, 558670); // same as with master-data rates
+  assert.equal(r2.manualCount, 3);
+  assert.equal(r2.missing.length, 3); // still listed, so the typed prices stay editable
+});
+
+test("items added by hand are priced and billed to that night's lodge", () => {
+  const r = priceTrip({ ...trip, custom_items: [{ date: "2027-01-17", title: "Bush dinner", amount: 8000 }, { date: "2027-01-21", title: "Note only", amount: 0 }] }, data);
+  assert.equal(r.totals.addon, 8000);
+  assert.equal(r.totals.grand, 558670 + 8000);
+  assert.equal(r.byProperty.find((p) => p.property_id === "WEL")!.addon, 8000);
 });

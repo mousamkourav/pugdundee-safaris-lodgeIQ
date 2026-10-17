@@ -24,6 +24,7 @@ import { addDays, dayName, inRange, nightsOf, weekday } from "./dates";
 import type {
   Instalment,
   ISODate,
+  MissingPrice,
   Offer,
   PaymentSlab,
   PriceLine,
@@ -108,6 +109,16 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
 
   if (trip.adults < 1) errors.push("At least one adult is needed.");
 
+  // Missing rates: use the price typed by the sales person, or record what is needed.
+  const manual = trip.manual_prices ?? {};
+  const missing: MissingPrice[] = [];
+  // Missing prices are kept apart from errors: they do not stop a draft or the
+  // plan, only sending the quote to the guest. (`_why` documents the case.)
+  const needPrice = (m: MissingPrice, _why: string) => {
+    void _why;
+    if (!missing.some((x) => x.key === m.key)) missing.push(m);
+  };
+
   // ---------------- rooms ----------------
   const totalRooms = trip.stays.reduce((m, s) => Math.max(m, s.rooms), 0);
   for (const stay of trip.stays) {
@@ -124,8 +135,16 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     for (const night of nightsOf(stay.check_in, stay.nights)) {
       const rate = pickRoomRate(data.roomRates, stay.room_category_id, stay.meal_plan, night);
       if (!rate) {
-        errors.push(`No ${stay.meal_plan} rate for ${room?.name ?? "room"} at ${propName(stay.property_id)} on ${night}.`);
-        lines.push({ kind: "room", date: night, description: label, quantity: stay.rooms, unit_price: 0, amount: 0, tax: 0, property_id: stay.property_id, ref_id: stay.room_category_id, missing: true });
+        const key = `room|${stay.property_id}|${stay.room_category_id}|${stay.meal_plan}|${stay.check_in}`;
+        const roomMissing: MissingPrice = { key, kind: "room", label: `${room?.name ?? "Room"} at ${propName(stay.property_id)} (${stay.meal_plan})`, unit: `per night, all ${stay.rooms} room${stay.rooms === 1 ? "" : "s"}, incl. tax`, date: stay.check_in };
+        if (manual[key] !== undefined) {
+          needPrice(roomMissing, "typed");
+          const amount = round(manual[key]);
+          lines.push({ kind: "room", date: night, description: label, quantity: stay.rooms, unit_price: round(amount / stay.rooms), amount, tax: 0, property_id: stay.property_id, ref_id: stay.room_category_id, manual: true, key });
+          continue;
+        }
+        needPrice(roomMissing, `No ${stay.meal_plan} rate for ${room?.name ?? "room"} at ${propName(stay.property_id)} from ${night}.`);
+        lines.push({ kind: "room", date: night, description: label, quantity: stay.rooms, unit_price: 0, amount: 0, tax: 0, property_id: stay.property_id, ref_id: stay.room_category_id, missing: true, key });
         continue;
       }
       if (!minNightsChecked && stay.nights < rate.min_nights) {
@@ -163,8 +182,15 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     const rate = pickSafariRate(data.safariRates, s, trip.nationality);
     const billTo = stayOn(s.date)?.property_id ?? null;
     if (!rate) {
-      errors.push(`No rate for ${where} on ${s.date}.`);
-      lines.push({ kind: "safari", date: s.date, description: where, quantity: 0, unit_price: 0, amount: 0, tax: 0, property_id: billTo, ref_id: s.park_id, missing: true });
+      const key = `safari|${s.park_id}|${s.zone}|${s.session}|${s.vehicle_type ?? "exclusive_jeep"}`;
+      const safariMissing: MissingPrice = { key, kind: "safari", label: `${where}`, unit: "per safari, all jeeps, incl. tax", date: s.date };
+      needPrice(safariMissing, `No rate for ${where} on ${s.date}.`);
+      if (manual[key] !== undefined) {
+        const amount = round(manual[key]);
+        lines.push({ kind: "safari", date: s.date, description: where, quantity: 1, unit_price: amount, amount, tax: 0, property_id: billTo, ref_id: s.park_id, manual: true, key });
+        continue;
+      }
+      lines.push({ kind: "safari", date: s.date, description: where, quantity: 0, unit_price: 0, amount: 0, tax: 0, property_id: billTo, ref_id: s.park_id, missing: true, key });
       continue;
     }
     const weekend = rate.weekend_days.includes(weekday(s.date));
@@ -201,8 +227,14 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
       .sort((a, b) => a.base - b.base)[0];
 
     if (!priced) {
-      errors.push(`No transfer rate for ${label}${t.vehicle_type ? ` by ${t.vehicle_type}` : ""}.`);
-      lines.push({ kind: "transfer", date: t.date, description: label, quantity: 0, unit_price: 0, amount: 0, tax: 0, property_id: billTo, ref_id: null, missing: true });
+      const key = `transfer|${t.date}|${t.from_location_id}|${t.to_location_id}`;
+      needPrice({ key, kind: "transfer", label: `Transfer ${label}`, unit: "one way, all vehicles, incl. tax", date: t.date }, `No transfer rate for ${label}.`);
+      if (manual[key] !== undefined) {
+        const amount = round(manual[key]);
+        lines.push({ kind: "transfer", date: t.date, description: label, quantity: 1, unit_price: amount, amount, tax: 0, property_id: billTo, ref_id: null, manual: true, key });
+        continue;
+      }
+      lines.push({ kind: "transfer", date: t.date, description: label, quantity: 0, unit_price: 0, amount: 0, tax: 0, property_id: billTo, ref_id: null, missing: true, key });
       continue;
     }
     const { amount, tax } = withTax(priced.base, priced.r.tax_pct, false);
@@ -231,6 +263,13 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
       a.qty ?? (addon.pricing_unit === "per_person" ? guests : addon.pricing_unit === "per_room" ? Math.max(1, totalRooms) : 1);
     const { amount, tax } = withTax(addon.rate * qty, addon.tax_pct, false);
     lines.push({ kind: "addon", date: a.date ?? null, description: addon.name, quantity: qty, unit_price: addon.rate, amount, tax, property_id: addon.property_id ?? (a.date ? stayOn(a.date)?.property_id ?? null : null), ref_id: addon.id });
+  }
+
+  // ---------------- items added by hand ----------------
+  for (const c of trip.custom_items ?? []) {
+    const amount = round(c.amount || 0);
+    if (!amount) continue;
+    lines.push({ kind: "addon", date: c.date, description: c.title, quantity: 1, unit_price: amount, amount, tax: 0, property_id: stayOn(c.date)?.property_id ?? null, ref_id: null, manual: true });
   }
 
   // ---------------- offers ----------------
@@ -361,6 +400,8 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     grandInCurrency,
     payments,
     appliedOffers,
+    missing,
+    manualCount: lines.filter((l) => l.manual).length,
     errors,
     warnings,
   };

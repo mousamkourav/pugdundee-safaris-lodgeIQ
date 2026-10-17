@@ -79,6 +79,19 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                     <div>
                       <p className="font-semibold text-olive-800">{d.title}</p>
                       <p className="mt-1 whitespace-pre-line leading-relaxed">{d.text}</p>
+                      {(d.items ?? []).filter((it) => it.type !== "note" || it.title).length > 0 && (
+                        <ul className="mt-2 space-y-1 text-sm">
+                          {(d.items ?? []).map((it) => (
+                            <li key={it.id} className="flex gap-2">
+                              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-gold-500" aria-hidden="true" />
+                              <span>
+                                <span className="font-medium text-olive-800">{it.title}</span>
+                                {it.detail && <span className="text-sand-600"> - {it.detail}</span>}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                       {lodge && (
                         <div className="mt-4 rounded-xl bg-sand-50 p-4">
                           <p className="font-display font-semibold text-olive-800">{lodge.name}</p>
