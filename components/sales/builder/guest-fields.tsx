@@ -2,18 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ui } from "@/components/ui";
-import { COUNTRIES, flag, maxPhoneDigits, phoneFits, phoneHint, phoneValid, splitPhone, toInternational } from "@/lib/sales/countries";
+import { COUNTRIES, maxPhoneDigits, phoneFits, phoneHint, phoneValid, splitPhone, toInternational } from "@/lib/sales/countries";
 
 // Nationality: every country. India means Indian pricing, any other country foreign.
 export function CountrySelect({ value, onChange, id }: { value: string; onChange: (code: string) => void; id?: string }) {
   return (
     <select id={id} className={`${ui.select} w-full !py-2`} value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="">- Choose country -</option>
-      <option value="IN">{flag("IN")} India</option>
+      <option value="IN">India</option>
       <option disabled>----------</option>
       {COUNTRIES.filter((c) => c.code !== "IN").map((c) => (
         <option key={c.code} value={c.code}>
-          {flag(c.code)} {c.name}
+          {c.name}
         </option>
       ))}
     </select>
@@ -47,7 +47,6 @@ export function PhoneField({
     setDigits(s.national);
   }, [value, country]);
 
-  const dial = COUNTRIES.find((c) => c.code === cc)?.dial ?? "";
   const invalid = touched && digits.length > 0 && !phoneValid(cc, digits);
 
   function setNumber(nextDigits: string, nextCc = cc) {
@@ -61,7 +60,8 @@ export function PhoneField({
     <div>
       <div className="flex gap-1.5">
         <select
-          className={`${ui.select} w-[7.5rem] shrink-0 !px-2 !py-2 text-xs`}
+          className={`${ui.select} w-[5.5rem] shrink-0 !px-2 !py-2 text-xs`}
+          title={COUNTRIES.find((c) => c.code === cc)?.name}
           value={cc}
           onChange={(e) => {
             const next = e.target.value;
@@ -73,7 +73,7 @@ export function PhoneField({
         >
           {COUNTRIES.map((c) => (
             <option key={c.code} value={c.code}>
-              {flag(c.code)} +{c.dial} {c.code}
+              +{c.dial} {c.name}
             </option>
           ))}
         </select>
@@ -93,9 +93,7 @@ export function PhoneField({
           aria-invalid={invalid}
         />
       </div>
-      <p className={`mt-1 text-xs ${invalid ? "font-medium text-error" : "text-sand-500"}`}>
-        {invalid ? `Not a valid ${COUNTRIES.find((c) => c.code === cc)?.name ?? ""} mobile number. ${phoneHint(cc)}` : digits ? `+${dial} ${digits}` : phoneHint(cc)}
-      </p>
+      {invalid && <p className="mt-1 text-xs font-medium text-error">Not a valid {COUNTRIES.find((c) => c.code === cc)?.name ?? ""} mobile number. {phoneHint(cc)}</p>}
     </div>
   );
 }

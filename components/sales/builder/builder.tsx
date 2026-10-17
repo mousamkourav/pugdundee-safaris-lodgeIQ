@@ -8,7 +8,8 @@ import { rupees, fmtDate } from "@/lib/sales/format";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 import type { PriceResult } from "@/lib/sales/pricing/types";
 import { buildDays, planToTrip, routeKey, routeProblems } from "@/lib/sales/plan/planner";
-import { chatTurn, greeting, initialFlags, type ChatFlags, type ChatMessage, type QuickReply } from "@/lib/sales/plan/chat";
+import { chatTurn, greeting, initialFlags, nextQuestion, type ChatFlags, type ChatMessage, type QuickReply } from "@/lib/sales/plan/chat";
+import { closureFor } from "@/lib/sales/pricing/engine";
 import type { BuilderContext, Plan } from "@/lib/sales/plan/types";
 import { saveItinerary } from "@/app/(dashboard)/sales/new/actions";
 import { aiReadTrip } from "@/app/(dashboard)/sales/new/ai-actions";
@@ -75,11 +76,7 @@ function PriceBar({ plan, result, blockers }: { plan: Plan; result: PriceResult 
           {needed} price{needed === 1 ? "" : "s"} not in master data yet. The total leaves {needed === 1 ? "it" : "them"} out until typed in on Plan & price.
         </p>
       )}
-      {blockers.length > 0 && (
-        <ul className={`${ui.alertWarning} list-disc space-y-0.5 pl-5 text-xs`}>
-          {blockers.slice(0, 4).map((b, i) => <li key={i}>{b}</li>)}
-        </ul>
-      )}
+      {blockers.length > 0 && <p className="text-xs font-medium text-error">Not priced yet: see Before you continue, above.</p>}
     </div>
   );
 }
@@ -108,7 +105,17 @@ export function Builder({
 
   const [plan, setPlanState] = useState<Plan>(initial);
   const [flags, setFlags] = useState<ChatFlags>(() => initialFlags(initial));
-  const [messages, setMessages] = useState<ChatMessage[]>(() => [greeting(initial, queryNo)]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    const first = [greeting(initial, queryNo)];
+    if (!initial.stops.length) return first;
+    // Opening a saved draft or quote: say where it stands and what to do next.
+    try {
+      const st = nextQuestion(initial, initialFlags(initial), ctx, today);
+      return [...first, { role: "assistant" as const, text: st.text, warnings: st.warnings, quick: st.quick }];
+    } catch {
+      return first;
+    }
+  });
   const [step, setStep] = useState(initial.days.length ? startStep : 0);
   const [builtKey, setBuiltKey] = useState(initial.days.length ? routeKey(initial) : "");
   const [daysEdited, setDaysEdited] = useState(false);
@@ -122,12 +129,17 @@ export function Builder({
   const [currentId, setCurrentId] = useState<string | null>(queryId);
   const [currentStatus, setCurrentStatus] = useState<string | null>(queryStatus);
   const [notice, setNotice] = useState<string | null>(null);
+  const [leaveTo, setLeaveTo] = useState<string | null>(null); // where the user tried to go with unsaved work
+  const dirtyRef = useRef(false);
   const topRef = useRef<HTMLDivElement>(null);
 
   const setPlan = useCallback((u: (p: Plan) => Plan) => {
     setPlanState(u);
     setDirty(true);
   }, []);
+  useEffect(() => {
+    dirtyRef.current = dirty;
+  }, [dirty]);
   const markFlag = useCallback((k: keyof Omit<ChatFlags, "pending" | "nightsUnknown">) => setFlags((f) => ({ ...f, [k]: true })), []);
 
   // ---- keep the day plan in step with the route
@@ -192,6 +204,51 @@ export function Builder({
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
+
+  // Ask before leaving with unsaved work: links anywhere on the page (sidebar,
+  // breadcrumbs) and the browser back button. Closing the tab is covered above.
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (!dirtyRef.current || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = (e.target as HTMLElement | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
+      const url = new URL(a.href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+      if (url.pathname === window.location.pathname && url.search === window.location.search) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setLeaveTo(url.pathname + url.search + url.hash);
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, []);
+  useEffect(() => {
+    if (!dirty) return;
+    window.history.pushState({ lqGuard: true }, "", window.location.href);
+    const onPop = () => {
+      if (!dirtyRef.current) return;
+      window.history.pushState({ lqGuard: true }, "", window.location.href);
+      setLeaveTo("__back__");
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [dirty]);
+
+  function leave(to: string) {
+    dirtyRef.current = false;
+    setDirty(false);
+    setLeaveTo(null);
+    if (to === "__back__") window.history.go(-2);
+    else router.push(to);
+  }
+
+  // Remove safaris that fall on a closed time (e.g. Pench core on Wednesday afternoon).
+  function removeClosedSafaris() {
+    setPlan((p) => ({
+      ...p,
+      days: p.days.map((d) => (d.park_id ? { ...d, safaris: d.safaris.filter((s) => !closureFor(ctx.pricing, d.park_id!, s.zone, s.session, d.date)) } : d)),
+    }));
+  }
 
   function clearStored() {
     try {
@@ -258,7 +315,7 @@ export function Builder({
   }
 
   // ---- save
-  function save(mode: "draft" | "final") {
+  function save(mode: "draft" | "final", after?: () => void) {
     setSaveError(null);
     setSaveProblems([]);
     setNameError(null);
@@ -302,6 +359,8 @@ export function Builder({
             setCurrentStatus("draft");
             window.history.replaceState(null, "", `/sales/new?from=${res.id}`);
             setNotice(`Draft saved at ${new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}. Find it under Queries > Draft.`);
+            dirtyRef.current = false;
+            after?.();
           }
         }
       } catch {
@@ -310,11 +369,32 @@ export function Builder({
     });
   }
 
+  // ---------------------------------------------------------------- bottom bar
+  const nextLabel = step === 0 ? "Next: Plan & price" : step === 1 ? "Next: Final draft" : currentStatus && currentStatus !== "draft" ? "Save as new version" : "Save and get the client link";
+  const nextBlockedBy =
+    step < 2
+      ? !plan.stops.length
+        ? "Add at least one park (tell the assistant, or use Route on the right)."
+        : !ready
+          ? blockers[0] ?? "The plan is not ready yet."
+          : null
+      : !ready
+        ? blockers[0] ?? "The plan is not ready yet."
+        : pricesNeeded.length
+          ? `${pricesNeeded.length} price${pricesNeeded.length === 1 ? " is" : "s are"} still needed on Plan & price.`
+          : null;
+  const onNext = () => {
+    if (nextBlockedBy) return;
+    if (step < 2) go(step + 1);
+    else save("final");
+  };
+  const closedSafaris = result?.errors.some((e) => e.includes("park closed")) ?? false;
+
   // =====================================================================
   return (
-    <div ref={topRef} className="scroll-mt-24">
+    <div ref={topRef} className="scroll-mt-24 pb-24">
       {restore && (
-        <div className={`${ui.alertWarning} mb-4 flex flex-wrap items-center justify-between gap-3`}>
+        <div className={`${ui.alertWarning} mb-3 flex flex-wrap items-center justify-between gap-3`}>
           <span>You have unsaved work from {new Date(restore.savedAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}. Restore it?</span>
           <span className="flex gap-2">
             <button
@@ -338,103 +418,133 @@ export function Builder({
         </div>
       )}
 
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <div className="min-w-0 flex-1">
-          <Stepper step={step} canGo={canGo} go={go} />
-        </div>
-        {canDraft && (
-          <button type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} disabled={saving} onClick={() => save("draft")}>
-            <Icon name="fileText" className="h-4 w-4" />
-            {saving ? "Saving..." : "Save draft"}
-          </button>
-        )}
+      {/* step bar stays visible while scrolling */}
+      <div className="sticky top-16 z-20 -mx-4 mb-3 bg-sand-50/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-10 lg:px-10">
+        <Stepper step={step} canGo={canGo} go={go} />
       </div>
       {notice && <p className={`${ui.alertSuccess} mb-3`}>{notice}</p>}
-      {saveError && step !== 2 && <p className={`${ui.alertError} mb-3`}>{saveError}</p>}
+      {saveError && <p className={`${ui.alertError} mb-3`}>{saveError}</p>}
+      {saveProblems.length > 0 && (
+        <div className={`${ui.alertError} mb-3`}>
+          <p className="font-semibold">Fix these before saving:</p>
+          <ul className="mt-1 list-disc pl-5">{saveProblems.map((p, i) => <li key={i}>{p}</li>)}</ul>
+        </div>
+      )}
 
-      {stale && (
-        <div className={`${ui.alertWarning} mb-4 flex flex-wrap items-center justify-between gap-3`}>
-          <span>The route changed after you edited the day texts. Update the day plan to match? This rewrites the day texts.</span>
-          <button
-            type="button"
-            className={`${ui.btnPrimary} ${ui.btnSm}`}
-            onClick={() => {
-              setPlanState((p) => ({ ...p, days: buildDays(p, ctx) }));
-              setBuiltKey(key);
-              setDaysEdited(false);
-              setDirty(true);
-            }}
-          >
-            Update day plan
-          </button>
+      {/* what stops the next step, with a fix where possible */}
+      {step < 2 && plan.stops.length > 0 && blockers.length > 0 && (
+        <div className="mb-3 rounded-xl border border-error-border bg-error-bg p-3 text-sm text-error">
+          <p className="font-semibold">Before you continue</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5">{blockers.map((b, i) => <li key={i}>{b}</li>)}</ul>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {closedSafaris && (
+              <button type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} onClick={removeClosedSafaris}>
+                Remove the safaris on closed times
+              </button>
+            )}
+            {stale && (
+              <button
+                type="button"
+                className={`${ui.btnSecondary} ${ui.btnSm}`}
+                onClick={() => {
+                  setPlanState((p) => ({ ...p, days: buildDays(p, ctx) }));
+                  setBuiltKey(key);
+                  setDaysEdited(false);
+                  setDirty(true);
+                }}
+              >
+                Update the day plan
+              </button>
+            )}
+            {problems.length > 0 && step !== 0 && (
+              <button type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} onClick={() => go(0)}>
+                Edit the route
+              </button>
+            )}
+          </div>
         </div>
       )}
 
       {step === 0 && (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px]">
-          <div className="space-y-4">
-            <ChatPanel messages={messages} busy={chatBusy} onSend={send} onQuick={quick} aiAvailable={aiAvailable} />
-            <div className="flex justify-end">
-              <button type="button" className={ui.btnPrimary} disabled={!ready} onClick={() => go(1)} title={ready ? "" : blockers[0] ?? "Add the trip details first"}>
-                Review the plan
-                <Icon name="chevronLeft" className="h-4 w-4 rotate-180" />
-              </button>
-            </div>
-          </div>
-          <div className="space-y-4">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_400px]">
+          <ChatPanel messages={messages} busy={chatBusy} onSend={send} onQuick={quick} aiAvailable={aiAvailable} />
+          <div className="space-y-3">
             <PriceBar plan={plan} result={result} blockers={plan.stops.length ? blockers : []} />
             <TripDetails plan={plan} setPlan={setPlan} ctx={ctx} today={today} markFlag={markFlag} />
           </div>
         </div>
       )}
 
-      {step === 1 && (
-        <div className="space-y-3">
-          <PlanStep plan={plan} setPlan={setPlan} ctx={ctx} result={result} />
-          <div className="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sand-200 bg-white/95 px-3 py-2 shadow-card backdrop-blur">
-            <div className="text-sm">
-              <span className="eyebrow mr-2">{pricesNeeded.length ? "Total so far" : "Total"}</span>
-              <span className="tabular font-display text-lg font-semibold text-olive-800">{result ? rupees(result.totals.grand) : "-"}</span>
-              {result && <span className="ml-2 text-xs text-sand-500">{rupees(result.perPerson)} per person</span>}
-              {pricesNeeded.length > 0 && <span className="ml-2 text-xs font-medium text-warning">{pricesNeeded.length} price{pricesNeeded.length === 1 ? "" : "s"} needed</span>}
-            </div>
-            <div className="flex gap-2">
-              <button type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} onClick={() => go(0)}>Back to trip</button>
-              <button type="button" className={`${ui.btnPrimary} ${ui.btnSm}`} disabled={!ready} onClick={() => go(2)}>Final draft</button>
-            </div>
-          </div>
+      {step === 1 && <PlanStep plan={plan} setPlan={setPlan} ctx={ctx} result={result} />}
+
+      {step === 2 && (
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+          <FinalDraft plan={plan} setPlan={setPlan} ctx={ctx} result={result} onDayEdited={() => setDaysEdited(true)} nameError={nameError} />
+          <aside className="space-y-3 lg:sticky lg:top-36 lg:self-start">
+            <PriceBar plan={plan} result={result} blockers={blockers} />
+            <p className="text-xs text-sand-500">
+              The client link is created when you save for the guest. Drafts are never shown to guests, and earlier versions are kept.
+            </p>
+          </aside>
         </div>
       )}
 
-      {step === 2 && (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <FinalDraft plan={plan} setPlan={setPlan} ctx={ctx} result={result} onDayEdited={() => setDaysEdited(true)} nameError={nameError} />
-          <aside className="space-y-3 lg:sticky lg:top-24 lg:self-start">
-            <PriceBar plan={plan} result={result} blockers={blockers} />
-            {saveError && <p className={ui.alertError}>{saveError}</p>}
-            {saveProblems.length > 0 && (
-              <div className={ui.alertError}>
-                <p className="font-semibold">Fix these before saving:</p>
-                <ul className="mt-1 list-disc pl-5">{saveProblems.map((p, i) => <li key={i}>{p}</li>)}</ul>
-              </div>
-            )}
-            {pricesNeeded.length > 0 && (
-              <p className={`${ui.alertWarning} text-xs`}>
-                {pricesNeeded.length} price{pricesNeeded.length === 1 ? " is" : "s are"} still needed before this can go to the guest.{" "}
-                <button type="button" className="font-semibold underline" onClick={() => go(1)}>Enter prices</button>
-              </p>
-            )}
-            <button type="button" className={`${ui.btnPrimary} w-full`} disabled={saving || !ready || pricesNeeded.length > 0} onClick={() => save("final")}>
-              {saving ? "Saving..." : currentStatus && currentStatus !== "draft" ? "Save as new version" : "Save and get the client link"}
-            </button>
-            {canDraft && (
-              <button type="button" className={`${ui.btnSecondary} w-full`} disabled={saving} onClick={() => save("draft")}>
-                Save draft, finish later
+      {/* ---------------- one bar for every step: Back, Save draft, Next ---------------- */}
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-sand-200 bg-white/95 backdrop-blur lg:left-[280px] print:hidden">
+        <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 sm:px-6 lg:px-10">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm">
+              <span className="eyebrow mr-2">{pricesNeeded.length ? "Total so far" : "Total"}</span>
+              <span className="tabular font-display text-lg font-semibold text-olive-800">{result && !blockers.length ? rupees(result.totals.grand) : "-"}</span>
+              {result && !blockers.length && <span className="ml-2 text-xs text-sand-500">{rupees(result.perPerson)} per person</span>}
+            </p>
+            {nextBlockedBy ? (
+              <p className="truncate text-xs font-medium text-error" title={nextBlockedBy}>{nextBlockedBy}</p>
+            ) : pricesNeeded.length > 0 ? (
+              <p className="truncate text-xs font-medium text-warning">{pricesNeeded.length} price{pricesNeeded.length === 1 ? "" : "s"} still to enter on Plan &amp; price</p>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {step > 0 && (
+              <button type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} onClick={() => go(step - 1)}>
+                <Icon name="chevronLeft" className="h-4 w-4" />
+                Back
               </button>
             )}
-            <button type="button" className={`${ui.btnSecondary} w-full`} onClick={() => go(1)}>Back to plan & price</button>
-            <p className="text-xs text-sand-500">The client link is created when you save for the guest. Drafts are never shown to guests. Earlier versions are kept.</p>
-          </aside>
+            {canDraft && (
+              <button type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} disabled={saving} onClick={() => save("draft")}>
+                <Icon name="fileText" className="h-4 w-4" />
+                {saving ? "Saving..." : "Save draft"}
+              </button>
+            )}
+            <button type="button" className={`${ui.btnPrimary} ${ui.btnSm}`} disabled={saving || !!nextBlockedBy} onClick={onNext} title={nextBlockedBy ?? ""}>
+              {saving && step === 2 ? "Saving..." : nextLabel}
+              {step < 2 && <Icon name="chevronLeft" className="h-4 w-4 rotate-180" />}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ---------------- leaving with unsaved work ---------------- */}
+      {leaveTo && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-olive-800/35 p-4 backdrop-blur-sm sm:items-center" role="dialog" aria-modal="true" aria-label="Unsaved changes">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-overlay">
+            <h2 className="text-lg">Leave without saving?</h2>
+            <p className="mt-1 text-sm text-sand-600">This itinerary has changes that are not saved yet.</p>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row-reverse">
+              {canDraft && (
+                <button type="button" className={`${ui.btnPrimary} ${ui.btnSm}`} disabled={saving} onClick={() => { const to = leaveTo; save("draft", () => leave(to)); }}>
+                  {saving ? "Saving..." : "Save draft and leave"}
+                </button>
+              )}
+              <button type="button" className={`${ui.btnDangerOutline} ${ui.btnSm}`} onClick={() => { clearStored(); leave(leaveTo); }}>
+                Leave without saving
+              </button>
+              <button type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} onClick={() => setLeaveTo(null)}>
+                Stay
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

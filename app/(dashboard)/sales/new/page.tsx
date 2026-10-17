@@ -50,7 +50,13 @@ export default async function NewItineraryPage({
       <div>
         <p className="eyebrow">Sales</p>
         <h1 className="mt-1 text-xl">{queryNo ? (queryStatus === "draft" ? `Draft ${queryNo}` : `New version of ${queryNo}`) : "Create itinerary"}</h1>
-        {queryNo && <p className="mt-1 text-sm text-sand-500">Saving creates a new version; earlier versions are kept, and the old client links keep working.</p>}
+        {queryNo && (
+          <p className="mt-1 text-sm text-sand-500">
+            {queryStatus === "draft"
+              ? "Continue where you left off. Save draft keeps your work; when it is ready, go to Final draft and save it for the guest."
+              : "Saving creates a new version; earlier versions are kept, and the old client links keep working."}
+          </p>
+        )}
       </div>
       {error && <p className={ui.alertError}>Could not load all master data: {error}</p>}
       {!ready ? (

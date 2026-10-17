@@ -39,6 +39,8 @@ import type {
 } from "./types";
 
 const round = (n: number) => Math.round(n);
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const readableDate = (d: ISODate) => `${Number(d.slice(8, 10))} ${MON[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`;
 
 export const DEFAULT_PAYMENT_SLABS: PaymentSlab[] = [
   { label: "Deposit", pct: 25, days_before_arrival: null },
@@ -175,9 +177,14 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
 
   // ---------------- safaris ----------------
   for (const s of trip.safaris) {
-    const where = `${parkName(s.park_id)} ${s.zone} ${s.session.replace("_", " ")} safari`;
+    const sessionName = s.session === "afternoon" ? "evening" : s.session.replace("_", " ");
+    const where = `${parkName(s.park_id)} ${s.zone} ${sessionName} safari`;
     const closed = closureFor(data, s.park_id, s.zone, s.session, s.date);
-    if (closed) errors.push(`${where} on ${dayName(s.date)} ${s.date}: park closed${closed.label ? ` (${closed.label})` : ""}.`);
+    if (closed) {
+      errors.push(
+        `${dayName(s.date)} ${readableDate(s.date)}: the ${s.zone} ${sessionName} safari in ${parkName(s.park_id)} is at a closed time${closed.label ? ` (${closed.label})` : ""}. Remove it or choose another zone - park closed.`
+      );
+    }
 
     const rate = pickSafariRate(data.safariRates, s, trip.nationality);
     const billTo = stayOn(s.date)?.property_id ?? null;

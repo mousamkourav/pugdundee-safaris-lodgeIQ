@@ -6,6 +6,7 @@ import { Icon } from "@/components/icons";
 import { rupees, fmtDate } from "@/lib/sales/format";
 import { dayName } from "@/lib/sales/pricing/dates";
 import { describe } from "@/lib/sales/plan/planner";
+import { closureFor } from "@/lib/sales/pricing/engine";
 import type { PriceResult } from "@/lib/sales/pricing/types";
 import type { BuilderContext, DaySafari, Plan, PlanDay, PlanItem } from "@/lib/sales/plan/types";
 
@@ -191,20 +192,26 @@ export function PlanStep({
                   {d.park_id && (
                     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5">
                       <Icon name="route" className="h-4 w-4 shrink-0 text-sand-500" />
-                      {(["morning", "afternoon"] as const).map((session) => (
-                        <label key={session} className="flex items-center gap-1.5 text-xs text-sand-600">
-                          {session === "morning" ? "Morning" : "Evening"}
-                          <select
-                            className="rounded-md border border-sand-300 bg-white px-1.5 py-0.5 text-xs"
-                            value={d.safaris.find((s) => s.session === session)?.zone ?? ""}
-                            onChange={(e) => setSafari(i, session, e.target.value as "" | "core" | "buffer")}
-                          >
-                            <option value="">No safari</option>
-                            <option value="core">Core</option>
-                            <option value="buffer">Buffer</option>
-                          </select>
-                        </label>
-                      ))}
+                      {(["morning", "afternoon"] as const).map((session) => {
+                        const closedCore = !!closureFor(ctx.pricing, d.park_id!, "core", session, d.date);
+                        const closedBuffer = !!closureFor(ctx.pricing, d.park_id!, "buffer", session, d.date);
+                        const value = d.safaris.find((s) => s.session === session)?.zone ?? "";
+                        const onClosed = (value === "core" && closedCore) || (value === "buffer" && closedBuffer);
+                        return (
+                          <label key={session} className="flex items-center gap-1.5 text-xs text-sand-600">
+                            {session === "morning" ? "Morning" : "Evening"}
+                            <select
+                              className={`rounded-md border bg-white px-1.5 py-0.5 text-xs ${onClosed ? "border-error text-error" : "border-sand-300"}`}
+                              value={value}
+                              onChange={(e) => setSafari(i, session, e.target.value as "" | "core" | "buffer")}
+                            >
+                              <option value="">No safari</option>
+                              <option value="core" disabled={closedCore && value !== "core"}>{closedCore ? "Core (closed)" : "Core"}</option>
+                              <option value="buffer" disabled={closedBuffer && value !== "buffer"}>{closedBuffer ? "Buffer (closed)" : "Buffer"}</option>
+                            </select>
+                          </label>
+                        );
+                      })}
                     </li>
                   )}
                   {(d.items ?? []).map((it) => (
