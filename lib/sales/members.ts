@@ -11,7 +11,7 @@ export async function getMemberNames(extraIds: string[] = []) {
   const { data: members } = await admin
     .from("profiles")
     .select("id, full_name, role, status")
-    .eq("role", "sales_member");
+    .in("role", ["sales_member", "sales_admin"]);
 
   const known = new Set((members ?? []).map((m) => m.id as string));
   const missing = ids.filter((id) => !known.has(id));

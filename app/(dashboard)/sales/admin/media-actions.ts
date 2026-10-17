@@ -2,7 +2,7 @@
 
 import { safe } from "@/lib/sales/safe";
 import { revalidatePath } from "next/cache";
-import { getCurrentUser, isSuperAdmin } from "@/lib/auth";
+import { getCurrentUser, isSalesAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { MEDIA_BUCKET, type ActionResult, type MediaOwner } from "@/lib/sales/master/types";
 
@@ -10,7 +10,7 @@ const OWNERS: MediaOwner[] = ["property", "room_category", "park", "addon", "bra
 
 async function guard(): Promise<string | null> {
   const cu = await getCurrentUser();
-  if (!cu?.user || !isSuperAdmin(cu.profile?.role)) return "Only super admins can manage photos.";
+  if (!cu?.user || !isSalesAdmin(cu.profile?.role)) return "Only Sales admins can manage photos.";
   return null;
 }
 

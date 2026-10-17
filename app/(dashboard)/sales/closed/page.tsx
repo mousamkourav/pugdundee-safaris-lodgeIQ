@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireUser, isSuperAdmin } from "@/lib/auth";
+import { requireUser, isSalesAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ui } from "@/components/ui";
 import { QueriesTable } from "@/components/sales/queries-table";
@@ -12,7 +12,7 @@ export default async function ClosedPage({
   searchParams: Promise<{ tab?: string }>;
 }) {
   const { user, profile } = await requireUser();
-  const admin = isSuperAdmin(profile?.role);
+  const admin = isSalesAdmin(profile?.role);
   const tab = (await searchParams).tab === "cancelled" ? "cancelled" : "lost";
   const supabase = await createClient();
 

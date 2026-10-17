@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireUser, isSuperAdmin } from "@/lib/auth";
+import { requireUser, isSalesAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
@@ -46,7 +46,7 @@ export default async function SalesDashboard({
   searchParams: Promise<{ range?: string }>;
 }) {
   const { user, profile } = await requireUser();
-  const admin = isSuperAdmin(profile?.role);
+  const admin = isSalesAdmin(profile?.role);
   const range: Range = (await searchParams).range === "all" ? "all" : "month";
   const supabase = await createClient();
 
@@ -136,10 +136,10 @@ export default async function SalesDashboard({
               <h2 className="text-lg">Member performance</h2>
               <p className="text-sm text-sand-500">Click a member to see their queries.</p>
             </div>
-            <Link href="/admin/users" className={`${ui.btnGhost} ${ui.btnSm}`}>Manage members</Link>
+            <Link href="/sales/members" className={`${ui.btnGhost} ${ui.btnSm}`}>Manage members</Link>
           </div>
           {team.length === 0 ? (
-            <div className={ui.empty}>No sales members yet. Add one from Users &amp; access with the role Sales member.</div>
+            <div className={ui.empty}>No sales members yet. Add them under Sales admin, Members.</div>
           ) : (
             <div className={`${ui.card} overflow-hidden`}>
               <div className="overflow-x-auto">

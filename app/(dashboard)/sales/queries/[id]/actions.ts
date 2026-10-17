@@ -2,7 +2,7 @@
 
 import { safe } from "@/lib/sales/safe";
 import { revalidatePath } from "next/cache";
-import { getCurrentUser, isSalesUser, isSuperAdmin } from "@/lib/auth";
+import { getCurrentUser, isSalesUser, isSalesAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 export type StatusInput =
@@ -79,7 +79,7 @@ async function changeStatusUnsafe(queryId: string, input: StatusInput): Promise<
 
 async function reassignQueryUnsafe(queryId: string, memberId: string, remark: string): Promise<Result> {
   const cu = await getCurrentUser();
-  if (!cu?.user || !isSuperAdmin(cu.profile?.role)) return { error: "Only admins can reassign queries." };
+  if (!cu?.user || !isSalesAdmin(cu.profile?.role)) return { error: "Only admins can reassign queries." };
   if (!memberId) return { error: "Choose a member." };
 
   const supabase = await createClient();

@@ -10,6 +10,7 @@ export type Role =
   | "operations_manager"
   | "lodge_accounts"
   | "sales_member"
+  | "sales_admin"
   | "task_creator";
 
 // Human-readable labels for each role (used in the users admin dropdown).
@@ -21,6 +22,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   operations_manager: "Operations manager",
   lodge_accounts: "Lodge accounts",
   sales_member: "Sales member",
+  sales_admin: "Sales admin",
   task_creator: "Task creator",
 };
 
@@ -30,7 +32,7 @@ export const ADMIN_ROLES: Role[] = ["super_admin", "senior_manager", "delhi_acco
 export const SUPER_ROLES: Role[] = ["super_admin", "senior_manager"];
 // Roles that can use the Sales & Itinerary module. Super roles act as sales
 // admins (rates, members, all queries); sales_member sees only their own queries.
-export const SALES_ROLES: Role[] = ["super_admin", "senior_manager", "sales_member"];
+export const SALES_ROLES: Role[] = ["super_admin", "senior_manager", "sales_member", "sales_admin"];
 
 // cache(): the dashboard layout and the page both call this during one request;
 // dedupe so the Auth + profile round-trips to Supabase happen once, not twice.
@@ -61,10 +63,10 @@ export const isSuperAdmin = (role?: string | null) =>
   role === "super_admin" || role === "senior_manager";
 
 export const isSalesUser = (role?: string | null) =>
-  role === "sales_member" || isSuperAdmin(role);
+  role === "sales_member" || role === "sales_admin" || isSuperAdmin(role);
 
 // A sales member never sees Lodge Reporting.
-export const isSalesOnly = (role?: string | null) => role === "sales_member";
+export const isSalesOnly = (role?: string | null) => role === "sales_member" || role === "sales_admin";
 export const isTaskCreatorOnly = (role?: string | null) => role === "task_creator";
 
 // Where a user lands after sign-in.
@@ -76,3 +78,7 @@ export function homePathFor(role?: string | null) {
   if (isSuperAdmin(role)) return "/hub";
   return "/dashboard";
 }
+
+// Full authority inside Sales (queries, master data, members). Super roles
+// have it too; a sales_admin has it WITHOUT any Lodge Reporting access.
+export const isSalesAdmin = (role?: string | null) => role === "sales_admin" || isSuperAdmin(role);

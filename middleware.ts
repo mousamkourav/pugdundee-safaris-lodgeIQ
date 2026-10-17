@@ -109,7 +109,7 @@ export async function middleware(request: NextRequest) {
     }
 
     const home =
-      role === "sales_member" && !within(path, SALES_MEMBER_PATHS)
+      (role === "sales_member" || role === "sales_admin") && !within(path, SALES_MEMBER_PATHS)
         ? "/sales"
         : role === "task_creator" && !within(path, TASK_CREATOR_PATHS)
           ? "/trip-reports"

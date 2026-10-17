@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireUser, isSuperAdmin } from "@/lib/auth";
+import { requireUser, isSalesAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ui } from "@/components/ui";
 import { QueriesTable } from "@/components/sales/queries-table";
@@ -12,7 +12,7 @@ export default async function QueriesPage({
   searchParams: Promise<{ status?: string; member?: string; q?: string }>;
 }) {
   const { user, profile } = await requireUser();
-  const admin = isSuperAdmin(profile?.role);
+  const admin = isSalesAdmin(profile?.role);
   const sp = await searchParams;
   const status = isQueryStatus(sp.status) ? sp.status : null;
   const member = admin && sp.member ? sp.member : null;

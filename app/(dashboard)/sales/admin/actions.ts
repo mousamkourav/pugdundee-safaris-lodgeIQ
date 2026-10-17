@@ -2,7 +2,7 @@
 
 import { safe } from "@/lib/sales/safe";
 import { revalidatePath } from "next/cache";
-import { getCurrentUser, isSuperAdmin } from "@/lib/auth";
+import { getCurrentUser, isSalesAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getEntity } from "@/lib/sales/master/entities";
 import { parseRow } from "@/lib/sales/master/parse";
@@ -11,7 +11,7 @@ import type { ActionResult } from "@/lib/sales/master/types";
 
 async function requireSuper(): Promise<string | null> {
   const cu = await getCurrentUser();
-  if (!cu?.user || !isSuperAdmin(cu.profile?.role)) return "Only super admins can change master data.";
+  if (!cu?.user || !isSalesAdmin(cu.profile?.role)) return "Only Sales admins can change master data.";
   return null;
 }
 

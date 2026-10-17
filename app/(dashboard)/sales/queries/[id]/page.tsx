@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireUser, isSuperAdmin } from "@/lib/auth";
+import { requireUser, isSalesAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
@@ -53,7 +53,7 @@ const EVENT_LABEL: Record<string, string> = {
 export default async function QueryDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { user, profile } = await requireUser();
-  const admin = isSuperAdmin(profile?.role);
+  const admin = isSalesAdmin(profile?.role);
   const supabase = await createClient();
 
   const { data: qData } = await supabase.from("sales_queries").select("*").eq("id", id).maybeSingle();

@@ -22,6 +22,8 @@ export interface NavGroup {
 const ADMIN: Role[] = ["super_admin", "senior_manager", "delhi_accounts"];
 // Duplicated from lib/auth.ts (server-only file; nav.ts is imported by a client component).
 const SUPER: Role[] = ["super_admin", "senior_manager"];
+// Sales admin features: super roles plus the Sales-only admin.
+const SALES_ADMIN: Role[] = ["super_admin", "senior_manager", "sales_admin"];
 
 export const NAV: NavGroup[] = [
   // ---------------- Lodge Reporting ----------------
@@ -83,14 +85,14 @@ export const NAV: NavGroup[] = [
     title: "Sales admin",
     module: "sales",
     items: [
-      { label: "Master data", href: "/sales/admin", icon: "building", roles: SUPER },
-      { label: "Members", href: "/admin/users", icon: "users", roles: SUPER },
+      { label: "Master data", href: "/sales/admin", icon: "building", roles: SALES_ADMIN },
+      { label: "Members", href: "/sales/members", icon: "users", roles: SALES_ADMIN },
     ],
   },
 ];
 
 export function moduleForPath(pathname: string, role: Role): Module {
-  if (role === "sales_member") return "sales";
+  if (role === "sales_member" || role === "sales_admin") return "sales";
   return pathname === "/sales" || pathname.startsWith("/sales/") ? "sales" : "reporting";
 }
 

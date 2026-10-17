@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireUser, isSuperAdmin } from "@/lib/auth";
+import { requireUser, isSalesAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ui } from "@/components/ui";
 import { Builder } from "@/components/sales/builder/builder";
@@ -62,7 +62,7 @@ export default async function NewItineraryPage({
       {!ready ? (
         <div className={ui.empty}>
           Parks, lodges and room rates are needed before itineraries can be built.
-          {isSuperAdmin(profile?.role) ? (
+          {isSalesAdmin(profile?.role) ? (
             <>
               {" "}
               <Link href="/sales/admin" className="font-semibold text-olive-600 underline">Open master data</Link>.
