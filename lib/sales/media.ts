@@ -6,7 +6,7 @@ export async function getMedia(owner: MediaOwner, ownerId: string | null): Promi
   const supabase = await createClient();
   let q = supabase
     .from("sales_media")
-    .select("id, storage_path, caption, is_cover, sort")
+    .select("id, storage_path, caption, is_cover, sort, category")
     .eq("owner_type", owner);
   q = ownerId ? q.eq("owner_id", ownerId) : q.is("owner_id", null);
   const { data } = await q.order("sort", { ascending: true }).order("created_at", { ascending: true });

@@ -37,6 +37,10 @@ export default async function MasterDataHub() {
           <p className="mt-1 text-sm text-sand-500">Everything the itinerary builder and pricing use. Changes apply to new quotes only; saved quotes keep their prices.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link href="/sales/admin/import-photos" className={ui.btnPrimary}>
+            <Icon name="image" className="h-[18px] w-[18px]" />
+            Import photos
+          </Link>
           <Link href="/sales/admin/brand-photos" className={ui.btnSecondary}>
             <Icon name="image" className="h-[18px] w-[18px]" />
             Brand photos

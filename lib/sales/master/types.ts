@@ -84,4 +84,5 @@ export interface MediaItem {
   caption: string | null;
   is_cover: boolean;
   sort: number;
+  category: string | null;
 }

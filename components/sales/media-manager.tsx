@@ -7,7 +7,9 @@ import { PhotoPicker, type PickedPhoto } from "@/components/photo-picker";
 import { Icon } from "@/components/icons";
 import { ui, Badge } from "@/components/ui";
 import { MEDIA_BUCKET, type MediaItem, type MediaOwner } from "@/lib/sales/master/types";
+import { CATEGORY_LABEL, PHOTO_CATEGORIES } from "@/lib/sales/media-import";
 import {
+  updateMediaCategory,
   addMedia,
   setCover,
   moveMedia,
@@ -130,6 +132,16 @@ export function MediaManager({
                 )}
               </div>
               <figcaption className="space-y-2 p-2.5">
+                <select
+                  className="w-full rounded-md border border-sand-200 bg-white px-1.5 py-1 text-xs text-sand-700"
+                  value={m.category ?? ""}
+                  disabled={busy}
+                  onChange={(e) => e.target.value && run(() => updateMediaCategory(m.id, e.target.value))}
+                  aria-label="Photo category"
+                >
+                  <option value="" disabled>Category...</option>
+                  {PHOTO_CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}
+                </select>
                 <input
                   defaultValue={m.caption ?? ""}
                   placeholder="Caption (optional)"

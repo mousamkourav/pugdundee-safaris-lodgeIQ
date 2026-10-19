@@ -110,7 +110,7 @@ export const ENTITIES: EntityDef[] = [
     icon: "building",
     description: "Your lodges, partner lodges and city hotels.",
     afterSave: "property-location",
-    media: { owner: "property", max: 24 },
+    media: { owner: "property", max: 30 },
     fields: [
       { name: "name", label: "Name", type: "text", required: true },
       { name: "kind", label: "Type", type: "select", required: true, options: opts([["own_lodge", "Own lodge"], ["partner_lodge", "Partner lodge"], ["city_hotel", "City hotel"]]), initial: "partner_lodge" },
@@ -144,7 +144,7 @@ export const ENTITIES: EntityDef[] = [
     group: "Stay",
     icon: "bed",
     description: "Room types at each lodge and how many people they take.",
-    media: { owner: "room_category", max: 8 },
+    media: { owner: "room_category", max: 10 },
     fields: [
       { name: "property_id", label: "Lodge / hotel", type: "ref", ref: PROPERTY, required: true },
       { name: "name", label: "Room name", type: "text", required: true, placeholder: "e.g. AC Cottage" },

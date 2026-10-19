@@ -17,7 +17,7 @@ export default async function BrandPhotosPage() {
         owner="brand"
         ownerId={null}
         items={items}
-        max={40}
+        max={120}
         hint="The starred photo is the default itinerary cover. Use the arrows to change the order."
       />
     </div>
