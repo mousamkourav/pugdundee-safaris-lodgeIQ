@@ -146,3 +146,68 @@ test("items added by hand are priced and billed to that night's lodge", () => {
   assert.equal(r.totals.grand, 558670 + 8000);
   assert.equal(r.byProperty.find((p) => p.property_id === "WEL")!.addon, 8000);
 });
+
+import { priceBreakdown } from "./breakdown";
+
+const withNaturalist = {
+  ...data,
+  addons: [
+    { id: "NAT_WEL", name: "Accompanying naturalist", property_id: "WEL", pricing_unit: "per_vehicle" as const, rate: 2500, tax_pct: 5, active: true },
+    { id: "NAT_ALL", name: "Accompanying naturalist", property_id: null, pricing_unit: "per_vehicle" as const, rate: 3000, tax_pct: 5, active: true },
+  ],
+};
+
+test("naturalist is charged per safari, only when ticked", () => {
+  const plain = priceTrip(trip, withNaturalist);
+  const ticked = priceTrip({ ...trip, safaris: trip.safaris.map((s, i) => (i < 2 ? { ...s, naturalist: true } : s)) }, withNaturalist);
+  const nat = ticked.lines.filter((l) => l.group === "naturalist");
+  assert.equal(nat.length, 2);
+  // 2 rooms of guests fit one jeep: 2,500 + 5% at Waghoba
+  assert.ok(nat.every((l) => l.amount === 2625));
+  assert.equal(ticked.totals.grand, plain.totals.grand + 2 * 2625);
+  // a safari whose lodge has no naturalist add-on uses the general one
+  const pench = trip.safaris.findIndex((s) => s.park_id === "PENCH");
+  const r = priceTrip({ ...trip, safaris: trip.safaris.map((s, i) => (i === pench ? { ...s, naturalist: true } : s)) }, withNaturalist);
+  assert.equal(r.lines.find((l) => l.group === "naturalist")!.amount, 3150);
+  // no naturalist rate at all: a price box, not a silent zero
+  const none = priceTrip({ ...trip, safaris: [{ ...trip.safaris[0], naturalist: true }] }, data);
+  assert.ok(none.missing.some((m) => m.kind === "naturalist"));
+});
+
+test("% discount on our lodges' accommodation, or on everything; GST reduced in proportion", () => {
+  const base = priceTrip(trip, data);
+  const lodges = priceTrip({ ...trip, discount: { pct: 10, scope: "lodges", reason: "Repeat guest" } }, data);
+  assert.equal(lodges.totals.grand, base.totals.grand - Math.round(base.totals.room * 0.1));
+  const all = priceTrip({ ...trip, discount: { pct: 10, scope: "all", reason: "Group" } }, data);
+  assert.equal(all.totals.grand, base.totals.grand - Math.round(base.totals.grand * 0.1));
+  const noReason = priceTrip({ ...trip, discount: { pct: 5, scope: "all", reason: "" } }, data);
+  assert.ok(noReason.errors.some((e) => e.includes("reason")));
+});
+
+test("the price breakup (net + GST) always adds up to the total", () => {
+  const cases = [
+    priceTrip(trip, data),
+    priceTrip({ ...trip, markup_pct: 7, adjustment: { amount: -1999, reason: "rounding" } }, data),
+    priceTrip({ ...trip, discount: { pct: 12.5, scope: "all", reason: "x" }, custom_items: [{ date: "2027-01-16", title: "Flight Delhi to Nagpur", amount: 18000, group: "flight" }] }, withNaturalist),
+  ];
+  // rates entered like the real master data: 18% GST on rooms, 5% on safaris, added on top
+  const taxed = {
+    ...withNaturalist,
+    roomRates: data.roomRates.map((r) => ({ ...r, rate_single: r.rate_single ? Math.round(r.rate_single / 1.18) : r.rate_single, rate_double: r.rate_double ? Math.round(r.rate_double / 1.18) : r.rate_double, tax_pct: 18, rates_include_tax: false })),
+    safariRates: data.safariRates.map((r) => ({ ...r, tax_pct: 5 })),
+  };
+  cases.push(priceTrip({ ...trip, discount: { pct: 10, scope: "lodges", reason: "x" }, safaris: trip.safaris.map((x) => ({ ...x, naturalist: true })) }, taxed));
+  cases.push(priceTrip({ ...trip, markup_pct: 5 }, taxed));
+  for (const r of cases) {
+    const b = priceBreakdown(r);
+    assert.equal(b.total, r.totals.grand); // always exact
+  }
+  const b = priceBreakdown(cases[2]);
+  assert.deepEqual(b.rows.map((x) => x.key), ["accommodation", "safaris", "transfers", "flights", "discount", "gst"]);
+  const t = priceBreakdown(cases[3]);
+  assert.deepEqual(t.rows.map((x) => x.key), ["accommodation", "safaris", "naturalists", "transfers", "discount", "gst"]);
+  // GST is 18% of accommodation after the 10% discount (discount lowers the GST too)
+  const acc = t.rows.find((x) => x.key === "accommodation")!.amount;
+  const safGst = Math.round((t.rows.find((x) => x.key === "safaris")!.amount + t.rows.find((x) => x.key === "naturalists")!.amount) * 0.05);
+  assert.ok(Math.abs(t.gst - (Math.round(acc * 0.9 * 0.18) + safGst)) <= 20, `gst ${t.gst}`);
+});

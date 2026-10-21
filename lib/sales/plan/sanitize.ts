@@ -33,7 +33,7 @@ export function sanitizePlan(input: unknown): Plan | null {
     const safaris: DaySafari[] = (Array.isArray(d.safaris) ? d.safaris : [])
       .map((y) => obj(y))
       .filter((y) => (y.session === "morning" || y.session === "afternoon") && (y.zone === "core" || y.zone === "buffer"))
-      .map((y) => ({ session: y.session as DaySafari["session"], zone: y.zone as DaySafari["zone"] }))
+      .map((y) => ({ session: y.session as DaySafari["session"], zone: y.zone as DaySafari["zone"], ...(y.naturalist === true ? { naturalist: true } : {}) }))
       .slice(0, 2);
     const kind = ["arrival", "safari", "transfer", "leisure", "departure"].includes(String(d.kind)) ? (d.kind as PlanDay["kind"]) : "leisure";
     return {
@@ -52,12 +52,20 @@ export function sanitizePlan(input: unknown): Plan | null {
         const qty = Number(it.qty);
         return {
           id: str(it.id, 60) || Math.random().toString(36).slice(2),
-          type: ["addon", "activity", "hotel", "transfer", "meal", "note"].includes(String(it.type)) ? (it.type as PlanItem["type"]) : "activity",
+          type: ["addon", "activity", "hotel", "transfer", "meal", "note", "flight"].includes(String(it.type)) ? (it.type as PlanItem["type"]) : "activity",
           title: str(it.title, 200).trim() || "Item",
           detail: str(it.detail, 1000),
           price: Number.isFinite(price) && price > 0 ? Math.min(Math.round(price), 100_000_000) : null,
           addon_id: strOrNull(it.addon_id),
           qty: Number.isInteger(qty) && qty > 0 ? Math.min(qty, 500) : null,
+          ...(it.type === "flight"
+            ? {
+                flight: (() => {
+                  const f = obj(it.flight);
+                  return { from: str(f.from, 60), to: str(f.to, 60), airline: str(f.airline, 60), number: str(f.number, 20), time: str(f.time, 10), pnr: str(f.pnr, 20) };
+                })(),
+              }
+            : {}),
         };
       }),
     };
@@ -103,6 +111,16 @@ export function sanitizePlan(input: unknown): Plan | null {
     markup_pct: p.markup_pct === null || p.markup_pct === undefined || p.markup_pct === "" ? null : Math.max(-50, Math.min(200, Number(p.markup_pct) || 0)),
     adjustment: Number.isFinite(adjAmount) && adjAmount !== 0 ? { amount: Math.round(adjAmount), reason: str(adj.reason, 300).trim() } : null,
     currency: p.currency === "USD" ? "USD" : "INR",
+    discount: (() => {
+      const dd = obj(p.discount);
+      const pct = Number(dd.pct);
+      if (!Number.isFinite(pct) || pct <= 0) return null;
+      return { pct: Math.min(100, Math.round(pct * 100) / 100), scope: dd.scope === "lodges" ? ("lodges" as const) : ("all" as const), reason: str(dd.reason, 300) };
+    })(),
+    client: (() => {
+      const c = obj(p.client);
+      return { show_prices: c.show_prices !== false, show_breakup: c.show_breakup === true };
+    })(),
     manual_prices: Object.fromEntries(
       Object.entries(obj(p.manual_prices))
         .filter(([k, v]) => k.length <= 300 && Number.isFinite(Number(v)) && Number(v) >= 0)

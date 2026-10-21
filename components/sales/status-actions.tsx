@@ -124,13 +124,24 @@ export function StatusActions({
     <>
       <div className="flex flex-wrap gap-2">
         {status === "open" && (
+          <button type="button" className={ui.btnPrimary} onClick={() => submit({ to: "quoted" })} disabled={pending} title="The quote has been sent to the guest">
+            <Icon name="send" className="h-[18px] w-[18px]" />
+            Mark quoted
+          </button>
+        )}
+        {(status === "open" || status === "quoted") && (
           <>
-            <button type="button" className={ui.btnPrimary} onClick={() => open("booked")}>
+            <button type="button" className={status === "quoted" ? ui.btnPrimary : ui.btnSecondary} onClick={() => open("booked")}>
               <Icon name="check" className="h-[18px] w-[18px]" />
               Mark booked
             </button>
             <button type="button" className={ui.btnSecondary} onClick={() => open("lost")}>Mark lost</button>
           </>
+        )}
+        {status === "quoted" && (
+          <button type="button" className={ui.btnGhost} onClick={() => submit({ to: "open", remark: "Back to open to revise the quote" })} disabled={pending}>
+            Back to open
+          </button>
         )}
         {status === "booked" && (
           <button type="button" className={ui.btnDangerOutline} onClick={() => open("cancelled")}>Cancel booking</button>
@@ -145,6 +156,7 @@ export function StatusActions({
           </button>
         )}
       </div>
+      {!dialog && error && <p className={`${ui.alertError} mt-2`}>{error}</p>}
 
       {dialog === "booked" && (
         <Modal title="Mark as booked" subtitle={queryNo} onClose={close}>

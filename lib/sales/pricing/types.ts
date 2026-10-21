@@ -18,6 +18,7 @@ export interface Property {
   id: string;
   name: string;
   park_id: string | null;
+  kind?: string; // own_lodge, partner_lodge, city_hotel
 }
 
 export interface RoomCategory {
@@ -180,6 +181,7 @@ export interface SafariInput {
   session: Session;
   vehicle_type?: string; // default exclusive_jeep
   vehicles?: number; // default: enough for all guests
+  naturalist?: boolean; // an accompanying naturalist on this safari (per jeep)
 }
 
 export interface TransferInput {
@@ -208,18 +210,20 @@ export interface TripInput {
   offer_ids?: string[];
   markup_pct?: number | null; // null/undefined = settings default
   adjustment?: { amount: number; reason: string } | null;
+  // A % discount: on accommodation at our own lodges, or on the whole itinerary.
+  discount?: { pct: number; scope: "lodges" | "all"; reason: string } | null;
   currency?: "INR" | "USD";
   booking_date: ISODate; // "today" when the quote is made
   // Prices typed by the sales person where master data has no rate, by MissingPrice.key.
   manual_prices?: Record<string, number>;
   // Items added by hand to a day (not from master data), already totalled.
-  custom_items?: { date: ISODate; title: string; amount: number }[];
+  custom_items?: { date: ISODate; title: string; amount: number; group?: "flight" | "extra" }[];
 }
 
 // A rate the master data does not have. The sales person can type a price for it.
 export interface MissingPrice {
   key: string;
-  kind: "room" | "safari" | "transfer";
+  kind: "room" | "safari" | "transfer" | "naturalist";
   label: string;
   unit: string; // what the typed price covers
   date: ISODate | null;
@@ -237,6 +241,7 @@ export interface PriceLine {
   unit_price: number;
   amount: number; // rupees, tax included
   tax: number; // tax portion of amount
+  group?: "naturalist" | "flight"; // shown separately in the price breakup
   property_id: string | null; // which lodge bills it
   ref_id: string | null; // room_category / park / transfer rate / addon / offer id
   missing?: boolean; // no rate found and no typed price: amount is 0 and an error is reported

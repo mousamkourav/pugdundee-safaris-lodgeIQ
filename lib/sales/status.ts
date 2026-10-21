@@ -1,12 +1,13 @@
 import type { Tone } from "@/components/ui";
 
 // Must match the CHECK constraint on public.sales_queries.status.
-export const QUERY_STATUSES = ["draft", "open", "booked", "lost", "cancelled"] as const;
+export const QUERY_STATUSES = ["draft", "open", "quoted", "booked", "lost", "cancelled"] as const;
 export type QueryStatus = (typeof QUERY_STATUSES)[number];
 
 export const STATUS_LABEL: Record<QueryStatus, string> = {
   draft: "Draft",
   open: "Open",
+  quoted: "Quoted",
   booked: "Booked",
   lost: "Lost",
   cancelled: "Cancelled",
@@ -15,6 +16,7 @@ export const STATUS_LABEL: Record<QueryStatus, string> = {
 export const STATUS_TONE: Record<QueryStatus, Tone> = {
   draft: "info",
   open: "pending",
+  quoted: "gold",
   booked: "success",
   lost: "neutral",
   cancelled: "error",

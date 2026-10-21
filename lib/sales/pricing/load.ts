@@ -56,7 +56,7 @@ export async function loadPricingData(): Promise<{ data: PricingData; error: str
   const fx = (s.fx ?? null) as { USD?: unknown } | null;
 
   const data: PricingData = {
-    properties: rows(props).map((r): Property => ({ id: str(r.id), name: str(r.name), park_id: strOrNull(r.park_id) })),
+    properties: rows(props).map((r): Property => ({ id: str(r.id), name: str(r.name), park_id: strOrNull(r.park_id), kind: str(r.kind) || "own_lodge" })),
     rooms: rows(rooms).map(
       (r): RoomCategory => ({
         id: str(r.id),

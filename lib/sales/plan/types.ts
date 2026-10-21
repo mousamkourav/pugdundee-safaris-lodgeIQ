@@ -32,18 +32,30 @@ export type DayKind = "arrival" | "safari" | "transfer" | "leisure" | "departure
 export interface DaySafari {
   session: "morning" | "afternoon";
   zone: "core" | "buffer";
+  naturalist?: boolean; // accompanying naturalist on this safari
+}
+
+// A flight leg (Delhi to Jabalpur...). Ticket details can be added once booked.
+export interface FlightInfo {
+  from: string;
+  to: string;
+  airline: string;
+  number: string;
+  time: string; // departure time, e.g. 08:30
+  pnr: string; // empty until booked
 }
 
 // Something added to a day by hand: an add-on from master data, or anything
 // typed in (an activity, a hotel not in master data, a meal, a note).
 export interface PlanItem {
   id: string;
-  type: "addon" | "activity" | "hotel" | "transfer" | "meal" | "note";
+  type: "addon" | "activity" | "hotel" | "transfer" | "meal" | "note" | "flight";
   title: string;
   detail: string;
   price: number | null; // total in rupees incl. tax; null = no charge / included
   addon_id: string | null;
   qty: number | null; // add-ons only; null = automatic (guests, rooms...)
+  flight?: FlightInfo; // for type "flight"
 }
 
 export interface PlanDay {
@@ -83,6 +95,10 @@ export interface Plan {
   adjustment: { amount: number; reason: string } | null;
   currency: "INR" | "USD";
   draft?: PlanDraft;
+  // % discount: on accommodation at our own lodges, or the whole itinerary. Reason is internal.
+  discount?: { pct: number; scope: "lodges" | "all"; reason: string } | null;
+  // What the guest's itinerary and PDF show.
+  client?: { show_prices: boolean; show_breakup: boolean };
   manual_prices: Record<string, number>; // prices typed for rates master data does not have
 }
 

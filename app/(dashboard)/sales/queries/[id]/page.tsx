@@ -7,6 +7,7 @@ import { Icon } from "@/components/icons";
 import { StatusBadge } from "@/components/sales/status-badge";
 import { StatusActions } from "@/components/sales/status-actions";
 import { ShareLink } from "@/components/sales/share-link";
+import { priceBreakdown } from "@/lib/sales/pricing/breakdown";
 import { DraftActions } from "@/components/sales/draft-actions";
 import { todayIST } from "@/lib/sales/plan/load-context";
 import { getMemberNames } from "@/lib/sales/members";
@@ -194,7 +195,25 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
                   </tbody>
                 </table>
               </div>
-              <div className="mt-4 space-y-1 text-sm">
+              {pricing.lines && (
+                <div className="mt-4 grid gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
+                  {priceBreakdown(pricing).rows.map((r) => (
+                    <div key={r.key} className={`flex justify-between gap-3 ${r.key === "gst" ? "font-medium text-olive-800" : ""}`}>
+                      <span>{r.key === "gst" ? "GST (included in the total)" : r.label}</span>
+                      <span className="tabular">{rupees(r.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {plan?.discount && plan.discount.pct > 0 && (
+                <p className="mt-2 text-xs text-sand-500">
+                  Discount {plan.discount.pct}% {plan.discount.scope === "lodges" ? "on accommodation at our lodges" : "on the whole itinerary"}. Reason (internal): {plan.discount.reason || "-"}
+                </p>
+              )}
+              <p className="mt-2 text-xs text-sand-500">
+                The guest sees {plan?.client?.show_prices === false ? "no prices" : plan?.client?.show_breakup ? "prices with this breakup" : "the total and per-person price"}.
+              </p>
+              <div className="mt-4 space-y-1 border-t border-sand-200 pt-3 text-sm">
                 {pricing.payments.map((p, i) => (
                   <div key={i} className="flex justify-between gap-3">
                     <span>{p.label}<span className="text-sand-500"> - {p.due ? `by ${fmtDate(p.due)}` : "at booking"}</span></span>

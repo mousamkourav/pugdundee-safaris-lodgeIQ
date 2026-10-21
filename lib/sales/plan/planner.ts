@@ -74,7 +74,7 @@ export function autoSafaris(ctx: BuilderContext, parkId: string, date: ISODate):
     const buffer = closureFor(ctx.pricing, parkId, "buffer", session, date);
     if (!buffer && hasBufferRate(ctx, parkId, session)) {
       safaris.push({ session, zone: "buffer" });
-      notes.push(`Core zone closed ${dayName(date)} ${session}${why}; buffer zone used.`);
+      notes.push(`Core zone closed ${dayName(date)} ${session === "afternoon" ? "evening" : session}${why}; buffer can be used.`);
     } else {
       notes.push(`No ${session} safari: park closed ${dayName(date)}${why}.`);
     }
@@ -184,7 +184,7 @@ function driveHours(ctx: BuilderContext, from: string, to: string, vehicle: stri
 const DEFAULT_TEXT: Record<PlanDay["kind"], string> = {
   arrival: "Arrive at {from} and drive to {lodge}{hours}. Evening at leisure.",
   transfer: "After breakfast, drive to {lodge} in {park}{hours}. Evening at leisure.",
-  safari: "{safaris} in {park}, with a resident naturalist.",
+  safari: "{safaris} in {park}.",
   leisure: "A day at leisure at {lodge}.",
   departure: "After breakfast, drive to {to}{hours} for your onward journey.",
 };
@@ -229,9 +229,13 @@ export function describe(ctx: BuilderContext, day: PlanDay, vehicle: string | nu
     .replaceAll("{from}", from || "the airport")
     .replaceAll("{to}", to || "your onward point")
     .replaceAll("{hours}", hours)
-    .replaceAll("{safaris}", safariPhrase(day.safaris));
+    .replaceAll("{safaris}", safariPhrase(day.safaris))
+    .replace(/,? with a resident naturalist/gi, "")
+    .replace(/resident naturalists?/gi, (m) => (m.toLowerCase().endsWith("s") ? "naturalists" : "naturalist"));
+  const nat = day.safaris.filter((s) => s.naturalist).length;
+  const withNat = nat === 0 ? "" : nat === day.safaris.length ? (nat === 1 ? " Accompanied by a naturalist." : " Each safari is accompanied by a naturalist.") : ` A naturalist accompanies the ${day.safaris.find((s) => s.naturalist)!.session === "morning" ? "morning" : "evening"} safari.`;
 
-  return { ...day, title: titles[day.kind], text };
+  return { ...day, title: titles[day.kind], text: text + (day.park_id && day.safaris.length ? withNat : "") };
 }
 
 // ---------------- plan -> pricing input ----------------
@@ -248,13 +252,13 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
   const safaris: SafariInput[] = [];
   const transfers: TransferInput[] = [];
   const addons: { addon_id: string; date: string; qty?: number }[] = [];
-  const custom: { date: string; title: string; amount: number }[] = [];
+  const custom: { date: string; title: string; amount: number; group?: "flight" | "extra" }[] = [];
   for (const d of plan.days) {
-    if (d.park_id) for (const s of d.safaris) safaris.push({ date: d.date, park_id: d.park_id, zone: s.zone, session: s.session });
+    if (d.park_id) for (const s of d.safaris) safaris.push({ date: d.date, park_id: d.park_id, zone: s.zone, session: s.session, naturalist: !!s.naturalist });
     if (d.transfer) transfers.push({ date: d.date, ...d.transfer, vehicle_type: plan.vehicle_type ?? undefined });
     for (const it of d.items ?? []) {
       if (it.addon_id) addons.push({ addon_id: it.addon_id, date: d.date, qty: it.qty ?? undefined });
-      else if (it.price) custom.push({ date: d.date, title: it.title, amount: it.price });
+      else if (it.price) custom.push({ date: d.date, title: it.title, amount: it.price, group: it.type === "flight" ? "flight" : "extra" });
     }
   }
   return {
@@ -267,6 +271,7 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
     addons,
     custom_items: custom,
     manual_prices: plan.manual_prices ?? {},
+    discount: plan.discount && plan.discount.pct > 0 ? plan.discount : null,
     offer_ids: plan.offer_ids,
     markup_pct: plan.markup_pct,
     adjustment: plan.adjustment,

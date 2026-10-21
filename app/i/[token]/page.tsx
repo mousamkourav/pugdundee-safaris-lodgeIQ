@@ -55,6 +55,9 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
             <p className="mt-2 text-white/85">
               Prepared for {view.guestName} &middot; {long(view.arrival)} - {long(view.departure)} &middot; {view.nights + 1} days
             </p>
+            <p className="mt-1 text-sm text-white/70">
+              Quote {view.queryNo} &middot; quoted on {long(view.quotedOn)}
+            </p>
           </div>
         </header>
 
@@ -86,6 +89,16 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                               <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-gold-500" aria-hidden="true" />
                               <span>
                                 <span className="font-medium text-olive-800">{it.title}</span>
+                                {it.type === "flight" && it.flight && (
+                                  <span className="text-sand-600">
+                                    {" "}
+                                    {[it.flight.airline && it.flight.number ? `${it.flight.airline} ${it.flight.number}` : it.flight.airline || it.flight.number, it.flight.time && `departs ${it.flight.time}`, it.flight.pnr && `PNR ${it.flight.pnr}`]
+                                      .filter(Boolean)
+                                      .map((x) => `- ${x}`)
+                                      .join(" ")}
+                                    {!it.flight.pnr && <span className="block text-xs italic text-sand-500">Subject to availability and fares at the time of booking.</span>}
+                                  </span>
+                                )}
                                 {it.detail && <span className="text-sand-600"> - {it.detail}</span>}
                               </span>
                             </li>
@@ -104,6 +117,11 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                             </div>
                           )}
                           {lodge.description && <p className="mt-3 whitespace-pre-line text-sm leading-relaxed">{lodge.description}</p>}
+                          {lodge.website && (
+                            <a href={lodge.website} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-sm font-semibold text-olive-600 underline-offset-2 hover:underline">
+                              Visit the {lodge.name} website
+                            </a>
+                          )}
                         </div>
                       )}
                     </div>
@@ -113,19 +131,39 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
             </ol>
           </section>
 
-          {/* price */}
-          <section className="grid gap-6 rounded-xl bg-sand-100 p-6 break-inside-avoid sm:grid-cols-2">
-            <div>
-              <p className="eyebrow">Package price</p>
-              <p className="mt-1 font-display text-3xl font-semibold text-olive-800">{money(view.perPerson, view.currency)}</p>
-              <p className="text-sm text-sand-500">per person &middot; {view.guests} guest{view.guests === 1 ? "" : "s"}</p>
-            </div>
-            <div className="sm:text-right">
-              <p className="eyebrow">Total</p>
-              <p className="mt-1 font-display text-2xl font-semibold text-olive-800">{money(view.total, view.currency)}</p>
-              <p className="text-sm text-sand-500">Quote {view.queryNo} &middot; valid until {long(view.validUntil)}</p>
-            </div>
-          </section>
+          {/* price (the sales member chooses whether the guest sees prices, and the breakup) */}
+          {view.show.prices && (
+            <section className="space-y-4 rounded-xl bg-sand-100 p-6 break-inside-avoid">
+              <div className="grid gap-6 sm:grid-cols-2">
+                <div>
+                  <p className="eyebrow">Package price</p>
+                  <p className="mt-1 font-display text-3xl font-semibold text-olive-800">{money(view.perPerson, view.currency)}</p>
+                  <p className="text-sm text-sand-500">per person &middot; {view.guests} guest{view.guests === 1 ? "" : "s"}</p>
+                </div>
+                <div className="sm:text-right">
+                  <p className="eyebrow">Total</p>
+                  <p className="mt-1 font-display text-2xl font-semibold text-olive-800">{money(view.total, view.currency)}</p>
+                  <p className="text-sm text-sand-500">Valid until {long(view.validUntil)}</p>
+                </div>
+              </div>
+              {view.show.breakup && view.breakup.length > 0 && (
+                <table className="w-full text-sm">
+                  <tbody>
+                    {view.breakup.map((r, i) => (
+                      <tr key={i} className={r.gst ? "border-t border-sand-300" : ""}>
+                        <td className="py-1">{r.label}</td>
+                        <td className="tabular py-1 text-right">{money(r.amount, view.currency)}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t border-sand-300 font-semibold text-olive-800">
+                      <td className="py-1.5">Total including GST</td>
+                      <td className="tabular py-1.5 text-right">{money(view.total, view.currency)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              )}
+            </section>
+          )}
 
           <section className="grid gap-8 break-inside-avoid sm:grid-cols-2">
             <div>
@@ -154,7 +192,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                   <tr className="bg-sand-100 text-xs font-semibold uppercase tracking-wide text-sand-500">
                     <th className="px-4 py-3">Instalment</th>
                     <th className="px-4 py-3">Due</th>
-                    <th className="px-4 py-3 text-right">Amount</th>
+                    <th className="px-4 py-3 text-right">{view.show.prices ? "Amount" : "Share"}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -162,7 +200,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                     <tr key={i} className="border-t border-sand-200">
                       <td className="px-4 py-3">{p.label.charAt(0).toUpperCase() + p.label.slice(1)}</td>
                       <td className="px-4 py-3">{p.due ? long(p.due) : "To confirm the booking"}</td>
-                      <td className="tabular px-4 py-3 text-right">{money(p.amountInCurrency, view.currency)}</td>
+                      <td className="tabular px-4 py-3 text-right">{view.show.prices ? money(p.amountInCurrency, view.currency) : `${p.pct}%`}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -20,12 +20,20 @@ const TYPE_LABEL: Record<PlanItem["type"], string> = {
   transfer: "Transfer",
   meal: "Meal",
   note: "Note",
+  flight: "Flight",
 };
-const TYPE_ICON: Record<PlanItem["type"], string> = { addon: "plus", activity: "route", hotel: "building", transfer: "car", meal: "wine", note: "fileText" };
+const TYPE_ICON: Record<PlanItem["type"], string> = { addon: "plus", activity: "route", hotel: "building", transfer: "car", meal: "wine", note: "fileText", flight: "send" };
+// Airports people fly in and out of for these parks (suggestions; anything can be typed).
+const AIRPORTS = ["Delhi", "Mumbai", "Bengaluru", "Kolkata", "Jabalpur", "Nagpur", "Bhopal", "Raipur", "Khajuraho", "Bagdogra", "Indore", "Varanasi"];
+const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+export function flightSummary(f?: PlanItem["flight"]) {
+  if (!f) return "";
+  return [f.airline && f.number ? `${f.airline} ${f.number}` : f.airline || f.number, f.time && `departs ${f.time}`, f.pnr && `PNR ${f.pnr}`].filter(Boolean).join(" \u00b7 ");
+}
 
 const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
-type DragData = { kind: "new"; item: Omit<PlanItem, "id"> } | { kind: "move"; id: string; from: number };
+type DragData = { kind: "new"; item: Omit<PlanItem, "id">; group?: string } | { kind: "move"; id: string; from: number };
 
 export function PlanStep({
   plan,
@@ -42,14 +50,38 @@ export function PlanStep({
   const [overDay, setOverDay] = useState<number | null>(null);
   const [tab, setTab] = useState<"addons" | "custom">(ctx.pricing.addons.length ? "addons" : "custom");
   const [custom, setCustom] = useState<{ type: PlanItem["type"]; title: string; detail: string; price: string }>({ type: "activity", title: "", detail: "", price: "" });
+  const [flight, setFlight] = useState({ from: "", to: "", airline: "", number: "", time: "", pnr: "" });
   const [search, setSearch] = useState("");
 
   const lodgeName = (id: string | null) => ctx.properties.find((p) => p.id === id)?.name ?? "";
   const locName = (id: string) => ctx.locations.find((l) => l.id === id)?.name ?? "?";
   const parkLodges = new Set(plan.stops.map((s) => s.property_id));
-  const addons = ctx.pricing.addons
-    .filter((a) => !a.property_id || parkLodges.has(a.property_id))
-    .filter((a) => !search || a.name.toLowerCase().includes(search.toLowerCase()));
+  // Experiences: the same one at several lodges (bush dinner, nature walk, cycling) is a
+  // Pugdundee experience and shown once; one that exists at a single lodge is labelled
+  // with it. Naturalists are a tick on each safari, so they are not listed here.
+  const addonGroups = (() => {
+    const byName = new Map<string, typeof ctx.pricing.addons>();
+    for (const a of ctx.pricing.addons) {
+      if (a.active === false || /naturalist/i.test(a.name)) continue;
+      const k = normName(a.name);
+      byName.set(k, [...(byName.get(k) ?? []), a]);
+    }
+    const groups = [...byName.entries()].map(([key, entries]) => {
+      const shared = entries.length > 1 || entries.some((e) => !e.property_id);
+      const rates = entries.map((e) => e.rate);
+      return { key, name: entries[0].name, entries, shared, lodgeId: shared ? null : entries[0].property_id, min: Math.min(...rates), max: Math.max(...rates), unit: entries[0].pricing_unit };
+    });
+    return groups
+      .filter((g) => g.shared || (g.lodgeId && parkLodges.has(g.lodgeId)))
+      .filter((g) => !search || g.name.toLowerCase().includes(search.toLowerCase()))
+      .sort((a, b) => Number(b.shared) - Number(a.shared) || lodgeName(a.lodgeId).localeCompare(lodgeName(b.lodgeId)) || a.name.localeCompare(b.name));
+  })();
+  type AddonGroup = (typeof addonGroups)[number];
+  // The add-on for a given day: that day's lodge's own, else the general one, else any.
+  const addonFor = (g: AddonGroup, dayIndex: number) => {
+    const lodge = plan.days[dayIndex]?.property_id ?? null;
+    return g.entries.find((e) => e.property_id === lodge) ?? g.entries.find((e) => !e.property_id) ?? g.entries[0];
+  };
   const linePrice = (date: string, title: string) => result?.lines.find((l) => l.date === date && l.kind === "addon" && l.description === title)?.amount;
 
   // ---- day edits
@@ -64,6 +96,14 @@ export function PlanStep({
     if (kind === "safari" || kind === "leisure") kind = safaris.length ? "safari" : "leisure";
     const autoText = describe(ctx, day, plan.vehicle_type).text;
     const next: PlanDay = { ...day, safaris, kind };
+    setDay(i, () => (day.text === autoText ? describe(ctx, next, plan.vehicle_type) : next));
+  }
+
+  // Naturalist on one safari of a day (one per safari: never more than the safaris).
+  function setNaturalist(i: number, session: DaySafari["session"], on: boolean) {
+    const day = plan.days[i];
+    const next: PlanDay = { ...day, safaris: day.safaris.map((s) => (s.session === session ? { ...s, naturalist: on } : s)) };
+    const autoText = describe(ctx, day, plan.vehicle_type).text;
     setDay(i, () => (day.text === autoText ? describe(ctx, next, plan.vehicle_type) : next));
   }
 
@@ -92,7 +132,10 @@ export function PlanStep({
     setOverDay(null);
     try {
       const data = JSON.parse(e.dataTransfer.getData(DRAG_TYPE)) as DragData;
-      if (data.kind === "new") addItem(dayIndex, data.item);
+      if (data.kind === "new" && data.group) {
+        const g = addonGroups.find((x) => x.key === data.group);
+        if (g) addItem(dayIndex, addonItem(addonFor(g, dayIndex)));
+      } else if (data.kind === "new") addItem(dayIndex, data.item);
       else moveItem(data.id, data.from, dayIndex);
       setTargetDay(dayIndex);
     } catch {
@@ -101,9 +144,14 @@ export function PlanStep({
   };
 
   const customItem = (): Omit<PlanItem, "id"> | null => {
+    const price = Number(custom.price);
+    if (custom.type === "flight") {
+      if (!flight.from.trim() || !flight.to.trim()) return null;
+      const f = { from: flight.from.trim(), to: flight.to.trim(), airline: flight.airline.trim(), number: flight.number.trim(), time: flight.time.trim(), pnr: flight.pnr.trim() };
+      return { type: "flight", title: `Flight ${f.from} to ${f.to}`, detail: custom.detail.trim(), price: Number.isFinite(price) && price > 0 ? Math.round(price) : null, addon_id: null, qty: null, flight: f };
+    }
     const title = custom.title.trim();
     if (!title) return null;
-    const price = Number(custom.price);
     return { type: custom.type, title, detail: custom.detail.trim(), price: Number.isFinite(price) && price > 0 ? Math.round(price) : null, addon_id: null, qty: null };
   };
   const addonItem = (a: (typeof ctx.pricing.addons)[number]): Omit<PlanItem, "id"> => ({ type: "addon", title: a.name, detail: "", price: null, addon_id: a.id, qty: null });
@@ -166,11 +214,17 @@ export function PlanStep({
                 }}
                 onDragLeave={() => setOverDay((x) => (x === i ? null : x))}
                 onDrop={(e) => onDrop(e, i)}
-                className={`rounded-xl border bg-white transition ${overDay === i ? "border-olive-600 ring-2 ring-olive-200" : isTarget ? "border-olive-300" : "border-sand-200"}`}
+                className={`rounded-xl border bg-white transition ${overDay === i ? "border-olive-600 ring-2 ring-olive-200" : isTarget ? "border-2 border-olive-600 shadow-card" : "border-sand-200"}`}
               >
-                <button type="button" onClick={() => setTargetDay(i)} className="flex w-full items-center justify-between gap-2 border-b border-sand-100 px-3 py-2 text-left">
+                <button
+                  type="button"
+                  onClick={() => setTargetDay(i)}
+                  aria-pressed={isTarget}
+                  className={`flex w-full items-center justify-between gap-2 border-b px-3 py-2 text-left ${isTarget ? "rounded-t-xl border-olive-200 bg-olive-50" : "border-sand-100"}`}
+                >
                   <span className="flex items-baseline gap-2">
-                    <span className="text-sm font-semibold text-olive-700">Day {i + 1}</span>
+                    <span className={`text-sm text-olive-700 ${isTarget ? "font-bold" : "font-semibold"}`}>Day {i + 1}</span>
+                    {isTarget && <span className="rounded-full bg-olive-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">Adding here</span>}
                     <span className="text-xs uppercase tracking-wide text-sand-500">{dayName(d.date)} {fmtDate(d.date)}</span>
                   </span>
                   <span className="truncate text-xs text-sand-500">{d.property_id ? lodgeName(d.property_id) : "Departure"}</span>
@@ -197,19 +251,36 @@ export function PlanStep({
                         const closedBuffer = !!closureFor(ctx.pricing, d.park_id!, "buffer", session, d.date);
                         const value = d.safaris.find((s) => s.session === session)?.zone ?? "";
                         const onClosed = (value === "core" && closedCore) || (value === "buffer" && closedBuffer);
+                        const safari = d.safaris.find((s) => s.session === session);
+                        // Closed times are not offered at all (only shown if an older plan already has one).
+                        if (closedCore && closedBuffer && !value) {
+                          return (
+                            <span key={session} className="text-xs text-sand-400">
+                              {session === "morning" ? "Morning" : "Evening"}: park closed
+                            </span>
+                          );
+                        }
                         return (
-                          <label key={session} className="flex items-center gap-1.5 text-xs text-sand-600">
-                            {session === "morning" ? "Morning" : "Evening"}
-                            <select
-                              className={`rounded-md border bg-white px-1.5 py-0.5 text-xs ${onClosed ? "border-error text-error" : "border-sand-300"}`}
-                              value={value}
-                              onChange={(e) => setSafari(i, session, e.target.value as "" | "core" | "buffer")}
-                            >
-                              <option value="">No safari</option>
-                              <option value="core" disabled={closedCore && value !== "core"}>{closedCore ? "Core (closed)" : "Core"}</option>
-                              <option value="buffer" disabled={closedBuffer && value !== "buffer"}>{closedBuffer ? "Buffer (closed)" : "Buffer"}</option>
-                            </select>
-                          </label>
+                          <span key={session} className="flex items-center gap-1.5 text-xs text-sand-600">
+                            <label className="flex items-center gap-1.5">
+                              {session === "morning" ? "Morning" : "Evening"}
+                              <select
+                                className={`rounded-md border bg-white px-1.5 py-0.5 text-xs ${onClosed ? "border-error text-error" : "border-sand-300"}`}
+                                value={value}
+                                onChange={(e) => setSafari(i, session, e.target.value as "" | "core" | "buffer")}
+                              >
+                                <option value="">No safari</option>
+                                {(!closedCore || value === "core") && <option value="core">{closedCore ? "Core (closed)" : "Core"}</option>}
+                                {(!closedBuffer || value === "buffer") && <option value="buffer">{closedBuffer ? "Buffer (closed)" : "Buffer"}</option>}
+                              </select>
+                            </label>
+                            {safari && (
+                              <label className="flex items-center gap-1 rounded-md bg-sand-50 px-1.5 py-0.5" title="Accompanying naturalist on this safari">
+                                <input type="checkbox" className="h-3.5 w-3.5" checked={!!safari.naturalist} onChange={(e) => setNaturalist(i, session, e.target.checked)} />
+                                Naturalist
+                              </label>
+                            )}
+                          </span>
                         );
                       })}
                     </li>
@@ -231,6 +302,11 @@ export function PlanStep({
                         onChange={(e) => updateItem(i, it.id, { title: e.target.value })}
                         aria-label="Item name"
                       />
+                      {it.type === "flight" && (
+                        <span className="hidden max-w-[40%] truncate text-[11px] text-sand-500 sm:inline" title={flightSummary(it.flight)}>
+                          {flightSummary(it.flight) || "Subject to availability"}
+                        </span>
+                      )}
                       {it.addon_id ? (
                         <span className="tabular shrink-0 text-xs text-sand-600">{linePrice(d.date, it.title) !== undefined ? rupees(linePrice(d.date, it.title)!) : "-"}</span>
                       ) : (
@@ -267,7 +343,7 @@ export function PlanStep({
         </section>
 
         {/* ---------- items to add ---------- */}
-        <aside className="space-y-2 xl:sticky xl:top-24 xl:self-start" aria-label="Add items">
+        <aside className="space-y-2 xl:sticky xl:top-36 xl:max-h-[calc(100vh-10rem)] xl:self-start xl:overflow-y-auto" aria-label="Add items">
           <div className={`${ui.card} overflow-hidden`}>
             <div className="flex border-b border-sand-200 text-sm">
               {(["addons", "custom"] as const).map((t) => (
@@ -288,38 +364,59 @@ export function PlanStep({
             {tab === "addons" ? (
               <div className="space-y-2 p-3">
                 <input className={ui.inputSm} placeholder="Search add-ons" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search add-ons" />
-                {addons.length === 0 ? (
-                  <p className="py-4 text-center text-xs text-sand-500">No add-ons for these lodges. Use Custom item, or add them in Master data.</p>
+                {addonGroups.length === 0 ? (
+                  <p className="py-4 text-center text-xs text-sand-500">No experiences for these lodges. Use Custom item, or add them in Master data.</p>
                 ) : (
-                  <ul className="max-h-[420px] space-y-1.5 overflow-y-auto">
-                    {addons.map((a) => (
-                      <li
-                        key={a.id}
-                        draggable
-                        onDragStart={(e) => onDragStart(e, { kind: "new", item: addonItem(a) })}
-                        className="flex cursor-grab items-center gap-2 rounded-lg border border-sand-200 px-2.5 py-1.5 hover:border-olive-300 hover:bg-olive-50/50"
-                      >
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium text-olive-800">{a.name}</span>
-                          <span className="block truncate text-[11px] text-sand-500">
-                            {rupees(a.rate)} {a.pricing_unit.replace("_", " ")}
-                            {a.property_id ? ` \u00b7 ${lodgeName(a.property_id)}` : ""}
-                          </span>
-                        </span>
-                        <button type="button" className={`${ui.btnSecondary} ${ui.btnSm} !min-h-7 shrink-0 !px-2`} onClick={() => addItem(targetDay, addonItem(a))}>
-                          Add
-                        </button>
-                      </li>
-                    ))}
+                  <ul className="max-h-[440px] space-y-1.5 overflow-y-auto">
+                    {addonGroups.map((g, k) => {
+                      const header = k === 0 || addonGroups[k - 1].shared !== g.shared || addonGroups[k - 1].lodgeId !== g.lodgeId;
+                      return (
+                        <li key={g.key}>
+                          {header && (
+                            <p className="mb-1 mt-2 text-[10px] font-bold uppercase tracking-wide text-sand-500 first:mt-0">
+                              {g.shared ? "Pugdundee experiences (all lodges)" : `Only at ${lodgeName(g.lodgeId)}`}
+                            </p>
+                          )}
+                          <div
+                            draggable
+                            onDragStart={(e) => onDragStart(e, { kind: "new", item: addonItem(g.entries[0]), group: g.key })}
+                            className="flex cursor-grab items-center gap-2 rounded-lg border border-sand-200 px-2.5 py-1.5 hover:border-olive-300 hover:bg-olive-50/50"
+                          >
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium text-olive-800">{g.name}</span>
+                              <span className="block truncate text-[11px] text-sand-500">
+                                {g.min === g.max ? rupees(g.min) : `from ${rupees(g.min)}`} {g.unit.replace("_", " ")} + GST
+                              </span>
+                            </span>
+                            <button type="button" className={`${ui.btnSecondary} ${ui.btnSm} !min-h-7 shrink-0 !px-2`} onClick={() => addItem(targetDay, addonItem(addonFor(g, targetDay)))}>
+                              Add
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>
             ) : (
               <div className="space-y-2 p-3">
                 <select className={`${ui.select} w-full !py-1.5 text-sm`} value={custom.type} onChange={(e) => setCustom((c) => ({ ...c, type: e.target.value as PlanItem["type"] }))} aria-label="Item type">
-                  {(["activity", "hotel", "transfer", "meal", "note"] as const).map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
+                  {(["activity", "hotel", "flight", "transfer", "meal", "note"] as const).map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
                 </select>
-                <input className={ui.inputSm} placeholder="Name, e.g. Village walk, Taj Hotel Jabalpur" value={custom.title} onChange={(e) => setCustom((c) => ({ ...c, title: e.target.value }))} aria-label="Item name" />
+                {custom.type === "flight" ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <datalist id="lq-airports">{AIRPORTS.map((a) => <option key={a} value={a} />)}</datalist>
+                    <input className={ui.inputSm} list="lq-airports" placeholder="From, e.g. Delhi" value={flight.from} onChange={(e) => setFlight((f) => ({ ...f, from: e.target.value }))} aria-label="Flight from" />
+                    <input className={ui.inputSm} list="lq-airports" placeholder="To, e.g. Jabalpur" value={flight.to} onChange={(e) => setFlight((f) => ({ ...f, to: e.target.value }))} aria-label="Flight to" />
+                    <input className={ui.inputSm} placeholder="Airline" value={flight.airline} onChange={(e) => setFlight((f) => ({ ...f, airline: e.target.value }))} aria-label="Airline" />
+                    <input className={ui.inputSm} placeholder="Flight no." value={flight.number} onChange={(e) => setFlight((f) => ({ ...f, number: e.target.value }))} aria-label="Flight number" />
+                    <input className={ui.inputSm} type="time" value={flight.time} onChange={(e) => setFlight((f) => ({ ...f, time: e.target.value }))} aria-label="Departure time" />
+                    <input className={ui.inputSm} placeholder="PNR (once booked)" value={flight.pnr} onChange={(e) => setFlight((f) => ({ ...f, pnr: e.target.value }))} aria-label="PNR" />
+                    <p className="col-span-2 text-[11px] text-sand-500">Without a PNR the guest sees: subject to availability and fares at the time of booking.</p>
+                  </div>
+                ) : (
+                  <input className={ui.inputSm} placeholder="Name, e.g. Village walk, Taj Hotel Jabalpur" value={custom.title} onChange={(e) => setCustom((c) => ({ ...c, title: e.target.value }))} aria-label="Item name" />
+                )}
                 <input className={ui.inputSm} placeholder="Details for the guest (optional)" value={custom.detail} onChange={(e) => setCustom((c) => ({ ...c, detail: e.target.value }))} aria-label="Item details" />
                 <input
                   className={`${ui.inputSm} tabular`}
@@ -346,6 +443,7 @@ export function PlanStep({
                           if (!item) return;
                           addItem(targetDay, item);
                           setCustom((c) => ({ ...c, title: "", detail: "", price: "" }));
+                          setFlight({ from: "", to: "", airline: "", number: "", time: "", pnr: "" });
                         }}
                       >
                         <Icon name="plus" className="h-4 w-4" />
@@ -363,10 +461,58 @@ export function PlanStep({
           {/* ---------- price adjustments (folded away) ---------- */}
           <details className={`${ui.card} group`}>
             <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-sm font-semibold text-olive-800">
-              Offers, markup, currency
+              Discount, offers, markup, currency
+              {plan.discount && plan.discount.pct > 0 && <span className="ml-auto mr-2 rounded-full bg-olive-50 px-2 py-0.5 text-[11px] font-semibold text-olive-700">{plan.discount.pct}% off</span>}
               <Icon name="chevronLeft" className="h-4 w-4 -rotate-90 text-sand-500 transition group-open:rotate-90" />
             </summary>
             <div className="space-y-3 border-t border-sand-200 p-3 text-sm">
+              <div className="space-y-2 rounded-lg border border-sand-200 p-2.5">
+                <p className={ui.label}>Discount</p>
+                <div className="grid grid-cols-[5.5rem_1fr] gap-2">
+                  <label className="block">
+                    <span className="sr-only">Discount %</span>
+                    <div className="flex items-center gap-1">
+                      <input
+                        className={ui.inputSm}
+                        type="number"
+                        min={0}
+                        max={100}
+                        step="any"
+                        placeholder="0"
+                        value={plan.discount?.pct ?? ""}
+                        onChange={(e) => {
+                          const pct = Math.max(0, Math.min(100, Number(e.target.value)));
+                          setPlan((p) => ({ ...p, discount: e.target.value === "" || !pct ? null : { pct, scope: p.discount?.scope ?? "lodges", reason: p.discount?.reason ?? "" } }));
+                        }}
+                        aria-label="Discount percent"
+                      />
+                      <span className="text-sm text-sand-500">%</span>
+                    </div>
+                  </label>
+                  <select
+                    className={`${ui.select} w-full !py-2 text-xs`}
+                    disabled={!plan.discount}
+                    value={plan.discount?.scope ?? "lodges"}
+                    onChange={(e) => setPlan((p) => (p.discount ? { ...p, discount: { ...p.discount, scope: e.target.value as "lodges" | "all" } } : p))}
+                    aria-label="Discount applies to"
+                  >
+                    <option value="lodges">on accommodation at our lodges</option>
+                    <option value="all">on the whole itinerary</option>
+                  </select>
+                </div>
+                {plan.discount && (
+                  <label className="block">
+                    <span className={ui.label}>Reason (internal) <span className="text-error">*</span></span>
+                    <input
+                      className={`${ui.inputSm} ${!plan.discount.reason.trim() ? "!border-error" : ""}`}
+                      value={plan.discount.reason}
+                      onChange={(e) => setPlan((p) => (p.discount ? { ...p, discount: { ...p.discount, reason: e.target.value } } : p))}
+                      placeholder="e.g. Repeat guest, agent rate, long stay"
+                    />
+                    <span className="mt-1 block text-[11px] text-sand-500">Not shown to the guest.</span>
+                  </label>
+                )}
+              </div>
               {ctx.pricing.offers.length > 0 && (
                 <div className="space-y-1">
                   <p className={ui.label}>Offers</p>

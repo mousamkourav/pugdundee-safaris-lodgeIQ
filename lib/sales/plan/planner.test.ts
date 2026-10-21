@@ -1,7 +1,7 @@
 // Run with:  npx tsx --test lib/sales/plan/planner.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildDays, emptyPlan, planToTrip, defaultStop } from "./planner";
+import { buildDays, emptyPlan, planToTrip, defaultStop, describe } from "./planner";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 import { data } from "@/lib/sales/pricing/sheet-fixture";
 import type { BuilderContext, Plan } from "./types";
@@ -48,7 +48,7 @@ test("route Tadoba 4 + Pench 3 builds the sheet's 8 days", () => {
   // Tuesday 19 Jan: Tadoba core closed -> both safaris in the buffer zone
   const tue = p.days.find((d) => d.date === "2027-01-19")!;
   assert.deepEqual(tue.safaris.map((s) => s.zone), ["buffer", "buffer"]);
-  assert.ok(tue.notes[0].includes("buffer zone used"));
+  assert.ok(tue.notes[0].includes("buffer can be used"));
   assert.ok(p.days[0].text.includes("Nagpur Airport") && p.days[0].text.includes("2.5 hours"));
 });
 
@@ -87,4 +87,18 @@ test("items added by hand survive a rebuild and are priced", async () => {
   const back = sanitizePlan(JSON.parse(JSON.stringify(p)))!;
   assert.equal(back.days[1].items[0].price, 8000);
   assert.equal(back.manual_prices["transfer|2027-01-16|NAG|L_WEL"], 7000);
+});
+
+test("day text: no 'resident naturalist'; naturalist sentence only when ticked; flights priced as flights", () => {
+  const p = sheetPlan();
+  const safariDay = p.days.find((d) => d.kind === "safari")!;
+  assert.ok(!/resident/i.test(safariDay.text), safariDay.text);
+  assert.ok(!/naturalist/i.test(safariDay.text));
+  const ticked = describe(ctx, { ...safariDay, safaris: safariDay.safaris.map((s, i) => ({ ...s, naturalist: i === 0 })) }, null);
+  assert.match(ticked.text, /naturalist accompanies the morning safari/);
+  const both = describe(ctx, { ...safariDay, safaris: safariDay.safaris.map((s) => ({ ...s, naturalist: true })) }, null);
+  assert.match(both.text, /Each safari is accompanied by a naturalist/);
+  p.days[0].items = [{ id: "f", type: "flight", title: "Flight Delhi to Nagpur", detail: "", price: 12000, addon_id: null, qty: null, flight: { from: "Delhi", to: "Nagpur", airline: "IndiGo", number: "6E 123", time: "08:30", pnr: "" } }];
+  const t = planToTrip(p, "2026-10-05");
+  assert.deepEqual(t.custom_items, [{ date: p.days[0].date, title: "Flight Delhi to Nagpur", amount: 12000, group: "flight" }]);
 });

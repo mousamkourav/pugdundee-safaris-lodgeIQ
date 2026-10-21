@@ -26,6 +26,18 @@ const lines = (s: string) =>
     .map((x) => x.replace(/^[-*\u2022]\s*/, "").trim())
     .filter(Boolean);
 
+// The same line from several parks or lodges ("The park is closed on Wednesday
+// afternoons...") is shown once.
+const unique = (xs: string[]) => {
+  const seen = new Set<string>();
+  return xs.filter((x) => {
+    const k = x.toLowerCase().replace(/\s+/g, " ").replace(/[.\s]+$/, "");
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+};
+
 const MEALS: Record<string, string> = { AP: "all meals", MAP: "breakfast and dinner", CP: "breakfast", EP: "room only" };
 
 export function defaultDraft(plan: Plan, inp: DraftInputs): DraftSections {
@@ -46,16 +58,16 @@ export function defaultDraft(plan: Plan, inp: DraftInputs): DraftSections {
     return [main, ...specific].filter((b): b is ContentBlock => !!b).map((b) => b.body);
   };
 
-  const inclusions = textsFor("inclusions").flatMap(lines);
-  const exclusions = textsFor("exclusions").flatMap(lines);
-  const cancellation = textsFor("cancellation_terms").flatMap(lines);
+  const inclusions = unique(textsFor("inclusions").flatMap(lines));
+  const exclusions = unique(textsFor("exclusions").flatMap(lines));
+  const cancellation = unique(textsFor("cancellation_terms").flatMap(lines));
 
   return {
     title: parks.length ? `${parks.join(" & ")} Safari` : "Your safari",
     about:
       textsFor("about_trip")[0] ??
       (nights
-        ? `A ${nights}-night journey through ${parks.join(", ")}, staying at ${lodges.join(" and ")}, with resident naturalists on every safari.`
+        ? `A ${nights}-night journey through ${parks.join(", ")}, staying at ${lodges.join(" and ")}.`
         : ""),
     inclusions: inclusions.length
       ? inclusions
@@ -69,7 +81,7 @@ export function defaultDraft(plan: Plan, inp: DraftInputs): DraftSections {
     exclusions: exclusions.length
       ? exclusions
       : ["Flights and train tickets", "Drinks, laundry and personal expenses", "Tips and gratuities", "Anything not listed under inclusions"],
-    notes: textsFor("important_notes").flatMap(lines),
+    notes: unique(textsFor("important_notes").flatMap(lines)),
     paymentTerms: textsFor("payment_terms").join("\n"),
     cancellation: cancellation.length
       ? cancellation

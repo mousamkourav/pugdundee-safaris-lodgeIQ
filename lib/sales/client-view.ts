@@ -7,6 +7,7 @@ import { addDays } from "@/lib/sales/pricing/dates";
 import { MEDIA_BUCKET } from "@/lib/sales/master/types";
 import type { Plan } from "@/lib/sales/plan/types";
 import { defaultDraft, withEdits } from "@/lib/sales/plan/draft";
+import { priceBreakdown } from "@/lib/sales/pricing/breakdown";
 import type { Instalment, PriceResult } from "@/lib/sales/pricing/types";
 
 type Row = Record<string, unknown>;
@@ -27,8 +28,12 @@ export interface ClientView {
   perPerson: number; // in quote currency
   payments: (Instalment & { amountInCurrency: number })[];
   validUntil: string;
+  quotedOn: string; // when this version was prepared
+  // What the sales member chose to show: prices at all, and the breakup with GST.
+  show: { prices: boolean; breakup: boolean };
+  breakup: { label: string; amount: number; gst?: boolean }[]; // in quote currency
   heroUrl: string | null;
-  lodges: { id: string; name: string; description: string; photos: string[] }[];
+  lodges: { id: string; name: string; description: string; photos: string[]; website: string | null }[];
   parkNames: Record<string, string>;
   lodgeNames: Record<string, string>;
   sections: {
@@ -67,7 +72,7 @@ export async function loadClientView(token: string): Promise<ClientView | null> 
   const parkIds = [...new Set(plan.stops.map((s) => s.park_id))];
 
   const [props, parks, media, brand, blocks, settings, consultant] = await Promise.all([
-    db.from("sales_properties").select("id, name, short_desc, long_desc").in("id", propertyIds),
+    db.from("sales_properties").select("id, name, short_desc, long_desc, website").in("id", propertyIds),
     db.from("sales_parks").select("id, name").in("id", parkIds),
     db.from("sales_media").select("owner_id, storage_path, is_cover, sort").eq("owner_type", "property").in("owner_id", propertyIds).order("sort"),
     db.from("sales_media").select("storage_path, is_cover, sort").eq("owner_type", "brand").is("owner_id", null).order("is_cover", { ascending: false }).order("sort").limit(1),
@@ -91,7 +96,14 @@ export async function loadClientView(token: string): Promise<ClientView | null> 
   const propRows = rows(props);
   const lodges = propertyIds.map((id) => {
     const p = propRows.find((r) => r.id === id) ?? {};
-    return { id, name: String(p.name ?? ""), description: String(p.long_desc || p.short_desc || ""), photos: photosOf(id) };
+    const site = String(p.website ?? "").trim();
+    return {
+      id,
+      name: String(p.name ?? ""),
+      description: String(p.long_desc || p.short_desc || ""),
+      photos: photosOf(id),
+      website: site ? (/^https?:\/\//i.test(site) ? site : `https://${site}`) : null,
+    };
   });
   const lodgeNames = Object.fromEntries(lodges.map((l) => [l.id, l.name]));
   const parkNames = Object.fromEntries(rows(parks).map((r) => [String(r.id), String(r.name)]));
@@ -139,6 +151,9 @@ export async function loadClientView(token: string): Promise<ClientView | null> 
     perPerson: conv(pricing.perPerson),
     payments: pricing.payments.map((p) => ({ ...p, amountInCurrency: conv(p.amount) })),
     validUntil: addDays(version.created_at.slice(0, 10), validity),
+    quotedOn: version.created_at.slice(0, 10),
+    show: { prices: plan.client?.show_prices !== false, breakup: plan.client?.show_breakup === true },
+    breakup: priceBreakdown(pricing).rows.map((r) => ({ label: r.label, amount: conv(r.amount), ...(r.key === "gst" ? { gst: true } : {}) })),
     heroUrl,
     lodges,
     parkNames,

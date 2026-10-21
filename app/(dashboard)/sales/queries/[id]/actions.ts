@@ -9,7 +9,8 @@ export type StatusInput =
   | { to: "booked"; amount: number; paymentRef: string; paymentDate: string; remark?: string }
   | { to: "lost"; reason: string; remark: string }
   | { to: "cancelled"; reason: string; remark: string; cancelCharge?: number | null; refund?: number | null }
-  | { to: "open"; remark: string };
+  | { to: "open"; remark: string }
+  | { to: "quoted"; remark?: string };
 
 type Result = { ok?: boolean; error?: string };
 
@@ -17,7 +18,8 @@ const isDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
 const clean = (v: string | undefined, max = 1000) => (v ?? "").trim().slice(0, max);
 
 // The database trigger (sales_queries_guard_update) is the real referee:
-// it allows only open->booked/lost, booked->cancelled, lost/cancelled->open,
+// it allows only draft->open, open->quoted/booked/lost, quoted->booked/lost/open,
+// booked->cancelled, lost/cancelled->open,
 // demands remarks and payment details, and writes the history row. These
 // checks just give friendlier messages first.
 async function changeStatusUnsafe(queryId: string, input: StatusInput): Promise<Result> {
@@ -56,6 +58,11 @@ async function changeStatusUnsafe(queryId: string, input: StatusInput): Promise<
         refund_amount: input.refund ?? null,
         status_remark: clean(input.remark),
       };
+      break;
+    }
+    case "quoted": {
+      // The quote has been sent to the guest. The database stamps quoted_at.
+      update = { status: "quoted", status_remark: clean(input.remark) || null };
       break;
     }
     case "open": {

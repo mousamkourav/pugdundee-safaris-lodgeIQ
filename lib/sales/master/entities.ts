@@ -119,6 +119,7 @@ export const ENTITIES: EntityDef[] = [
       { name: "short_desc", label: "Short description", type: "textarea", wide: true },
       { name: "long_desc", label: "Long description", type: "textarea", wide: true, help: "Shown in the client itinerary." },
       { name: "address", label: "Address", type: "textarea", wide: true },
+      { name: "website", label: "Website", type: "text", placeholder: "https://www.kingslodge.in/", help: "Shown with the lodge on the guest itinerary." },
       { name: "lat", label: "Latitude", type: "number" },
       { name: "lng", label: "Longitude", type: "number" },
       { name: "check_in_time", label: "Check-in time", type: "time" },

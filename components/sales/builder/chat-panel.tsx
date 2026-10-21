@@ -31,13 +31,14 @@ export function ChatPanel({
     if (!t || busy) return;
     onSend(t);
     setText("");
+    if (inputRef.current) inputRef.current.style.height = "";
     inputRef.current?.focus();
   }
 
   const last = messages[messages.length - 1];
 
   return (
-    <section className={`${ui.card} flex h-[min(62vh,560px)] min-h-[380px] flex-col overflow-hidden`} aria-label="Trip assistant">
+    <section className={`${ui.card} flex flex-col overflow-hidden`} aria-label="Trip assistant">
       <header className="flex items-center gap-2 border-b border-sand-200 px-3 py-2">
         <span className="grid h-8 w-8 place-items-center rounded-full bg-olive-600 text-white">
           <Icon name="send" className="h-4 w-4" />
@@ -48,7 +49,7 @@ export function ChatPanel({
         </div>
       </header>
 
-      <div className="flex-1 space-y-3 overflow-y-auto bg-sand-50 p-3" aria-live="polite">
+      <div className="max-h-[min(55vh,520px)] min-h-[140px] space-y-3 overflow-y-auto bg-sand-50 p-3" aria-live="polite">
         {messages.map((m, i) =>
           m.role === "user" ? (
             <div key={i} className="flex justify-end">
@@ -113,9 +114,14 @@ export function ChatPanel({
         <div className="flex items-end gap-2">
           <textarea
             ref={inputRef}
-            rows={2}
+            rows={4}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              // grow with the text, up to about 12 lines
+              e.target.style.height = "auto";
+              e.target.style.height = `${Math.min(e.target.scrollHeight, 280)}px`;
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -123,7 +129,7 @@ export function ChatPanel({
               }
             }}
             placeholder='Type the trip or a change, e.g. "make Pench 2 nights"'
-            className={`${ui.inputSm} resize-none`}
+            className={`${ui.inputSm} min-h-[96px] resize-y leading-relaxed`}
             aria-label="Message to the trip assistant"
           />
           <button type="button" onClick={send} disabled={busy || !text.trim()} className={`${ui.btnPrimary} shrink-0`} aria-label="Send">

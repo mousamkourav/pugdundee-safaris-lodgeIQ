@@ -49,7 +49,10 @@ export const DEFAULT_PAYMENT_SLABS: PaymentSlab[] = [
 ];
 
 function withTax(base: number, taxPct: number, included: boolean) {
-  if (included || !taxPct) return { amount: round(base), tax: 0 };
+  if (!taxPct) return { amount: round(base), tax: 0 };
+  // Rate already includes GST: the amount stays, but record the GST inside it
+  // so the price breakup can show it separately.
+  if (included) return { amount: round(base), tax: round(base - base / (1 + taxPct / 100)) };
   const tax = round((base * taxPct) / 100);
   return { amount: round(base) + tax, tax };
 }
@@ -175,6 +178,30 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     trip.stays.find((s) => date >= s.check_in && date < addDays(s.check_in, s.nights)) ??
     trip.stays.find((s) => date === addDays(s.check_in, s.nights));
 
+  // Accompanying naturalist, per jeep, only on safaris where it is ticked. The fee
+  // comes from the safari rate, else the lodge's (or a general) "naturalist" add-on,
+  // else a price the sales person types.
+  const priceNaturalist = (s: TripInput["safaris"][number], rate: ReturnType<typeof pickSafariRate>, billTo: string | null, where: string) => {
+    const vehicles = s.vehicles ?? Math.max(1, Math.ceil(guests / Math.max(1, rate?.max_pax ?? 6)));
+    const label = `Accompanying naturalist, ${where}`;
+    if (rate && rate.naturalist_fee > 0) {
+      const { amount, tax } = withTax(rate.naturalist_fee * vehicles, rate.tax_pct, false);
+      lines.push({ kind: "safari", group: "naturalist", date: s.date, description: label, quantity: vehicles, unit_price: rate.naturalist_fee, amount, tax, property_id: billTo, ref_id: s.park_id });
+      return;
+    }
+    const nat = (data.addons ?? []).filter((a) => a.active !== false && /naturalist/i.test(a.name));
+    const addon = nat.find((a) => a.property_id === billTo) ?? nat.find((a) => !a.property_id) ?? null;
+    if (addon) {
+      const { amount, tax } = withTax(addon.rate * vehicles, addon.tax_pct, false);
+      lines.push({ kind: "safari", group: "naturalist", date: s.date, description: label, quantity: vehicles, unit_price: addon.rate, amount, tax, property_id: billTo, ref_id: addon.id });
+      return;
+    }
+    const key = `naturalist|${s.park_id}`;
+    needPrice({ key, kind: "naturalist", label: `Naturalist in ${parkName(s.park_id)}`, unit: "per safari, all jeeps, incl. tax", date: s.date }, "no naturalist rate");
+    const amount = manual[key] !== undefined ? round(manual[key]) : 0;
+    lines.push({ kind: "safari", group: "naturalist", date: s.date, description: label, quantity: 1, unit_price: amount, amount, tax: 0, property_id: billTo, ref_id: null, ...(manual[key] !== undefined ? { manual: true } : { missing: true }), key });
+  };
+
   // ---------------- safaris ----------------
   for (const s of trip.safaris) {
     const sessionName = s.session === "afternoon" ? "evening" : s.session.replace("_", " ");
@@ -188,6 +215,7 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
 
     const rate = pickSafariRate(data.safariRates, s, trip.nationality);
     const billTo = stayOn(s.date)?.property_id ?? null;
+    if (s.naturalist) priceNaturalist(s, rate, billTo, where);
     if (!rate) {
       const key = `safari|${s.park_id}|${s.zone}|${s.session}|${s.vehicle_type ?? "exclusive_jeep"}`;
       const safariMissing: MissingPrice = { key, kind: "safari", label: `${where}`, unit: "per safari, all jeeps, incl. tax", date: s.date };
@@ -203,7 +231,8 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     const weekend = rate.weekend_days.includes(weekday(s.date));
     const unit = weekend && rate.weekend_rate != null ? rate.weekend_rate : rate.weekday_rate;
     const vehicles = s.vehicles ?? Math.max(1, Math.ceil(guests / Math.max(1, rate.max_pax)));
-    const fees = (rate.naturalist_fee + rate.guide_fee) * vehicles;
+    // The naturalist is charged only when ticked (see priceNaturalist); the guide fee always.
+    const fees = rate.guide_fee * vehicles;
     const base = rate.pricing_unit === "per_seat" ? unit * guests + fees : unit * vehicles + fees;
     const { amount, tax } = withTax(base, rate.tax_pct, false);
     const qty = rate.pricing_unit === "per_seat" ? guests : vehicles;
@@ -276,7 +305,7 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
   for (const c of trip.custom_items ?? []) {
     const amount = round(c.amount || 0);
     if (!amount) continue;
-    lines.push({ kind: "addon", date: c.date, description: c.title, quantity: 1, unit_price: amount, amount, tax: 0, property_id: stayOn(c.date)?.property_id ?? null, ref_id: null, manual: true });
+    lines.push({ kind: "addon", ...(c.group === "flight" ? { group: "flight" as const } : {}), date: c.date, description: c.title, quantity: 1, unit_price: amount, amount, tax: 0, property_id: stayOn(c.date)?.property_id ?? null, ref_id: null, manual: true });
   }
 
   // ---------------- offers ----------------
@@ -346,6 +375,35 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     for (const [pid, amt] of discountBy) {
       if (amt > 0) lines.push({ kind: "discount", date: null, description: offer.name, quantity: 1, unit_price: -amt, amount: -amt, tax: 0, property_id: pid, ref_id: offer.id });
     }
+  }
+
+  // ---------------- % discount ----------------
+  // On accommodation at our own lodges, or on the whole itinerary. GST is
+  // reduced in proportion, so the breakup (net + GST) still adds up exactly.
+  const disc = trip.discount;
+  if (disc && disc.pct > 0) {
+    if (disc.pct > 100) errors.push("The discount cannot be more than 100%.");
+    if (!disc.reason?.trim()) errors.push("A discount needs a reason (for internal use).");
+    const own = new Set(data.properties.filter((p) => (p.kind ?? "own_lodge") === "own_lodge").map((p) => p.id));
+    const base = lines.filter((l) =>
+      disc.scope === "lodges" ? l.kind === "room" && !!l.property_id && own.has(l.property_id) : ["room", "safari", "transfer", "addon", "discount"].includes(l.kind)
+    );
+    const pct = Math.min(100, disc.pct);
+    const label = disc.scope === "lodges" ? `Discount ${pct}% on accommodation at our lodges` : `Discount ${pct}% on the itinerary`;
+    const byLodge = new Map<string | null, { amount: number; tax: number }>();
+    for (const l of base) {
+      const key = disc.scope === "lodges" ? l.property_id : null;
+      const t = byLodge.get(key) ?? { amount: 0, tax: 0 };
+      t.amount += l.amount;
+      t.tax += l.tax;
+      byLodge.set(key, t);
+    }
+    for (const [pid, t] of byLodge) {
+      const amt = round((t.amount * pct) / 100);
+      const tax = round((t.tax * pct) / 100);
+      if (amt > 0) lines.push({ kind: "discount", date: null, description: label, quantity: 1, unit_price: -amt, amount: -amt, tax: -tax, property_id: pid, ref_id: null });
+    }
+    if (!base.length) warnings.push(disc.scope === "lodges" ? "The discount applies to our own lodges, and this trip has none." : "There is nothing to discount yet.");
   }
 
   // ---------------- totals, markup, adjustment ----------------

@@ -15,6 +15,7 @@ interface Totals {
   draft: number;
   created: number;
   open: number;
+  quoted: number;
   booked: number;
   lost: number;
   cancelled: number;
@@ -23,7 +24,7 @@ interface Totals {
 }
 
 function summarise(rows: QueryRow[]): Totals {
-  const t: Totals = { draft: 0, created: 0, open: 0, booked: 0, lost: 0, cancelled: 0, bookedValue: 0, pendingValue: 0 };
+  const t: Totals = { draft: 0, created: 0, open: 0, quoted: 0, booked: 0, lost: 0, cancelled: 0, bookedValue: 0, pendingValue: 0 };
   for (const r of rows) {
     // Drafts have not been quoted yet: counted on their own, not in created or conversion.
     if (r.status === "draft") {
@@ -33,7 +34,7 @@ function summarise(rows: QueryRow[]): Totals {
     t.created += 1;
     t[r.status] += 1;
     if (r.status === "booked") t.bookedValue += Number(r.booked_amount ?? r.total_amount ?? 0);
-    if (r.status === "open") t.pendingValue += Number(r.total_amount ?? 0);
+    if (r.status === "open" || r.status === "quoted") t.pendingValue += Number(r.total_amount ?? 0);
   }
   return t;
 }
@@ -59,7 +60,7 @@ export default async function SalesDashboard({
   const t = summarise(period);
 
   // Follow-up list: every open query regardless of period, oldest first.
-  let openQ = supabase.from("sales_queries").select(QUERY_LIST_COLUMNS).eq("status", "open");
+  let openQ = supabase.from("sales_queries").select(QUERY_LIST_COLUMNS).in("status", ["open", "quoted"]);
   if (!admin) openQ = openQ.eq("assigned_to", user.id);
   const { data: openData } = await openQ.order("created_at", { ascending: true }).limit(10);
   const openRows = (openData ?? []) as unknown as QueryRow[];
@@ -121,6 +122,7 @@ export default async function SalesDashboard({
         <StatCard label="Created" value={t.created} />
         <StatCard label="Booked" value={t.booked} valueClass="!text-success" hint={`Conversion ${pct(t.booked, t.created)}%`} />
         <StatCard label="Open" value={t.open} valueClass="!text-warning" />
+        <StatCard label="Quoted" value={t.quoted} hint="Sent, awaiting reply" />
         <StatCard label="Lost / cancelled" value={`${t.lost} / ${t.cancelled}`} />
         <Link href="/sales/queries?status=draft" className="block">
           <StatCard label="Drafts" value={t.draft} hint="Saved, not yet sent" />

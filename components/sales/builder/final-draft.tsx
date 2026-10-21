@@ -5,6 +5,8 @@ import { Icon } from "@/components/icons";
 import { rupees, fmtDate } from "@/lib/sales/format";
 import { dayName } from "@/lib/sales/pricing/dates";
 import { defaultDraft, withEdits, type DraftInputs } from "@/lib/sales/plan/draft";
+import { priceBreakdown } from "@/lib/sales/pricing/breakdown";
+import { flightSummary } from "./plan-step";
 import type { PriceResult } from "@/lib/sales/pricing/types";
 import type { BuilderContext, Plan, PlanDraft } from "@/lib/sales/plan/types";
 
@@ -149,6 +151,7 @@ export function FinalDraft({
                         {d.items.map((it) => (
                           <li key={it.id}>
                             <span className="font-medium text-olive-800">{it.title}</span>
+                            {it.type === "flight" && <span className="text-sand-600"> - {flightSummary(it.flight) || "subject to availability and fares at the time of booking"}</span>}
                             {it.detail && <span className="text-sand-600"> - {it.detail}</span>}
                           </li>
                         ))}
@@ -164,19 +167,64 @@ export function FinalDraft({
             </ol>
           </section>
 
-          {result && (
-            <section className="grid gap-4 rounded-xl bg-sand-100 p-5 sm:grid-cols-2">
-              <div>
-                <p className="eyebrow">Package price</p>
-                <p className="tabular mt-1 font-display text-2xl font-semibold text-olive-800">{rupees(result.perPerson)}</p>
-                <p className="text-sm text-sand-500">per person</p>
+          {/* what the guest sees about prices */}
+          <section className="flex flex-wrap gap-x-6 gap-y-2 rounded-xl border border-dashed border-sand-300 px-4 py-3 text-sm print:hidden">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={plan.client?.show_prices !== false}
+                onChange={(e) => setPlan((p) => ({ ...p, client: { show_prices: e.target.checked, show_breakup: e.target.checked ? !!p.client?.show_breakup : false } }))}
+              />
+              Show prices to the guest
+            </label>
+            <label className={`flex items-center gap-2 ${plan.client?.show_prices === false ? "opacity-50" : ""}`}>
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                disabled={plan.client?.show_prices === false}
+                checked={!!plan.client?.show_breakup && plan.client?.show_prices !== false}
+                onChange={(e) => setPlan((p) => ({ ...p, client: { show_prices: true, show_breakup: e.target.checked } }))}
+              />
+              Show the price breakup with GST
+            </label>
+            <span className="w-full text-xs text-sand-500">The breakup is always on the query page for internal use. The PDF follows these choices.</span>
+          </section>
+
+          {result && plan.client?.show_prices === false && (
+            <p className="rounded-xl bg-sand-100 p-4 text-sm text-sand-600">Prices are hidden from the guest. Payment terms show percentages only.</p>
+          )}
+          {result && plan.client?.show_prices !== false && (
+            <section className="space-y-3 rounded-xl bg-sand-100 p-5">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <p className="eyebrow">Package price</p>
+                  <p className="tabular mt-1 font-display text-2xl font-semibold text-olive-800">{rupees(result.perPerson)}</p>
+                  <p className="text-sm text-sand-500">per person</p>
+                </div>
+                <div className="sm:text-right">
+                  <p className="eyebrow">Total</p>
+                  <p className="tabular mt-1 font-display text-xl font-semibold text-olive-800">
+                    {result.currency === "USD" && result.fx ? `USD ${result.grandInCurrency.toLocaleString("en-US")}` : rupees(result.totals.grand)}
+                  </p>
+                </div>
               </div>
-              <div className="sm:text-right">
-                <p className="eyebrow">Total</p>
-                <p className="tabular mt-1 font-display text-xl font-semibold text-olive-800">
-                  {result.currency === "USD" && result.fx ? `USD ${result.grandInCurrency.toLocaleString("en-US")}` : rupees(result.totals.grand)}
-                </p>
-              </div>
+              {plan.client?.show_breakup && (
+                <table className="w-full text-sm">
+                  <tbody>
+                    {priceBreakdown(result).rows.map((r) => (
+                      <tr key={r.key} className={r.key === "gst" ? "border-t border-sand-300" : ""}>
+                        <td className="py-1">{r.label}</td>
+                        <td className="tabular py-1 text-right">{rupees(r.amount)}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t border-sand-300 font-semibold text-olive-800">
+                      <td className="py-1.5">Total including GST</td>
+                      <td className="tabular py-1.5 text-right">{rupees(result.totals.grand)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              )}
             </section>
           )}
 
