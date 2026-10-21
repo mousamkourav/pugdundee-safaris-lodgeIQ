@@ -8,6 +8,8 @@ import { MEDIA_BUCKET } from "@/lib/sales/master/types";
 import type { Plan } from "@/lib/sales/plan/types";
 import { defaultDraft, withEdits } from "@/lib/sales/plan/draft";
 import { priceBreakdown } from "@/lib/sales/pricing/breakdown";
+import { isShareSlug, isShareToken } from "@/lib/sales/share-slug";
+import { cache } from "react";
 import type { Instalment, PriceResult } from "@/lib/sales/pricing/types";
 
 type Row = Record<string, unknown>;
@@ -49,14 +51,19 @@ export interface ClientView {
 }
 
 
-export async function loadClientView(token: string): Promise<ClientView | null> {
-  if (!/^[0-9a-f]{32}$/.test(token)) return null;
+// One load per request, shared by the page and its title (generateMetadata).
+export const loadClientView = cache(loadClientViewUncached);
+
+async function loadClientViewUncached(link: string): Promise<ClientView | null> {
+  // Old links: the 32-character token. New links: the personalised slug.
+  const byToken = isShareToken(link);
+  if (!byToken && !isShareSlug(link)) return null;
   const db = createAdminClient();
 
   const { data: v } = await db
     .from("sales_itinerary_versions")
     .select("query_id, version_no, plan, pricing, created_at")
-    .eq("share_token", token)
+    .eq(byToken ? "share_token" : "share_slug", link)
     .maybeSingle();
   if (!v) return null;
   const version = v as { query_id: string; version_no: number; plan: Plan; pricing: PriceResult; created_at: string };
@@ -90,7 +97,7 @@ export async function loadClientView(token: string): Promise<ClientView | null> 
     mediaRows
       .filter((m) => m.owner_id === id)
       .sort((a, b) => Number(b.is_cover) - Number(a.is_cover) || a.sort - b.sort)
-      .slice(0, 3)
+      .slice(0, 10)
       .map((m) => url(m.storage_path));
 
   const propRows = rows(props);

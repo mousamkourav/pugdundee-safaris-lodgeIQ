@@ -1,15 +1,28 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { loadClientView } from "@/lib/sales/client-view";
-import { PrintButton } from "@/components/sales/print-button";
+import { DownloadPdfButton } from "@/components/sales/download-pdf";
+import { PhotoCarousel } from "@/components/sales/photo-carousel";
 import { Icon } from "@/components/icons";
 import { dayName } from "@/lib/sales/pricing/dates";
 
 // Guest-facing itinerary. Public: opened from a share link without signing in.
-export const metadata: Metadata = {
-  title: "Your safari itinerary - Pugdundee Safaris",
-  robots: { index: false, follow: false },
-};
+export async function generateMetadata({ params }: { params: Promise<{ token: string }> }): Promise<Metadata> {
+  const view = await loadClientView((await params).token);
+  return {
+    title: view ? `${view.title} - ${view.guestName} - Pugdundee Safaris` : "Your safari itinerary - Pugdundee Safaris",
+    robots: { index: false, follow: false },
+  };
+}
+
+// Slideshows show as photo grids in the PDF and in print.
+const PDF_CSS = `.pdf-only{display:none}
+html[data-pdf] .pdf-hide{display:none!important}
+html[data-pdf] .pdf-only{display:grid!important}
+@media print{.pdf-hide{display:none!important}.pdf-only{display:grid!important}}`;
+
+const fileNameFor = (guest: string, queryNo: string) =>
+  `Pugdundee Safaris - ${guest.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim() || "Itinerary"} - ${queryNo}.pdf`;
 
 const LONG = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 const SHORT = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
@@ -37,13 +50,14 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
 
   return (
     <div className="min-h-screen bg-sand-100 py-0 sm:py-8 print:bg-white print:py-0">
-      <div className="mx-auto mb-4 flex max-w-4xl justify-end px-4 print:hidden">
-        <PrintButton />
+      <style>{PDF_CSS}</style>
+      <div className="mx-auto mb-4 flex max-w-4xl justify-end px-4 pt-4 sm:pt-0 print:hidden">
+        <DownloadPdfButton fileName={fileNameFor(view.guestName, view.queryNo)} />
       </div>
 
-      <article className="mx-auto max-w-4xl overflow-hidden bg-white shadow-card sm:rounded-xl print:max-w-none print:shadow-none">
+      <article id="itinerary" className="mx-auto max-w-4xl overflow-hidden bg-white shadow-card sm:rounded-xl print:max-w-none print:shadow-none">
         {/* cover */}
-        <header className="relative flex min-h-72 items-end bg-olive-800 sm:min-h-96 print:min-h-64">
+        <header data-pdf-block="cover" className="relative flex min-h-72 items-end bg-olive-800 sm:min-h-96 print:min-h-64">
           {view.heroUrl && (
             // eslint-disable-next-line @next/next/no-img-element -- public storage URL; next/image needs remote config
             <img src={view.heroUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
@@ -62,19 +76,19 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
         </header>
 
         <div className="space-y-10 p-6 sm:p-10">
-          <section>
+          <section data-pdf-block="">
             <h2 className="text-xl">About this trip</h2>
             <p className="mt-3 whitespace-pre-line leading-relaxed">{view.sections.about}</p>
           </section>
 
           {/* day by day */}
           <section>
-            <h2 className="text-xl">Your journey</h2>
+            <h2 data-pdf-block="" className="text-xl">Your journey</h2>
             <ol className="mt-6 space-y-8">
               {plan.days.map((d, i) => {
                 const lodge = d.property_id && firstDayAt.get(d.property_id) === i ? view.lodges.find((l) => l.id === d.property_id) : null;
                 return (
-                  <li key={i} className="grid gap-3 break-inside-avoid sm:grid-cols-[130px_1fr]">
+                  <li key={i} data-pdf-block="" className="grid gap-3 break-inside-avoid sm:grid-cols-[130px_1fr]">
                     <div>
                       <p className="font-display font-semibold text-olive-800">Day {i + 1}</p>
                       <p className="text-sm text-sand-500">{dayName(d.date)} {short(d.date)}</p>
@@ -108,14 +122,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                       {lodge && (
                         <div className="mt-4 rounded-xl bg-sand-50 p-4">
                           <p className="font-display font-semibold text-olive-800">{lodge.name}</p>
-                          {lodge.photos.length > 0 && (
-                            <div className={"mt-3 grid gap-2 " + (lodge.photos.length > 1 ? "grid-cols-3" : "grid-cols-1")}>
-                              {lodge.photos.map((src, k) => (
-                                // eslint-disable-next-line @next/next/no-img-element -- public storage URL
-                                <img key={k} src={src} alt="" className={"w-full rounded-lg object-cover " + (lodge.photos.length > 1 ? "aspect-[4/3]" : "aspect-[16/9]")} />
-                              ))}
-                            </div>
-                          )}
+                          <PhotoCarousel photos={lodge.photos} label={lodge.name} />
                           {lodge.description && <p className="mt-3 whitespace-pre-line text-sm leading-relaxed">{lodge.description}</p>}
                           {lodge.website && (
                             <a href={lodge.website} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-sm font-semibold text-olive-600 underline-offset-2 hover:underline">
@@ -133,7 +140,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
 
           {/* price (the sales member chooses whether the guest sees prices, and the breakup) */}
           {view.show.prices && (
-            <section className="space-y-4 rounded-xl bg-sand-100 p-6 break-inside-avoid">
+            <section data-pdf-block="" className="space-y-4 rounded-xl bg-sand-100 p-6 break-inside-avoid">
               <div className="grid gap-6 sm:grid-cols-2">
                 <div>
                   <p className="eyebrow">Package price</p>
@@ -165,7 +172,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
             </section>
           )}
 
-          <section className="grid gap-8 break-inside-avoid sm:grid-cols-2">
+          <section data-pdf-block="" className="grid gap-8 break-inside-avoid sm:grid-cols-2">
             <div>
               <h3 className="text-lg">Price includes</h3>
               <ul className="mt-3 space-y-2 text-sm">
@@ -184,7 +191,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
             </div>
           </section>
 
-          <section className="break-inside-avoid">
+          <section data-pdf-block="" className="break-inside-avoid">
             <h3 className="text-lg">Payment schedule</h3>
             <div className="mt-3 overflow-x-auto rounded-xl border border-sand-200">
               <table className="w-full text-left text-sm">
@@ -210,7 +217,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
           </section>
 
           {view.sections.cancellation.length > 0 && (
-            <section className="break-inside-avoid">
+            <section data-pdf-block="" className="break-inside-avoid">
               <h3 className="text-lg">Cancellation policy</h3>
               <ul className="mt-3 list-disc space-y-1 pl-5 text-sm">
                 {view.sections.cancellation.map((t, i) => <li key={i}>{t}</li>)}
@@ -219,7 +226,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
           )}
 
           {view.sections.notes.length > 0 && (
-            <section className="break-inside-avoid">
+            <section data-pdf-block="" className="break-inside-avoid">
               <h3 className="text-lg">Good to know</h3>
               <ul className="mt-3 list-disc space-y-1 pl-5 text-sm">
                 {view.sections.notes.map((t, i) => <li key={i}>{t}</li>)}
@@ -228,7 +235,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
           )}
         </div>
 
-        <footer className="flex flex-col gap-2 border-t border-sand-200 bg-sand-50 px-6 py-6 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-10">
+        <footer data-pdf-block="" className="flex flex-col gap-2 border-t border-sand-200 bg-sand-50 px-6 py-6 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-10">
           <div>
             <p className="font-display font-semibold text-olive-800">{view.company.name}</p>
             <p className="text-xs text-sand-500">Quote {view.queryNo} &middot; version {view.versionNo}</p>

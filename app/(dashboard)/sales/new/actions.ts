@@ -1,6 +1,7 @@
 "use server";
 
 import { safe } from "@/lib/sales/safe";
+import { makeShareSlug } from "@/lib/sales/share-slug";
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, isSalesUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -12,6 +13,22 @@ import { priceTrip } from "@/lib/sales/pricing/engine";
 
 export type SaveResult = { id?: string; error?: string; problems?: string[] };
 export type SaveMode = "draft" | "final";
+
+// A version with its personalised client link (/i/sangeeta-ps-2026-0001-k8f3x9q2).
+// If the random part ever clashes with an existing link, try again with a new one.
+async function insertVersion(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  queryId: string,
+  queryNo: string,
+  guestName: string,
+  version: Record<string, unknown>
+) {
+  let res = await supabase.from("sales_itinerary_versions").insert({ query_id: queryId, ...version, share_slug: makeShareSlug(guestName, queryNo) });
+  if (res.error && /share_slug|duplicate key/i.test(res.error.message)) {
+    res = await supabase.from("sales_itinerary_versions").insert({ query_id: queryId, ...version, share_slug: makeShareSlug(guestName, queryNo) });
+  }
+  return res;
+}
 
 // mode "draft": saves whatever is there (even half-finished or with prices
 //   missing) as a Draft that is not sent to the guest.
@@ -75,7 +92,7 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
   const supabase = await createClient();
 
   if (queryId) {
-    const { data: existing } = await supabase.from("sales_queries").select("id, status").eq("id", queryId).maybeSingle();
+    const { data: existing } = await supabase.from("sales_queries").select("id, status, query_no").eq("id", queryId).maybeSingle();
     if (!existing) return { error: "Query not found, or it is not assigned to you." };
     const status = (existing as { status: string }).status;
     if (status === "lost" || status === "cancelled") return { error: "Reopen this query before creating a new version." };
@@ -85,7 +102,7 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
 
     const up = await supabase.from("sales_queries").update(queryFields).eq("id", queryId);
     if (up.error) return { error: up.error.message };
-    const ins = await supabase.from("sales_itinerary_versions").insert({ query_id: queryId, ...version });
+    const ins = await insertVersion(supabase, queryId, (existing as { query_no: string }).query_no, queryFields.guest_name, version);
     if (ins.error) return { error: ins.error.message };
     if (mode === "final" && status === "draft") {
       const fin = await supabase.from("sales_queries").update({ status: "open" }).eq("id", queryId);
@@ -99,12 +116,12 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
   const q = await supabase
     .from("sales_queries")
     .insert({ ...queryFields, status: mode === "draft" ? "draft" : "open" })
-    .select("id")
+    .select("id, query_no")
     .single();
   if (q.error) return { error: q.error.message };
   const id = (q.data as { id: string }).id;
 
-  const ins = await supabase.from("sales_itinerary_versions").insert({ query_id: id, ...version });
+  const ins = await insertVersion(supabase, id, (q.data as { query_no: string }).query_no, queryFields.guest_name, version);
   if (ins.error) {
     // Members cannot delete queries, so clean up with the service role.
     await createAdminClient().from("sales_queries").delete().eq("id", id);

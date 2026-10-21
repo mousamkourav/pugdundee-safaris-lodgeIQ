@@ -64,7 +64,7 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
   const [{ data: vData }, { data: eData }] = await Promise.all([
     supabase
       .from("sales_itinerary_versions")
-      .select("id, version_no, total_amount, currency, created_by, created_at, share_token, plan, pricing")
+      .select("id, version_no, total_amount, currency, created_by, created_at, share_token, share_slug, plan, pricing")
       .eq("query_id", id)
       .order("version_no", { ascending: false }),
     supabase
@@ -73,7 +73,7 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
       .eq("query_id", id)
       .order("created_at", { ascending: false }),
   ]);
-  const versions = (vData ?? []) as { id: string; version_no: number; total_amount: number; currency: string; created_by: string | null; created_at: string; share_token: string; plan: Plan; pricing: PriceResult }[];
+  const versions = (vData ?? []) as { id: string; version_no: number; total_amount: number; currency: string; created_by: string | null; created_at: string; share_token: string; share_slug: string | null; plan: Plan; pricing: PriceResult }[];
   const events = (eData ?? []) as { event_type: string; from_status: string | null; to_status: string | null; remark: string | null; actor: string | null; created_at: string }[];
   const current = versions[0];
 
@@ -274,7 +274,7 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
             <section className={`${ui.card} p-5`}>
               <h2 className="text-lg">Client itinerary</h2>
               <p className="mb-3 mt-1 text-sm text-sand-500">Version {current.version_no}, with photos and payment terms. Costs by lodge are never shown to the guest.</p>
-              <ShareLink path={`/i/${current.share_token}`} />
+              <ShareLink path={`/i/${current.share_slug ?? current.share_token}`} />
             </section>
           )}
 
