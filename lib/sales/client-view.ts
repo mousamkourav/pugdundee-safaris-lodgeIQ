@@ -148,8 +148,9 @@ async function loadClientViewUncached(link: string): Promise<ClientView | null> 
     guestName: query.guest_name,
     plan,
     title: sections.title,
-    arrival: pricing.arrival,
-    departure: pricing.departure,
+    // the whole trip, including nights in a city before or after the lodges
+    arrival: plan.days[0]?.date ?? pricing.arrival,
+    departure: plan.days[plan.days.length - 1]?.date ?? pricing.departure,
     nights,
     guests: pricing.guests,
     currency: usd ? "USD" : "INR",

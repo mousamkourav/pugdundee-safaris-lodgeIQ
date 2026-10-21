@@ -67,7 +67,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-gold-200">{view.company.name}</p>
             <h1 className="mt-2 font-display text-3xl font-bold !text-white sm:text-4xl">{view.title}</h1>
             <p className="mt-2 text-white/85">
-              Prepared for {view.guestName} &middot; {long(view.arrival)} - {long(view.departure)} &middot; {view.nights + 1} days
+              Prepared for {view.guestName} &middot; {long(view.arrival)} - {long(view.departure)} &middot; {plan.days.length || view.nights + 1} days
             </p>
             <p className="mt-1 text-sm text-white/70">
               Quote {view.queryNo} &middot; quoted on {long(view.quotedOn)}

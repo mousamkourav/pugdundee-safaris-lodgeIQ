@@ -47,6 +47,11 @@ export function PhoneField({
     setDigits(s.national);
   }, [value, country]);
 
+  // No number typed yet: the code follows the guest's country (e.g. +1 for the US).
+  useEffect(() => {
+    if (!value && country) setCc(country);
+  }, [value, country]);
+
   const invalid = touched && digits.length > 0 && !phoneValid(cc, digits);
 
   function setNumber(nextDigits: string, nextCc = cc) {

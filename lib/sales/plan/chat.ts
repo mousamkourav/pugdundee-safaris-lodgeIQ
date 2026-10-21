@@ -12,15 +12,18 @@ import { priceTrip } from "@/lib/sales/pricing/engine";
 import type { ISODate } from "@/lib/sales/pricing/types";
 import { aliasesOf, extractTrip, locationAliases, matchByName, mergeParsed, type ParsedTrip } from "./parse-text";
 import { buildDays, defaultStop, emptyPlan, lodgesInPark, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems } from "./planner";
-import type { BuilderContext, Plan } from "./types";
+import type { BuilderContext, Plan, PlanStop } from "./types";
 
 export interface ChatFlags {
   dateSet: boolean;
   adultsSet: boolean;
   roomsSet: boolean;
   arrivalAsked: boolean;
+  departureAsked?: boolean;
   nightsUnknown: string[]; // park ids added without a number of nights
-  pending: "parks" | "nights" | "date" | "adults" | "arrival" | "name" | null;
+  roomDecided?: string[]; // park ids where Cottage / Tree House is settled
+  roomFor?: string | null; // the park the last Cottage / Tree House question was about
+  pending: "parks" | "nights" | "date" | "adults" | "arrival" | "departure" | "room" | "name" | null;
 }
 
 export interface QuickReply {
@@ -52,7 +55,17 @@ const shortName = (name: string) => aliasesOf(name).sort((a, b) => a.length - b.
 
 export function initialFlags(plan: Plan): ChatFlags {
   const editing = plan.stops.length > 0;
-  return { dateSet: editing, adultsSet: editing, roomsSet: editing, arrivalAsked: editing, nightsUnknown: [], pending: editing ? null : "parks" };
+  return {
+    dateSet: editing,
+    adultsSet: editing,
+    roomsSet: editing,
+    arrivalAsked: editing,
+    departureAsked: editing,
+    nightsUnknown: [],
+    roomDecided: editing ? plan.stops.map((s) => s.park_id) : [],
+    roomFor: null,
+    pending: editing ? null : "parks",
+  };
 }
 
 export function greeting(plan: Plan, queryNo?: string | null): ChatMessage {
@@ -97,7 +110,7 @@ export function chatTurn(
   }
 
   const next: Plan = JSON.parse(JSON.stringify(plan));
-  const f: ChatFlags = { ...flags, nightsUnknown: [...flags.nightsUnknown] };
+  const f: ChatFlags = { ...flags, nightsUnknown: [...flags.nightsUnknown], roomDecided: [...(flags.roomDecided ?? [])] };
   const chips: string[] = [];
   const warnings: string[] = [];
   const parkName = (id: string) => ctx.pricing.parks.find((p) => p.id === id)?.name ?? "the park";
@@ -125,11 +138,18 @@ export function chatTurn(
   }
 
   // ---- "on their own": no pick-up or drop
-  if (/\b(on (their|his|her) own|self[- ]?drive|own (car|vehicle|transport)|no (pick ?up|transfers?|airport))\b/.test(low)) {
-    next.arrival_location_id = null;
-    next.departure_location_id = null;
-    f.arrivalAsked = true;
-    chips.push("no airport or station transfers");
+  if (/\b(on (their|his|her) own|self[- ]?drive|own (car|vehicle|transport)|no (pick ?up|drop|transfers?|airport))\b/.test(low)) {
+    if (f.pending === "departure" || /\b(leav\w*|depart\w*|drop)\b/.test(low)) {
+      next.departure_location_id = null; // only the way out
+      f.departureAsked = true;
+      chips.push("they leave on their own (no drop)");
+    } else {
+      next.arrival_location_id = null;
+      next.departure_location_id = null;
+      f.arrivalAsked = true;
+      f.departureAsked = true;
+      chips.push("no airport or station transfers");
+    }
   }
 
   // ---- removing parks: "remove Pench", "without Satpura", "instead of Pench"
@@ -211,14 +231,28 @@ export function chatTurn(
   const places = placesOf(ctx);
   const arr = matchByName(places, parsed.arrival_place, locationAliases);
   const dep = matchByName(places, parsed.departure_place, locationAliases);
-  if (arr) {
+  const assumedSame = parsed.notes.some((n) => n.startsWith("Assumed the guest also leaves"));
+  // A single place in reply to "where do they leave from?" is the way out, not a new arrival.
+  const answersDeparture = f.pending === "departure" && !!arr && (!dep || assumedSame) && !!plan.arrival_location_id;
+  if (arr && !answersDeparture) {
     next.arrival_location_id = arr.id;
     f.arrivalAsked = true;
     chips.push(`arriving via ${arr.name}`);
   }
-  if (dep) {
+  if (dep && !assumedSame && !answersDeparture) {
     next.departure_location_id = dep.id;
+    f.departureAsked = true;
     chips.push(`leaving via ${dep.name}`);
+  } else if (f.pending === "departure" && /^(same|yes|yep|same airport|same place|same as arrival)\b/i.test(low) && next.arrival_location_id) {
+    next.departure_location_id = next.arrival_location_id;
+    f.departureAsked = true;
+    chips.push(`leaving via ${ctx.locations.find((l) => l.id === next.arrival_location_id)?.name}`);
+  } else if (answersDeparture && arr) {
+    // answering "where do they leave from?" with one place
+    next.departure_location_id = arr.id;
+    next.arrival_location_id = plan.arrival_location_id;
+    f.departureAsked = true;
+    chips.push(`leaving via ${arr.name}`);
   }
   if (f.pending === "arrival" && !arr && dep && !next.arrival_location_id) {
     next.arrival_location_id = dep.id;
@@ -254,13 +288,100 @@ export function chatTurn(
         next.stops[i] = { ...next.stops[i], property_id: lodge.id, room_category_id: room?.id ?? "", meal_plan: room ? mealPlansOf(ctx, room.id)[0] ?? "AP" : "AP" };
       }
     }
+    // what the guest asked for here: safaris, naturalists, experiences, room type
+    const wish: Partial<PlanStop> = {};
+    if (p.safaris != null) wish.want_safaris = p.safaris;
+    if (p.naturalists != null) wish.want_naturalists = p.naturalists;
+    if (p.extras?.length) wish.want_extras = [...new Set([...(next.stops[i].want_extras ?? []), ...p.extras])];
+    if (p.room) {
+      const rooms = roomsOf(ctx, next.stops[i].property_id);
+      const want = rooms.find((r) => (p.room === "tree") === /tree ?house/i.test(r.name));
+      if (want) {
+        const meals = mealPlansOf(ctx, want.id);
+        wish.room_category_id = want.id;
+        wish.meal_plan = meals.includes(next.stops[i].meal_plan) ? next.stops[i].meal_plan : meals[0] ?? next.stops[i].meal_plan;
+      }
+      f.roomDecided = [...new Set([...(f.roomDecided ?? []), park.id])];
+    }
+    next.stops[i] = { ...next.stops[i], ...wish };
     const stop = next.stops[i];
+    // a lodge already in the trip, only named (e.g. "Kanha first"): nothing new to report
+    if (idx >= 0 && !p.nights && !p.lodge && !Object.keys(wish).length) continue;
     const lodgeName = ctx.properties.find((x) => x.id === stop.property_id)?.name;
-    chips.push(`${park.name} ${p.nights ? `${stop.nights} night${stop.nights === 1 ? "" : "s"}` : "(nights to confirm)"}${lodgeName ? ` at ${lodgeName}` : ""}`);
+    const roomName = p.room ? ctx.rooms.find((r) => r.id === stop.room_category_id)?.name : null;
+    chips.push(
+      `${park.name} ${p.nights ? `${stop.nights} night${stop.nights === 1 ? "" : "s"}${p.nightsFromDays ? ` (from "${p.nights} days")` : ""}` : "(nights to confirm)"}${lodgeName ? ` at ${lodgeName}` : ""}${roomName ? `, ${roomName}` : ""}`
+    );
+    if (p.safaris != null || p.naturalists != null) {
+      const n = p.safaris;
+      const nat = p.naturalists === -1 ? "all with a naturalist" : p.naturalists ? `${p.naturalists} with a naturalist` : p.naturalists === 0 ? "no naturalist" : "";
+      chips.push(`${n != null ? `${n} safari${n === 1 ? "" : "s"}` : "safaris"}${nat ? `, ${nat}` : ""} in ${park.name.split(/[ -]/)[0]}`);
+    }
+    for (const x of p.extras ?? []) chips.push(`${x} at ${lodgeName ?? park.name}`);
   }
 
-  // ---- room type by name: "treehouse", "cottage"
-  for (let i = 0; i < next.stops.length; i++) {
+  // ---- "no Delhi stay", "remove the flights"
+  for (const c of next.city_stays ?? []) {
+    if (new RegExp(`\\b(remove|no|without|skip|drop|cancel|delete)\\s+(the\\s+)?(${c.city.toLowerCase()}|city)\\b`).test(low)) {
+      next.city_stays = (next.city_stays ?? []).filter((x) => x !== c);
+      chips.push(`removed the ${c.city} night${c.nights === 1 ? "" : "s"} ${c.when === "before" ? "before" : "at the end"}`);
+    }
+  }
+  if (/\b(remove|no|without|skip|drop|cancel|delete)\s+(the\s+|all\s+)?flights?\b/.test(low) && next.flights?.length) {
+    next.flights = [];
+    chips.push("removed the flights");
+  }
+
+  // ---- flights and nights in a city (Delhi) before or after
+  if (parsed.flights?.length) {
+    next.flights = parsed.flights;
+    for (const fl of parsed.flights) chips.push(`flight ${fl.from} to ${fl.to}${fl.time ? ` at ${fl.time}` : ""}`);
+  }
+  if (parsed.cityStays?.length) {
+    const keep = (next.city_stays ?? []).filter((c) => !parsed.cityStays!.some((x) => x.when === c.when));
+    next.city_stays = [...keep, ...parsed.cityStays];
+    for (const c of parsed.cityStays) chips.push(`${c.nights} night${c.nights === 1 ? "" : "s"} in ${c.city} ${c.when === "before" ? "before the safari" : "at the end"}`);
+  }
+
+  // ---- corrections to the order: "wrong direction", "Pench first", "Kanha then Pench"
+  if (parsed.reverse && next.stops.length > 1) {
+    next.stops = [...next.stops].reverse();
+    // swap the way in and out only when both are known
+    if (next.arrival_location_id && next.departure_location_id) {
+      [next.arrival_location_id, next.departure_location_id] = [next.departure_location_id, next.arrival_location_id];
+    }
+    chips.push(`route reversed: ${next.stops.map((st) => parkName(st.park_id).split(/[ -]/)[0]).join(" then ")}`);
+  } else if (parsed.parks.length && parsed.parks.every((p) => !p.nights) && next.stops.length > 1 && /\b(first|start|begin|before|then|after|last|end|order|instead)\b/.test(low)) {
+    const ids = parsed.parks.map((p) => matchByName(ctx.pricing.parks, p.name, aliasesOf)?.id).filter((x): x is string => !!x && next.stops.some((s) => s.park_id === x));
+    if (ids.length === 1 && /\b(last|end)\b/.test(low)) {
+      next.stops = [...next.stops.filter((s) => s.park_id !== ids[0]), next.stops.find((s) => s.park_id === ids[0])!];
+      chips.push(`${parkName(ids[0])} last`);
+    } else if (ids.length >= 1) {
+      const named = ids.map((id) => next.stops.find((s) => s.park_id === id)!);
+      next.stops = [...named, ...next.stops.filter((s) => !ids.includes(s.park_id))];
+      chips.push(`new order: ${next.stops.map((s) => parkName(s.park_id).split(/[ -]/)[0]).join(" then ")}`);
+    }
+  }
+
+  // ---- a short reply naming a room type ("treehouse", "cottage"): the stop the
+  // last question was about, or every stop that has such a room
+  const roomWord = /\btree ?houses?\b/.test(low) ? "tree" : /\b(cottages?|bungalows?)\b/.test(low) ? "cottage" : null;
+  if (roomWord && !parsed.parks.length) {
+    const targets = f.pending === "room" && f.roomFor ? next.stops.filter((s) => s.park_id === f.roomFor) : next.stops;
+    for (const s of targets) {
+      const i = next.stops.indexOf(s);
+      const want = roomsOf(ctx, s.property_id).find((r) => (roomWord === "tree") === /tree ?house/i.test(r.name));
+      if (want && want.id !== s.room_category_id) {
+        const meals = mealPlansOf(ctx, want.id);
+        next.stops[i] = { ...s, room_category_id: want.id, meal_plan: meals.includes(s.meal_plan) ? s.meal_plan : meals[0] ?? s.meal_plan };
+      }
+      if (want) {
+        chips.push(`${want.name} at ${ctx.properties.find((x) => x.id === s.property_id)?.name}`);
+        f.roomDecided = [...new Set([...(f.roomDecided ?? []), s.park_id])];
+      }
+    }
+  }
+  for (let i = 0; i < next.stops.length && !parsed.parks.length && !roomWord; i++) {
     const s = next.stops[i];
     const match = roomsOf(ctx, s.property_id).find((r) => {
       const core = r.name.toLowerCase().replace(/\b(ac|deluxe|room)\b/g, "").replace(/\s+/g, " ").trim();
@@ -302,6 +423,7 @@ export function chatTurn(
 
   const step = nextQuestion(next, f, ctx, today);
   f.pending = step.pending;
+  f.roomFor = step.roomFor ?? null;
 
   let text = step.text;
   if (!understood) {
@@ -326,7 +448,7 @@ export function nextQuestion(
   f: ChatFlags,
   ctx: BuilderContext,
   today: ISODate
-): { text: string; pending: ChatFlags["pending"]; quick?: QuickReply[]; warnings: string[]; ready: boolean } {
+): { text: string; pending: ChatFlags["pending"]; quick?: QuickReply[]; warnings: string[]; ready: boolean; roomFor?: string } {
   const parks = ctx.pricing.parks.filter((p) => lodgesInPark(ctx, p.id).length);
   if (!plan.stops.length) {
     return {
@@ -357,7 +479,42 @@ export function nextQuestion(
     return {
       text: 'Where will they arrive? Pick a place, or say "on their own" if they reach the lodge themselves.',
       pending: "arrival",
-      quick: [...placesOf(ctx).slice(0, 5).map((l) => ({ label: l.name, text: `${l.name} in and out` })), { label: "On their own", text: "on their own" }],
+      quick: [...placesOf(ctx).slice(0, 5).map((l) => ({ label: l.name, text: `arriving at ${l.name}` })), { label: "On their own", text: "on their own" }],
+      warnings: [],
+      ready: false,
+    };
+  }
+  // The way out is asked separately: guests often fly in and out of different cities.
+  if (!f.departureAsked && plan.arrival_location_id && !plan.departure_location_id) {
+    const arrName = ctx.locations.find((l) => l.id === plan.arrival_location_id)?.name ?? "the same place";
+    return {
+      text: `Where do they leave from at the end? The same place (${arrName}), or somewhere else?`,
+      pending: "departure",
+      quick: [
+        { label: `Same: ${arrName}`, text: "same" },
+        ...placesOf(ctx).filter((l) => l.id !== plan.arrival_location_id).slice(0, 4).map((l) => ({ label: l.name, text: `leaving from ${l.name}` })),
+        { label: "On their own", text: "leaving on their own" },
+      ],
+      warnings: [],
+      ready: false,
+    };
+  }
+  // Cottage or Tree House, where a lodge has both.
+  const roomStop = plan.stops.find((s) => {
+    if ((f.roomDecided ?? []).includes(s.park_id)) return false;
+    const rooms = roomsOf(ctx, s.property_id);
+    return rooms.some((r) => /tree ?house/i.test(r.name)) && rooms.some((r) => !/tree ?house/i.test(r.name));
+  });
+  if (roomStop) {
+    const lodge = ctx.properties.find((p) => p.id === roomStop.property_id)?.name ?? "the lodge";
+    return {
+      text: `Cottage or Tree House at ${lodge}?`,
+      pending: "room",
+      roomFor: roomStop.park_id,
+      quick: [
+        { label: "Cottage", text: "cottage" },
+        { label: "Tree House", text: "tree house" },
+      ],
       warnings: [],
       ready: false,
     };

@@ -109,3 +109,29 @@ test("ordinary words are never corrected into park or lodge names", () => {
     assert.equal(read(typo).parks[0]?.name.split(" ")[0], park, typo);
   }
 });
+
+test("the US guests enquiry: nights from days, safaris, naturalists, experiences, flights, Delhi nights", () => {
+  const US = "i am having 3 guests travelling from US they will arrive at delhi than stay in delhi for one night than they have flight to jabalpur at 8:30 on 20th of december 2026 than they will travel to bandhavgarh and stay in the kings lodge for 3 days and do 4 safaris with naturalist, than they will travel to pench stay there for 2 days do 2 safaris there one with naturalist one without, than kanha for 2 day 1 safari with naturalist, bush dining, than they will leave to satpura stay there for 2 days 1 tiger safari with naturalist and 1 boat safari also bush dining there than they will leave to bhopal and from there they will pick the flight to delhi stay there one night than they will back to US";
+  const p = read(US);
+  assert.equal(p.adults, 3);
+  assert.equal(p.country, "US");
+  assert.equal(p.arrival_date, "2026-12-20");
+  assert.equal(p.arrival_place, "Jabalpur Airport");
+  assert.equal(p.departure_place, "Bhopal Airport");
+  assert.deepEqual(
+    p.parks.map((x) => [x.name.split(" ")[0], x.nights, x.safaris, x.naturalists, x.extras ?? []]),
+    [["Bandhavgarh", 3, 4, 4, []], ["Pench", 2, 2, 1, []], ["Kanha", 2, 1, 1, ["bush dinner"]], ["Satpura", 2, 1, 1, ["bush dinner", "boat safari"]]]
+  );
+  assert.equal(p.parks[0].lodge, "Kings Lodge");
+  assert.deepEqual(p.flights, [{ from: "Delhi", to: "Jabalpur", time: "8:30" }, { from: "Bhopal", to: "Delhi" }]);
+  assert.deepEqual(p.cityStays, [{ when: "before", city: "Delhi", nights: 1 }, { when: "after", city: "Delhi", nights: 1 }]);
+});
+
+test("corrections and room words", () => {
+  assert.equal(read("sorry, wrong direction").reverse, true);
+  assert.equal(read("do it the other way round").reverse, true);
+  assert.equal(read("Pench 2 nights in a tree house").parks[0].room, "tree");
+  assert.equal(read("Kanha 2 nights, cottage").parks[0].room, "cottage");
+  assert.equal(read("Tree House Hideaway 2 nights").parks[0].room, undefined); // the lodge's name is not a room choice
+  assert.equal(read("Kanha 2 nights, 3 safaris without naturalist").parks[0].naturalists, 0);
+});

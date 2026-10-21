@@ -227,7 +227,7 @@ export function PlanStep({
                     {isTarget && <span className="rounded-full bg-olive-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">Adding here</span>}
                     <span className="text-xs uppercase tracking-wide text-sand-500">{dayName(d.date)} {fmtDate(d.date)}</span>
                   </span>
-                  <span className="truncate text-xs text-sand-500">{d.property_id ? lodgeName(d.property_id) : "Departure"}</span>
+                  <span className="truncate text-xs text-sand-500">{d.property_id ? lodgeName(d.property_id) : d.kind === "city" ? "City stay" : "Departure"}</span>
                 </button>
 
                 <ul className="divide-y divide-sand-100 text-sm">

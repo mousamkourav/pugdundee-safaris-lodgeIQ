@@ -104,7 +104,7 @@ export function FinalDraft({
             aria-label="Itinerary title"
           />
           <p className="text-sm text-white/85">
-            Prepared for {plan.guest.name || "the guest"} &middot; {result?.arrival ? `${fmtDate(result.arrival)} - ${fmtDate(result.departure)}` : ""} &middot; {nights + 1} days
+            Prepared for {plan.guest.name || "the guest"} &middot; {plan.days.length ? `${fmtDate(plan.days[0].date)} - ${fmtDate(plan.days[plan.days.length - 1].date)}` : ""} &middot; {plan.days.length || nights + 1} days
           </p>
         </header>
 

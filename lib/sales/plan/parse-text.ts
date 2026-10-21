@@ -24,10 +24,44 @@ export interface ParsedTrip {
   departure_date?: ISODate;
   arrival_place?: string;
   departure_place?: string;
-  parks: { name: string; nights?: number; lodge?: string }[];
+  parks: ParsedPark[];
   meal_plan?: "AP" | "MAP" | "CP" | "EP";
   notes: string[]; // assumptions made while reading
+  flights?: { from: string; to: string; time?: string }[];
+  cityStays?: { when: "before" | "after"; city: string; nights: number }[];
+  reverse?: boolean; // "wrong direction", "the other way round"
 }
+
+// What was said about one park / lodge, read from its own part of the message:
+// "...kings lodge for 3 days and do 4 safaris with naturalist, ..."
+export interface ParsedPark {
+  name: string;
+  nights?: number;
+  nightsFromDays?: boolean; // "3 days" read as 3 nights
+  lodge?: string;
+  safaris?: number; // jeep safaris wanted
+  naturalists?: number; // how many of them with a naturalist
+  extras?: string[]; // experience keywords: "bush dinner", "boat safari"...
+  room?: "tree" | "cottage";
+}
+
+// Experiences people mention, and the words that find them among the add-ons.
+export const EXTRA_WORDS: [RegExp, string][] = [
+  [/\b(bush|farm|jungle|private)\s*din(?:ner|ing)\b|\bbush\s*dining\b/, "bush dinner"],
+  [/\bboat\s*(?:safari|ride|cruise)\b/, "boat safari"],
+  [/\bcanoe(?:ing)?\b/, "canoe"],
+  [/\bwalking\s*safari\b/, "walking safari"],
+  [/\b(?:nature|escorted)\s*walk\b|\bcycling\b|\bnight\s*trail\b/, "nature walk"],
+  [/\bvillage\s*(?:safari|walk|visit|haat)\b/, "village"],
+  [/\bpicnic\b/, "picnic"],
+  [/\bfull[- ]?day\s*safari\b/, "full-day safari"],
+  [/\bisland\s*dinner\b/, "island dinner"],
+  [/\bculinary|cooking\s*(?:class|workshop)\b/, "culinary"],
+];
+
+// Cities guests fly in and out of, or stay in, outside our lodges.
+const CITIES = ["delhi", "new delhi", "mumbai", "bombay", "bengaluru", "bangalore", "kolkata", "calcutta", "chennai", "hyderabad", "jabalpur", "nagpur", "bhopal", "raipur", "khajuraho", "bagdogra", "varanasi", "agra", "jaipur", "udaipur", "indore", "goa", "kathmandu", "jhansi", "satna", "katni", "umaria", "chandrapur", "lucknow", "ahmedabad", "pune"];
+const cityName = (c: string) => (c === "new delhi" ? "Delhi" : c === "bombay" ? "Mumbai" : c === "bangalore" ? "Bengaluru" : c === "calcutta" ? "Kolkata" : c.replace(/\b\w/g, (x) => x.toUpperCase()));
 
 // ---------------------------------------------------------------- helpers
 
@@ -325,6 +359,64 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
     const nights = parkHits.map((x, i) => (x.name === h.name ? nightsFor.get(i) : undefined)).find((n) => n !== undefined);
     out.parks.push({ name: h.name, nights, lodge: h.lodge });
   });
+
+  // ---- each park's own part of the message: from its first mention up to the
+  // next park. Nights ("for 3 days" too), safaris, naturalists, experiences, room.
+  const firstAt = out.parks.map((p) => parkHits.find((h) => h.name === p.name)!.index);
+  const order = out.parks.map((p, i) => ({ p, at: firstAt[i] })).sort((a, b) => a.at - b.at);
+  order.forEach(({ p, at }, k) => {
+    const end = k + 1 < order.length ? order[k + 1].at : text.length;
+    const seg = ` ${low.slice(at, end)} `;
+    if (!p.nights) {
+      const m = seg.match(new RegExp(`\\b${NUM}\\s*(nights?|n\\b|nts?|days?)`));
+      if (m && toNum(m[1]) > 0 && toNum(m[1]) <= 30) {
+        p.nights = toNum(m[1]);
+        if (/^d/.test(m[2])) p.nightsFromDays = true;
+      }
+    }
+    const saf = seg.match(new RegExp(`\\b${NUM}\\s*(?:(?:jeep|tiger|core|buffer|game|wildlife)\\s+)?safaris?\\b`));
+    if (saf) p.safaris = toNum(saf[1]);
+    if (/naturalist/.test(seg)) {
+      const some = seg.match(new RegExp(`\\b${NUM}\\s+(?:of them\\s+)?with\\s+(?:an?\\s+|the\\s+)?naturalists?`));
+      if (/\bwithout\s+(?:an?\s+|the\s+)?naturalists?\b|\bno\s+naturalists?\b/.test(seg) && !some && !/\bwith\s+(?:an?\s+|the\s+)?naturalist/.test(seg.replace(/without/g, ""))) p.naturalists = 0;
+      else p.naturalists = some ? toNum(some[1]) : p.safaris ?? -1; // -1 = every safari
+    }
+    const extras = EXTRA_WORDS.filter(([re]) => re.test(seg)).map(([, k]) => k);
+    if (extras.length) p.extras = extras;
+    if (/\btree\s?houses?\b/.test(seg.replace(/tree house hideaway|treehouse hideaway/g, ""))) p.room = "tree";
+    else if (/\b(cottages?|bungalows?)\b/.test(seg)) p.room = "cottage";
+  });
+
+  // ---- flights and city stays (Delhi nights before or after the safari)
+  const cityHits: { at: number; city: string }[] = [];
+  for (const c of CITIES) for (const m of low.matchAll(new RegExp(`\\b${c}\\b`, "g"))) cityHits.push({ at: m.index!, city: cityName(c) });
+  cityHits.sort((a, b) => a.at - b.at);
+  const firstPark = order.length ? order[0].at : Infinity;
+  const lastPark = order.length ? order[order.length - 1].at : -Infinity;
+  const flights: NonNullable<ParsedTrip["flights"]> = [];
+  for (const m of low.matchAll(/\b(?:flight|flights|fly|flying|flies|flew)\b/g)) {
+    const after = low.slice(m.index!, m.index! + 70);
+    const to = after.match(new RegExp(`\\bto\\s+(${CITIES.join("|")})\\b`));
+    if (!to) continue;
+    const fromM = after.slice(0, to.index).match(new RegExp(`\\bfrom\\s+(${CITIES.join("|")})\\b`));
+    const before = cityHits.filter((h) => h.at < m.index! && h.city !== cityName(to[1])).pop();
+    const from = fromM ? cityName(fromM[1]) : before?.city;
+    if (!from) continue;
+    const time = low.slice(m.index!, m.index! + 90).match(/\b(?:at|@)\s*(\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm|hrs)?)\b/);
+    const f = { from, to: cityName(to[1]), ...(time ? { time: time[1].replace(".", ":").replace(/\s*hrs$/, "").trim() } : {}) };
+    if (!flights.some((x) => x.from === f.from && x.to === f.to)) flights.push(f);
+  }
+  if (flights.length) out.flights = flights;
+  const stays: NonNullable<ParsedTrip["cityStays"]> = [];
+  for (const m of low.matchAll(new RegExp(`\\b(?:stay(?:ing)?|overnight|spend)\\s+(?:in\\s+|at\\s+)?(${CITIES.join("|")}|there)\\s+(?:for\\s+)?${NUM}\\s*nights?\\b`, "g"))) {
+    const city = m[1] === "there" ? cityHits.filter((h) => h.at < m.index!).pop()?.city : cityName(m[1]);
+    if (!city) continue;
+    const when = m.index! < firstPark ? "before" : m.index! > lastPark ? "after" : null;
+    if (!when) continue;
+    stays.push({ when, city, nights: toNum(m[2]) });
+  }
+  if (stays.length) out.cityStays = stays;
+  if (/\b(reverse|opposite\s+(?:order|direction|way)|other\s+way\s+round|wrong\s+(?:direction|order)|the other way)\b/.test(low)) out.reverse = true;
 
   if (out.parks.length === 1 && !out.parks[0].nights && out.arrival_date && out.departure_date) {
     out.parks[0].nights = nightsBetween(out.arrival_date, out.departure_date);

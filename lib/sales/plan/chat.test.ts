@@ -51,6 +51,10 @@ test("a step-by-step conversation that asks for each missing detail", () => {
   assert.ok(r.reply.quick?.some((q) => q.label === "Nagpur Airport"));
   r = say("Nagpur");
   assert.equal(r.plan.arrival_location_id, "NAG");
+  // the way out is asked separately, never assumed
+  assert.equal(r.plan.departure_location_id, null);
+  assert.match(r.reply.text, /Where do they leave from/);
+  r = say("same");
   assert.equal(r.plan.departure_location_id, "NAG");
   assert.match(r.reply.text, /Total .*5,58,670/);
   assert.match(r.reply.text, /guest's name/);
@@ -93,6 +97,9 @@ test("quick-reply buttons and a name typed at any time", () => {
   const nag = r.reply.quick!.find((q) => q.label === "Nagpur Airport")!;
   r = say(nag.text!);
   assert.equal(r.plan.arrival_location_id, "NAG");
+  assert.equal(r.plan.departure_location_id, null);
+  const same = r.reply.quick!.find((q) => q.label.startsWith("Same"))!;
+  r = say(same.text!);
   assert.equal(r.plan.departure_location_id, "NAG");
   const say2 = conversation();
   say2("Tadoba 2 nights");
@@ -137,4 +144,25 @@ test("problems are explained, not hidden", () => {
   plan = emptyPlan(TODAY);
   r = chatTurn(plan, initialFlags(plan), "hello there", ctx, TODAY);
   assert.match(r.reply.text, /did not catch/);
+});
+
+test("asks Cottage or Tree House where a lodge has both; asks the way out separately", () => {
+  const treeCtx = { ...ctx, rooms: [...ctx.rooms, { id: "PTL_T", property_id: "PTL", name: "AC Treehouse", sort: 1 }], pricing: { ...ctx.pricing, roomRates: [...ctx.pricing.roomRates, ...ctx.pricing.roomRates.filter((r) => r.room_category_id === "PTL_AC").map((r) => ({ ...r, id: r.id + "_T", room_category_id: "PTL_T" }))] } };
+  let plan = emptyPlan(TODAY);
+  let flags = initialFlags(plan);
+  const say = (m: string) => {
+    const r = chatTurn(plan, flags, m, treeCtx, TODAY);
+    plan = r.plan;
+    flags = r.flags;
+    return r;
+  };
+  let r = say("2 adults, Indian, 16 Jan 2027, arriving at Nagpur, Tadoba 4 nights then Pench 3 nights");
+  assert.match(r.reply.text, /Where do they leave from/);
+  r = say("leaving on their own");
+  assert.equal(plan.departure_location_id, null);
+  assert.equal(plan.arrival_location_id, "NAG"); // only the way out was cleared
+  assert.match(r.reply.text, /Cottage or Tree House at Pench Tree Lodge/);
+  r = say("tree house");
+  assert.equal(plan.stops[1].room_category_id, "PTL_T");
+  assert.doesNotMatch(r.reply.text, /Cottage or Tree House/);
 });

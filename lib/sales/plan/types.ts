@@ -25,9 +25,27 @@ export interface PlanStop {
   property_id: string;
   room_category_id: string;
   meal_plan: string;
+  // What the guest asked for at this stop (from the chat). The day plan honours it.
+  want_safaris?: number | null; // jeep safaris in total here; null = as many as fit
+  want_naturalists?: number | null; // how many with a naturalist; -1 = all of them
+  want_extras?: string[]; // experience keywords, e.g. "bush dinner", "boat safari"
 }
 
-export type DayKind = "arrival" | "safari" | "transfer" | "leisure" | "departure";
+// Nights in a city outside our lodges (Delhi before or after the safari).
+export interface CityStay {
+  when: "before" | "after";
+  city: string;
+  nights: number;
+}
+
+// A flight the guest takes; placed on the right day automatically.
+export interface PlanFlight {
+  from: string;
+  to: string;
+  time?: string;
+}
+
+export type DayKind = "arrival" | "safari" | "transfer" | "leisure" | "departure" | "city";
 
 export interface DaySafari {
   session: "morning" | "afternoon";
@@ -56,6 +74,7 @@ export interface PlanItem {
   addon_id: string | null;
   qty: number | null; // add-ons only; null = automatic (guests, rooms...)
   flight?: FlightInfo; // for type "flight"
+  auto?: string; // made by the planner from the guest's wishes; kept (with edits) on rebuild
 }
 
 export interface PlanDay {
@@ -100,6 +119,8 @@ export interface Plan {
   // What the guest's itinerary and PDF show.
   client?: { show_prices: boolean; show_breakup: boolean };
   manual_prices: Record<string, number>; // prices typed for rates master data does not have
+  city_stays?: CityStay[];
+  flights?: PlanFlight[];
 }
 
 export interface ContentBlock {

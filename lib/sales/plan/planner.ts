@@ -5,7 +5,7 @@
 import { addDays, dayName } from "@/lib/sales/pricing/dates";
 import { closureFor } from "@/lib/sales/pricing/engine";
 import type { ISODate, SafariInput, TransferInput, TripInput } from "@/lib/sales/pricing/types";
-import type { BuilderContext, DaySafari, Plan, PlanDay, PlanStop } from "./types";
+import type { BuilderContext, DaySafari, Plan, PlanDay, PlanItem, PlanStop } from "./types";
 
 export const MEAL_ORDER = ["AP", "MAP", "CP", "EP"];
 
@@ -92,19 +92,140 @@ export function stopDates(plan: Pick<Plan, "arrival_date" | "stops">) {
 }
 
 // Items added by hand survive a rebuild: same date, else same day number, else the last day.
+// Items survive a rebuild. Hand-added ones keep their date (else day number, else
+// the last day). Items the planner made from the guest's wishes (auto) are made
+// again, but keep any edits (a flight's PNR, a price) if the same one existed.
 function carryItems(oldDays: PlanDay[], days: PlanDay[]): PlanDay[] {
   if (!days.length) return days;
-  const out = days.map((d) => ({ ...d, items: [] as PlanDay["items"] }));
+  const oldAuto = new Map<string, PlanItem>();
+  for (const od of oldDays) for (const it of od.items ?? []) if (it.auto) oldAuto.set(it.auto, it);
+  const out = days.map((d) => ({ ...d, items: (d.items ?? []).map((it) => (it.auto && oldAuto.has(it.auto) ? oldAuto.get(it.auto)! : it)) }));
   oldDays.forEach((od, i) => {
-    if (!od.items?.length) return;
+    const manual = (od.items ?? []).filter((it) => !it.auto);
+    if (!manual.length) return;
     const target = out.find((d) => d.date === od.date) ?? out[i] ?? out[out.length - 1];
-    target.items.push(...od.items);
+    target.items.push(...manual);
   });
   return out;
 }
 
 export function buildDays(plan: Plan, ctx: BuilderContext): PlanDay[] {
-  return carryItems(plan.days ?? [], buildDaysFresh(plan, ctx));
+  const fresh = buildDaysFresh(plan, ctx).map((d) => ({ ...d, items: [] as PlanItem[] }));
+  if (!fresh.length) return fresh;
+  return carryItems(plan.days ?? [], addFlights(plan, addCityDays(plan, applyWants(plan, ctx, fresh))));
+}
+
+// The add-on at this lodge (else a general one) whose name has all the words, cheapest first.
+export function findAddon(ctx: BuilderContext, propertyId: string, keyword: string) {
+  const words = keyword.toLowerCase().replace(/-/g, " ").split(/\s+/);
+  const norm = (s: string) => ` ${s.toLowerCase().replace(/[^a-z0-9]+/g, " ")} `;
+  const matches = ctx.pricing.addons.filter((a) => a.active !== false && words.every((w) => norm(a.name).includes(` ${w}`)));
+  const pick = (xs: typeof matches) => xs.sort((a, b) => a.rate - b.rate)[0];
+  return pick(matches.filter((a) => a.property_id === propertyId)) ?? pick(matches.filter((a) => !a.property_id)) ?? null;
+}
+
+// Honour what the guest asked for at each stop: how many safaris, how many with a
+// naturalist, and experiences (placed on the last evening at that lodge).
+function applyWants(plan: Plan, ctx: BuilderContext, days: PlanDay[]): PlanDay[] {
+  let start = 0;
+  plan.stops.forEach((stop, k) => {
+    const range = days.map((_, i) => i).filter((i) => i >= start && i <= start + stop.nights && days[i].park_id === stop.park_id);
+    const lastNight = Math.min(days.length - 1, start + Math.max(0, stop.nights - 1));
+    start += stop.nights;
+    if (stop.want_safaris != null || stop.want_naturalists != null) {
+      const slots = range.flatMap((i) => days[i].safaris.map((s) => ({ i, session: s.session })));
+      const keep = stop.want_safaris != null ? slots.slice(0, Math.max(0, stop.want_safaris)) : slots;
+      const nat = stop.want_naturalists == null ? 0 : stop.want_naturalists < 0 ? keep.length : Math.min(stop.want_naturalists, keep.length);
+      for (const i of range) {
+        const safaris = days[i].safaris
+          .filter((s) => keep.some((x) => x.i === i && x.session === s.session))
+          .map((s) => ({ ...s, naturalist: keep.findIndex((x) => x.i === i && x.session === s.session) < nat }));
+        const kind = days[i].kind === "safari" && !safaris.length ? "leisure" : days[i].kind;
+        days[i] = describe(ctx, { ...days[i], safaris, kind }, plan.vehicle_type);
+      }
+      if (stop.want_safaris != null && stop.want_safaris > slots.length && range.length) {
+        const park = ctx.pricing.parks.find((p) => p.id === stop.park_id)?.name ?? "the park";
+        days[range[0]].notes = [...days[range[0]].notes, `${stop.want_safaris} safaris were asked for in ${park}, but only ${slots.length} fit in ${stop.nights} night${stop.nights === 1 ? "" : "s"}.`];
+      }
+    }
+    for (const kw of stop.want_extras ?? []) {
+      const addon = findAddon(ctx, stop.property_id, kw);
+      const item: PlanItem = addon
+        ? { id: `auto-${k}-${kw}`, type: "addon", title: addon.name, detail: "", price: null, addon_id: addon.id, qty: null, auto: `extra:${k}:${kw}` }
+        : { id: `auto-${k}-${kw}`, type: "activity", title: kw.replace(/\b\w/g, (c) => c.toUpperCase()), detail: "", price: null, addon_id: null, qty: null, auto: `extra:${k}:${kw}` };
+      days[lastNight] = { ...days[lastNight], items: [...days[lastNight].items, item] };
+    }
+  });
+  return days;
+}
+
+const cityDay = (date: string, title: string, text: string): PlanDay => ({
+  date,
+  kind: "city",
+  property_id: null,
+  park_id: null,
+  safaris: [],
+  transfer: null,
+  title,
+  text,
+  notes: [],
+  items: [],
+});
+
+// Nights in a city outside our lodges, before the first lodge and after the last.
+function addCityDays(plan: Plan, days: PlanDay[]): PlanDay[] {
+  const before = (plan.city_stays ?? []).find((c) => c.when === "before" && c.nights > 0);
+  const after = (plan.city_stays ?? []).find((c) => c.when === "after" && c.nights > 0);
+  let out = [...days];
+  if (before) {
+    const pre = Array.from({ length: before.nights }, (_, j) =>
+      j === 0
+        ? cityDay(addDays(days[0].date, -before.nights), `Arrive in ${before.city}`, `Arrive in ${before.city}. Overnight in ${before.city}; hotel to be confirmed.`)
+        : cityDay(addDays(days[0].date, -before.nights + j), before.city, `A day in ${before.city}. Overnight in ${before.city}.`)
+    );
+    out = [...pre, ...out];
+  }
+  if (after) {
+    const last = out[out.length - 1];
+    out[out.length - 1] = { ...last, text: `${last.text} Overnight in ${after.city}.`.trim() };
+    for (let j = 1; j <= after.nights; j++) {
+      out.push(
+        j < after.nights
+          ? cityDay(addDays(last.date, j), after.city, `A day in ${after.city}. Overnight in ${after.city}.`)
+          : cityDay(addDays(last.date, j), `Depart from ${after.city}`, "Transfer to the airport for your onward journey.")
+      );
+    }
+  }
+  return out;
+}
+
+// Flights go on the day they are taken: into the first lodge's day, or out on the last lodge day.
+function addFlights(plan: Plan, days: PlanDay[]): PlanDay[] {
+  const flights = plan.flights ?? [];
+  if (!flights.length) return days;
+  const firstLodge = days.findIndex((d) => d.kind !== "city");
+  const lastLodge = days.length - 1 - [...days].reverse().findIndex((d) => d.kind !== "city");
+  const before = (plan.city_stays ?? []).find((c) => c.when === "before");
+  const after = (plan.city_stays ?? []).find((c) => c.when === "after");
+  const out = [...days];
+  flights.forEach((f, i) => {
+    const inbound = (before && f.from === before.city) || (!(after && f.to === after.city) && i === 0);
+    const at = inbound ? firstLodge : lastLodge;
+    if (at < 0) return;
+    const item: PlanItem = {
+      id: `auto-flight-${i}`,
+      type: "flight",
+      title: `Flight ${f.from} to ${f.to}`,
+      detail: "",
+      price: null,
+      addon_id: null,
+      qty: null,
+      flight: { from: f.from, to: f.to, airline: "", number: "", time: f.time ?? "", pnr: "" },
+      auto: `flight:${i}:${f.from}>${f.to}`,
+    };
+    out[at] = { ...out[at], items: [...out[at].items, item] };
+  });
+  return out;
 }
 
 function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
@@ -187,6 +308,7 @@ const DEFAULT_TEXT: Record<PlanDay["kind"], string> = {
   safari: "{safaris} in {park}.",
   leisure: "A day at leisure at {lodge}.",
   departure: "After breakfast, drive to {to}{hours} for your onward journey.",
+  city: "",
 };
 
 function pickTemplate(ctx: BuilderContext, kind: string, parkId: string | null, propertyId: string | null) {
@@ -207,6 +329,7 @@ function safariPhrase(s: DaySafari[]) {
 }
 
 export function describe(ctx: BuilderContext, day: PlanDay, vehicle: string | null): PlanDay {
+  if (day.kind === "city") return day; // written when the city day is made
   const lodge = ctx.properties.find((p) => p.id === day.property_id)?.name ?? "";
   const park = ctx.pricing.parks.find((p) => p.id === day.park_id)?.name ?? "";
   const from = day.transfer ? ctx.locations.find((l) => l.id === day.transfer!.from_location_id)?.name ?? "" : "";
@@ -220,6 +343,7 @@ export function describe(ctx: BuilderContext, day: PlanDay, vehicle: string | nu
     safari: `Safaris in ${park}`,
     leisure: `At leisure in ${park}`,
     departure: to ? `Depart via ${to}` : "Departure",
+    city: day.title,
   };
 
   const template = pickTemplate(ctx, day.kind, day.park_id, day.property_id)?.body ?? DEFAULT_TEXT[day.kind];
@@ -282,7 +406,7 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
 
 // Everything that changes the day plan. If this changes, the days are rebuilt.
 export const routeKey = (p: Plan) =>
-  JSON.stringify([p.arrival_date, p.arrival_location_id, p.departure_location_id, p.stops, p.vehicle_type, p.guest.rooms]);
+  JSON.stringify([p.arrival_date, p.arrival_location_id, p.departure_location_id, p.stops, p.vehicle_type, p.guest.rooms, p.city_stays ?? [], p.flights ?? []]);
 
 // Problems with the route itself (before pricing).
 export function routeProblems(plan: Plan, ctx: BuilderContext): string[] {

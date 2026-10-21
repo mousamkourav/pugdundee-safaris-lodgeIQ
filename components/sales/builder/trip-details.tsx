@@ -277,6 +277,50 @@ export function TripDetails({
             {ctx.pricing.parks.filter((p) => lodgesInPark(ctx, p.id).length).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
+
+        {/* nights in a city and flights, usually picked up by the trip assistant */}
+        {((plan.city_stays ?? []).length > 0 || (plan.flights ?? []).length > 0) && (
+          <div className="space-y-2">
+            <p className={ui.label}>City nights and flights</p>
+            {(plan.city_stays ?? []).map((c, i) => (
+              <div key={`c${i}`} className="flex items-center gap-2 rounded-lg border border-sand-200 bg-sand-50 px-3 py-2 text-sm">
+                <span className="flex-1">
+                  {c.city}, {c.when === "before" ? "before the safari" : "at the end"}
+                </span>
+                <label className="flex items-center gap-1.5 text-xs text-sand-600">
+                  Nights
+                  <input
+                    type="number"
+                    min={1}
+                    max={14}
+                    value={c.nights}
+                    onChange={(e) => {
+                      const n = Math.max(1, Math.min(14, Number(e.target.value) || 1));
+                      setPlan((p) => ({ ...p, city_stays: (p.city_stays ?? []).map((x, j) => (j === i ? { ...x, nights: n } : x)) }));
+                    }}
+                    className="w-14 rounded-md border border-sand-300 bg-white px-2 py-1 text-sm"
+                    aria-label={`Nights in ${c.city}`}
+                  />
+                </label>
+                <button type="button" className="rounded p-1 text-error hover:bg-error-bg" onClick={() => setPlan((p) => ({ ...p, city_stays: (p.city_stays ?? []).filter((_, j) => j !== i) }))} aria-label={`Remove the ${c.city} nights`}>
+                  <Icon name="trash" className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+            {(plan.flights ?? []).map((fl, i) => (
+              <div key={`f${i}`} className="flex items-center gap-2 rounded-lg border border-sand-200 bg-sand-50 px-3 py-2 text-sm">
+                <span className="flex-1">
+                  Flight {fl.from} to {fl.to}
+                  {fl.time ? <span className="text-sand-500"> at {fl.time}</span> : null}
+                </span>
+                <button type="button" className="rounded p-1 text-error hover:bg-error-bg" onClick={() => setPlan((p) => ({ ...p, flights: (p.flights ?? []).filter((_, j) => j !== i) }))} aria-label={`Remove the flight ${fl.from} to ${fl.to}`}>
+                  <Icon name="trash" className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+            <p className="text-xs text-sand-500">Airline, flight number and PNR are added on the flight itself, on Plan &amp; price.</p>
+          </div>
+        )}
         </div>
       </details>
     </div>

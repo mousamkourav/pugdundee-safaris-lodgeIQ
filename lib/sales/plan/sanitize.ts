@@ -24,6 +24,9 @@ export function sanitizePlan(input: unknown): Plan | null {
       property_id: str(s.property_id, 100),
       room_category_id: str(s.room_category_id, 100),
       meal_plan: ["EP", "CP", "MAP", "AP"].includes(String(s.meal_plan)) ? String(s.meal_plan) : "AP",
+      ...(Number.isInteger(Number(s.want_safaris)) && s.want_safaris !== null && s.want_safaris !== undefined ? { want_safaris: Math.max(0, Math.min(20, Number(s.want_safaris))) } : {}),
+      ...(Number.isInteger(Number(s.want_naturalists)) && s.want_naturalists !== null && s.want_naturalists !== undefined ? { want_naturalists: Math.max(-1, Math.min(20, Number(s.want_naturalists))) } : {}),
+      ...(Array.isArray(s.want_extras) ? { want_extras: s.want_extras.map((x) => str(x, 40)).filter(Boolean).slice(0, 10) } : {}),
     };
   });
 
@@ -35,7 +38,7 @@ export function sanitizePlan(input: unknown): Plan | null {
       .filter((y) => (y.session === "morning" || y.session === "afternoon") && (y.zone === "core" || y.zone === "buffer"))
       .map((y) => ({ session: y.session as DaySafari["session"], zone: y.zone as DaySafari["zone"], ...(y.naturalist === true ? { naturalist: true } : {}) }))
       .slice(0, 2);
-    const kind = ["arrival", "safari", "transfer", "leisure", "departure"].includes(String(d.kind)) ? (d.kind as PlanDay["kind"]) : "leisure";
+    const kind = ["arrival", "safari", "transfer", "leisure", "departure", "city"].includes(String(d.kind)) ? (d.kind as PlanDay["kind"]) : "leisure";
     return {
       date: isDate(d.date) ? d.date : (p.arrival_date as string),
       kind,
@@ -58,6 +61,7 @@ export function sanitizePlan(input: unknown): Plan | null {
           price: Number.isFinite(price) && price > 0 ? Math.min(Math.round(price), 100_000_000) : null,
           addon_id: strOrNull(it.addon_id),
           qty: Number.isInteger(qty) && qty > 0 ? Math.min(qty, 500) : null,
+          ...(typeof it.auto === "string" && it.auto ? { auto: str(it.auto, 120) } : {}),
           ...(it.type === "flight"
             ? {
                 flight: (() => {
@@ -111,6 +115,16 @@ export function sanitizePlan(input: unknown): Plan | null {
     markup_pct: p.markup_pct === null || p.markup_pct === undefined || p.markup_pct === "" ? null : Math.max(-50, Math.min(200, Number(p.markup_pct) || 0)),
     adjustment: Number.isFinite(adjAmount) && adjAmount !== 0 ? { amount: Math.round(adjAmount), reason: str(adj.reason, 300).trim() } : null,
     currency: p.currency === "USD" ? "USD" : "INR",
+    city_stays: (Array.isArray(p.city_stays) ? p.city_stays : [])
+      .map((x) => obj(x))
+      .filter((c) => (c.when === "before" || c.when === "after") && typeof c.city === "string" && Number(c.nights) > 0)
+      .slice(0, 2)
+      .map((c) => ({ when: c.when as "before" | "after", city: str(c.city, 60), nights: Math.min(14, Math.round(Number(c.nights))) })),
+    flights: (Array.isArray(p.flights) ? p.flights : [])
+      .map((x) => obj(x))
+      .filter((f) => typeof f.from === "string" && typeof f.to === "string")
+      .slice(0, 6)
+      .map((f) => ({ from: str(f.from, 60), to: str(f.to, 60), ...(typeof f.time === "string" && f.time ? { time: str(f.time, 10) } : {}) })),
     discount: (() => {
       const dd = obj(p.discount);
       const pct = Number(dd.pct);

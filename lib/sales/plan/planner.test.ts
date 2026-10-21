@@ -102,3 +102,31 @@ test("day text: no 'resident naturalist'; naturalist sentence only when ticked; 
   const t = planToTrip(p, "2026-10-05");
   assert.deepEqual(t.custom_items, [{ date: p.days[0].date, title: "Flight Delhi to Nagpur", amount: 12000, group: "flight" }]);
 });
+
+test("the plan honours wishes, city nights and flights; edited flights survive a rebuild", () => {
+  const p = sheetPlan();
+  p.stops[0] = { ...p.stops[0], want_safaris: 3, want_naturalists: 1, want_extras: ["nature walk"] };
+  p.city_stays = [{ when: "before", city: "Delhi", nights: 1 }, { when: "after", city: "Delhi", nights: 1 }];
+  p.flights = [{ from: "Delhi", to: "Nagpur", time: "08:30" }, { from: "Nagpur", to: "Delhi" }];
+  p.days = buildDays(p, ctx);
+  assert.equal(p.days.length, 10); // 8 lodge days + Delhi before + Delhi at the end
+  assert.equal(p.days[0].kind, "city");
+  assert.equal(p.days[0].title, "Arrive in Delhi");
+  assert.equal(p.days[9].title, "Depart from Delhi");
+  const tadobaSafaris = p.days.filter((d) => d.park_id === "TADOBA").flatMap((d) => d.safaris);
+  assert.equal(tadobaSafaris.length, 3);
+  assert.equal(tadobaSafaris.filter((s) => s.naturalist).length, 1);
+  assert.ok(p.days.some((d) => d.items.some((i) => i.auto?.startsWith("extra:0:nature walk"))));
+  const inbound = p.days[1].items.find((i) => i.type === "flight")!;
+  assert.equal(inbound.title, "Flight Delhi to Nagpur");
+  assert.equal(p.days[8].items.find((i) => i.type === "flight")!.title, "Flight Nagpur to Delhi");
+  // the sales person adds the ticket; a route change rebuilds the days; the ticket stays
+  p.days[1].items = p.days[1].items.map((i) => (i.type === "flight" ? { ...i, flight: { ...i.flight!, airline: "IndiGo", pnr: "ABC123" } } : i));
+  p.stops[1] = { ...p.stops[1], nights: 2 };
+  p.days = buildDays(p, ctx);
+  const kept = p.days.flatMap((d) => d.items).find((i) => i.title === "Flight Delhi to Nagpur")!;
+  assert.equal(kept.flight!.pnr, "ABC123");
+  assert.equal(p.days.flatMap((d) => d.items).filter((i) => i.type === "flight").length, 2); // no duplicates
+  // city days cost nothing and do not change the lodge pricing
+  assert.equal(priceTrip(planToTrip(p, "2026-10-05"), data).errors.length, 0);
+});
