@@ -387,5 +387,6 @@ export function nextQuestion(
   } else {
     text += ' Tell me any change, like "make Pench 2 nights" or "add Kanha 3 nights", or review the plan.';
   }
-  return { text, pending, quick: [{ label: "Review the plan", action: "review" }], warnings: [...missingNote, ...r.warnings], ready: true };
+  const natNote = plan.guest.country ? [] : ['Nationality not given, so foreign safari rates are used. Say "Indian guests" or the country, e.g. "from UK".'];
+  return { text, pending, quick: [{ label: "Review the plan", action: "review" }], warnings: [...natNote, ...missingNote, ...r.warnings], ready: true };
 }

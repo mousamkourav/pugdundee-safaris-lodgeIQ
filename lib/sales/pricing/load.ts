@@ -122,6 +122,8 @@ export async function loadPricingData(): Promise<{ data: PricingData; error: str
         guide_fee: num(r.guide_fee),
         tax_pct: num(r.tax_pct),
         active: true,
+        book_min_days: numOrNull(r.book_min_days),
+        book_max_days: numOrNull(r.book_max_days),
       })
     ),
     locations: rows(locs).map((r): Location => ({ id: str(r.id), name: str(r.name), property_id: strOrNull(r.property_id) })),
@@ -169,6 +171,7 @@ export async function loadPricingData(): Promise<{ data: PricingData; error: str
         travel_from: date(r.travel_from),
         travel_to: date(r.travel_to),
         min_nights: num(r.min_nights, 1),
+        min_lodges: numOrNull(r.min_lodges),
         combinable: !!r.combinable,
         active: true,
       })

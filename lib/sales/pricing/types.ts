@@ -83,6 +83,9 @@ export interface SafariRate {
   guide_fee: number;
   tax_pct: number;
   active: boolean;
+  // Booking window (days between booking and the safari), e.g. Tadoba 60-120 vs 4-59.
+  book_min_days?: number | null;
+  book_max_days?: number | null;
 }
 
 export interface Location {
@@ -120,7 +123,7 @@ export interface Addon {
 export interface Offer {
   id: string;
   name: string;
-  offer_type: "percent" | "fixed_rate" | "stay_pay";
+  offer_type: "percent" | "fixed_rate" | "stay_pay" | "multi_lodge";
   value: number | null;
   stay_nights: number | null;
   pay_nights: number | null;
@@ -132,6 +135,7 @@ export interface Offer {
   travel_from: ISODate | null;
   travel_to: ISODate | null;
   min_nights: number;
+  min_lodges?: number | null; // multi_lodge: this many of our own lodges in one trip
   combinable: boolean;
   active: boolean;
 }

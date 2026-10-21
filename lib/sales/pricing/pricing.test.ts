@@ -211,3 +211,33 @@ test("the price breakup (net + GST) always adds up to the total", () => {
   const safGst = Math.round((t.rows.find((x) => x.key === "safaris")!.amount + t.rows.find((x) => x.key === "naturalists")!.amount) * 0.05);
   assert.ok(Math.abs(t.gst - (Math.round(acc * 0.9 * 0.18) + safGst)) <= 20, `gst ${t.gst}`);
 });
+
+test("Tadoba booking-window rates: 4-59 days ahead is cheaper than 60-120", () => {
+  const windowed = {
+    ...data,
+    safariRates: [
+      ...data.safariRates,
+      ...data.safariRates.filter((r) => r.park_id === "TADOBA" && r.zone === "core").map((r) => ({ ...r, id: r.id + "_late", weekday_rate: 11000, weekend_rate: 12000, book_min_days: 4, book_max_days: 59 })),
+    ],
+  };
+  const sunday = trip.safaris.find((s) => s.park_id === "TADOBA" && s.date === "2027-01-17")!;
+  const one = { ...trip, safaris: [sunday] };
+  const early = priceTrip({ ...one, booking_date: "2026-10-05" }, windowed); // 104 days ahead: normal rate
+  const late = priceTrip({ ...one, booking_date: "2026-12-20" }, windowed); // 28 days ahead: the 4-59 day rate
+  const s = (r: ReturnType<typeof priceTrip>) => r.lines.find((l) => l.kind === "safari")!;
+  assert.equal(s(late).unit_price, 12000);
+  assert.ok(s(early).unit_price > 12000);
+});
+
+test("multi-lodge offer: 2 lodges and 6 nights = 10% off rooms; suggested when not ticked", () => {
+  const offer = { id: "ML2", name: "Any 2 lodges, 6 nights", offer_type: "multi_lodge" as const, value: 10, stay_nights: null, pay_nights: null, applies_to: ["room"], property_ids: [], room_category_ids: [], book_from: null, book_to: null, travel_from: null, travel_to: null, min_nights: 6, min_lodges: 2, combinable: false, active: true };
+  const withOffer = { ...data, offers: [...data.offers, offer] };
+  const base = priceTrip(trip, withOffer);
+  assert.ok(base.warnings.some((w) => w.includes("qualifies") && w.includes("10% off")));
+  const applied = priceTrip({ ...trip, offer_ids: ["ML2"] }, withOffer);
+  assert.equal(applied.totals.grand, base.totals.grand - Math.round(base.totals.room * 0.1) + (applied.totals.grand - (base.totals.grand + applied.totals.discount)));
+  assert.equal(applied.totals.discount, -base.lines.filter((l) => l.kind === "room").reduce((t, l) => t + Math.round(l.amount * 0.1), 0));
+  const oneLodge = priceTrip({ ...trip, stays: [trip.stays[0]], offer_ids: ["ML2"] }, withOffer);
+  assert.ok(oneLodge.warnings.some((w) => w.includes("needs 2 of our lodges")));
+  assert.equal(oneLodge.totals.discount, 0);
+});

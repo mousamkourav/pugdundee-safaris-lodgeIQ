@@ -71,6 +71,11 @@ function PriceBar({ plan, result, blockers }: { plan: Plan; result: PriceResult 
           {result?.arrival && <p>{fmtDate(result.arrival)} - {fmtDate(result.departure)}</p>}
         </div>
       </div>
+      {plan.stops.length > 0 && !plan.guest.country && (
+        <p className={`${ui.alertWarning} text-xs`}>
+          Nationality not chosen, so safari rates for foreign nationals are used. Choose the guest&apos;s country under Guest.
+        </p>
+      )}
       {needed > 0 && !blockers.length && (
         <p className={`${ui.alertWarning} text-xs`}>
           {needed} price{needed === 1 ? "" : "s"} not in master data yet. The total leaves {needed === 1 ? "it" : "them"} out until typed in on Plan & price.

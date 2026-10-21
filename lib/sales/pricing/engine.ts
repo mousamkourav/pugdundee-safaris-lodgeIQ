@@ -69,8 +69,12 @@ function pickRoomRate(rates: RoomRate[], roomId: string, meal: string, night: IS
     .sort((a, b) => (a.valid_from < b.valid_from ? 1 : -1))[0]; // most recent start wins
 }
 
-function pickSafariRate(rates: SafariRate[], s: SafariInput, nationality: string) {
+function pickSafariRate(rates: SafariRate[], s: SafariInput, nationality: string, bookingDate?: ISODate) {
   const vehicle = s.vehicle_type ?? "exclusive_jeep";
+  const lead = bookingDate ? Math.round((Date.parse(s.date) - Date.parse(bookingDate)) / 86_400_000) : null;
+  const inWindow = (r: SafariRate) =>
+    lead === null || ((r.book_min_days == null || lead >= r.book_min_days) && (r.book_max_days == null || lead <= r.book_max_days));
+  const windowed = (r: SafariRate) => (r.book_min_days != null || r.book_max_days != null ? 0 : 1);
   return rates
     .filter(
       (r) =>
@@ -80,13 +84,15 @@ function pickSafariRate(rates: SafariRate[], s: SafariInput, nationality: string
         r.session === s.session &&
         r.vehicle_type === vehicle &&
         (r.nationality === "all" || r.nationality === nationality) &&
-        inRange(s.date, r.valid_from, r.valid_to)
+        inRange(s.date, r.valid_from, r.valid_to) &&
+        inWindow(r)
     )
     .sort((a, b) => {
-      // a rate for this nationality beats an "all guests" rate, then newest first
+      // a rate for this nationality beats an "all guests" rate; a rate for this
+      // booking window beats an open one; then newest first
       const na = a.nationality === "all" ? 1 : 0;
       const nb = b.nationality === "all" ? 1 : 0;
-      return na - nb || (a.valid_from < b.valid_from ? 1 : -1);
+      return na - nb || windowed(a) - windowed(b) || (a.valid_from < b.valid_from ? 1 : -1);
     })[0];
 }
 
@@ -213,7 +219,7 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
       );
     }
 
-    const rate = pickSafariRate(data.safariRates, s, trip.nationality);
+    const rate = pickSafariRate(data.safariRates, s, trip.nationality, trip.booking_date);
     const billTo = stayOn(s.date)?.property_id ?? null;
     if (s.naturalist) priceNaturalist(s, rate, billTo, where);
     if (!rate) {
@@ -335,6 +341,14 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
       (s) => (!offer.property_ids.length || offer.property_ids.includes(s.property_id)) && (!offer.room_category_ids.length || offer.room_category_ids.includes(s.room_category_id))
     );
     const nights = eligibleStays.reduce((t, s) => t + s.nights, 0);
+    if (offer.offer_type === "multi_lodge") {
+      const own = new Set(data.properties.filter((p) => (p.kind ?? "own_lodge") === "own_lodge").map((p) => p.id));
+      const lodges = new Set(eligibleStays.filter((s) => own.has(s.property_id)).map((s) => s.property_id)).size;
+      if (lodges < (offer.min_lodges ?? 2)) {
+        warnings.push(`"${offer.name}" needs ${offer.min_lodges ?? 2} of our lodges in one trip; this trip has ${lodges}.`);
+        continue;
+      }
+    }
     if (offer.applies_to.includes("room") && nights < offer.min_nights) {
       warnings.push(`"${offer.name}" needs at least ${offer.min_nights} nights at the eligible lodges.`);
       continue;
@@ -347,10 +361,14 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
       (l.kind !== "room" || !offer.room_category_ids.length || (l.ref_id !== null && offer.room_category_ids.includes(l.ref_id)));
 
     const discountBy = new Map<string | null, number>();
-    const add = (pid: string | null, n: number) => discountBy.set(pid, (discountBy.get(pid) ?? 0) + n);
+    const taxBy = new Map<string | null, number>(); // GST inside the discount, so the breakup stays exact
+    const add = (pid: string | null, n: number, tax = 0) => {
+      discountBy.set(pid, (discountBy.get(pid) ?? 0) + n);
+      taxBy.set(pid, (taxBy.get(pid) ?? 0) + tax);
+    };
 
-    if (offer.offer_type === "percent") {
-      for (const l of baseLines.filter(matches)) add(l.property_id, round((l.amount * (offer.value ?? 0)) / 100));
+    if (offer.offer_type === "percent" || offer.offer_type === "multi_lodge") {
+      for (const l of baseLines.filter(matches)) add(l.property_id, round((l.amount * (offer.value ?? 0)) / 100), round((l.tax * (offer.value ?? 0)) / 100));
     } else if (offer.offer_type === "fixed_rate") {
       for (const l of baseLines.filter((x) => x.kind === "room" && matches(x))) {
         const offerAmount = (offer.value ?? 0) * l.quantity;
@@ -373,8 +391,19 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     }
     appliedOffers.push(offer.id);
     for (const [pid, amt] of discountBy) {
-      if (amt > 0) lines.push({ kind: "discount", date: null, description: offer.name, quantity: 1, unit_price: -amt, amount: -amt, tax: 0, property_id: pid, ref_id: offer.id });
+      if (amt > 0) lines.push({ kind: "discount", date: null, description: offer.name, quantity: 1, unit_price: -amt, amount: -amt, tax: -(taxBy.get(pid) ?? 0), property_id: pid, ref_id: offer.id });
     }
+  }
+
+  // A multi-lodge offer the trip qualifies for but that is not ticked: say so.
+  if (!toApply.length) {
+    const own = new Set(data.properties.filter((p) => (p.kind ?? "own_lodge") === "own_lodge").map((p) => p.id));
+    const lodges = new Set(trip.stays.filter((s) => own.has(s.property_id)).map((s) => s.property_id)).size;
+    const nightsAll = trip.stays.reduce((t, s) => t + s.nights, 0);
+    const best = data.offers
+      .filter((o) => o.active && o.offer_type === "multi_lodge" && lodges >= (o.min_lodges ?? 2) && nightsAll >= o.min_nights && inRange(trip.booking_date, o.book_from, o.book_to))
+      .sort((a, b) => (b.value ?? 0) - (a.value ?? 0))[0];
+    if (best) warnings.push(`This trip qualifies for "${best.name}" (${best.value}% off). Tick it under Offers to apply it.`);
   }
 
   // ---------------- % discount ----------------
