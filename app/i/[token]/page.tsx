@@ -5,6 +5,7 @@ import { DownloadPdfButton } from "@/components/sales/download-pdf";
 import { PhotoCarousel } from "@/components/sales/photo-carousel";
 import { Icon } from "@/components/icons";
 import { dayName } from "@/lib/sales/pricing/dates";
+import { shortPark } from "@/lib/sales/plan/draft";
 
 // Guest-facing itinerary. Public: opened from a share link without signing in.
 export async function generateMetadata({ params }: { params: Promise<{ token: string }> }): Promise<Metadata> {
@@ -15,10 +16,14 @@ export async function generateMetadata({ params }: { params: Promise<{ token: st
   };
 }
 
-// Slideshows show as photo grids in the PDF and in print.
+// Slideshows show as photo grids in the PDF and in print. While the PDF is being
+// made, the page is laid out at a fixed A4-like width with comfortable type, and
+// the cover fills the first page exactly.
 const PDF_CSS = `.pdf-only{display:none}
 html[data-pdf] .pdf-hide{display:none!important}
 html[data-pdf] .pdf-only{display:grid!important}
+html[data-pdf] #itinerary{width:820px!important;max-width:none!important;border-radius:0!important;font-size:15px}
+html[data-pdf] [data-pdf-block="cover"]{min-height:0!important;height:auto!important;aspect-ratio:210/297}
 @media print{.pdf-hide{display:none!important}.pdf-only{display:grid!important}}`;
 
 const fileNameFor = (guest: string, queryNo: string) =>
@@ -37,135 +42,257 @@ function money(n: number, currency: string) {
   }).format(n);
 }
 
+// Small line icons for the guest page (kept here so the page stands alone).
+const PATHS: Record<string, string> = {
+  plane: "M2 16l20-6-20-6 3 6-3 6zm3-6h8",
+  jeep: "M3 15h18v-3l-2-4H8L6 12H3v3zm3 0a2 2 0 1 0 4 0m4 0a2 2 0 1 0 4 0",
+  leaf: "M5 19c8 0 14-6 14-14C11 5 5 11 5 19zm0 0l7-7",
+  bed: "M3 18V8m0 6h18v4M3 11h7a3 3 0 0 1 3 3M14 11h4a3 3 0 0 1 3 3",
+  sun: "M12 4V2m0 20v-2m8-8h2M2 12h2m13.7-5.7 1.4-1.4M4.9 19.1l1.4-1.4m0-11.4L4.9 4.9m14.2 14.2-1.4-1.4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z",
+  star: "M12 3l2.6 5.6 6.1.6-4.6 4.1 1.3 6L12 16.4 6.6 19.3l1.3-6L3.3 9.2l6.1-.6L12 3z",
+  arrow: "M5 12h14m-5-5 5 5-5 5",
+};
+function Line({ name, className = "h-4 w-4" }: { name: keyof typeof PATHS; className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={PATHS[name]} />
+    </svg>
+  );
+}
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
 export default async function ClientItineraryPage({ params }: { params: Promise<{ token: string }> }) {
   const view = await loadClientView((await params).token);
   if (!view) notFound();
   const { plan } = view;
 
-  // The first day at each lodge shows its photos and description.
+  // The first day at each lodge shows the lodge as a feature.
   const firstDayAt = new Map<string, number>();
   plan.days.forEach((d, i) => {
     if (d.property_id && !firstDayAt.has(d.property_id)) firstDayAt.set(d.property_id, i);
   });
 
+  // At a glance: the route, with nights, and the key numbers.
+  const before = (plan.city_stays ?? []).find((c) => c.when === "before");
+  const after = (plan.city_stays ?? []).find((c) => c.when === "after");
+  const route: { place: string; detail: string; nights: number; flightIn?: boolean }[] = [];
+  if (before) route.push({ place: before.city, detail: before.hotel || "City stay", nights: before.nights });
+  plan.stops.forEach((s, i) => {
+    route.push({
+      place: shortPark(view.parkNames[s.park_id] ?? ""),
+      detail: view.lodgeNames[s.property_id] ?? "",
+      nights: s.nights,
+      flightIn: i === 0 && !!before && (plan.flights ?? []).length > 0,
+    });
+  });
+  if (after) route.push({ place: after.city, detail: after.hotel || "City stay", nights: after.nights, flightIn: (plan.flights ?? []).length > 1 });
+  const lodgeNights = plan.stops.reduce((t, s) => t + s.nights, 0);
+  const safaris = plan.days.reduce((t, d) => t + d.safaris.length, 0);
+  const lodgeCount = new Set(plan.stops.map((s) => s.property_id)).size;
+  const facts = [
+    { n: plan.days.length || view.nights + 1, label: "days" },
+    { n: lodgeNights, label: "nights in the wild" },
+    { n: safaris, label: safaris === 1 ? "safari" : "safaris" },
+    { n: lodgeCount, label: lodgeCount === 1 ? "lodge" : "lodges" },
+  ];
+
   return (
-    <div className="min-h-screen bg-sand-100 py-0 sm:py-8 print:bg-white print:py-0">
+    <div className="min-h-screen bg-sand-100 text-[17px] leading-relaxed text-sand-700 sm:py-8 sm:text-base print:bg-white print:py-0">
       <style>{PDF_CSS}</style>
-      <div className="mx-auto mb-4 flex max-w-4xl justify-end px-4 pt-4 sm:pt-0 print:hidden">
+      <div className="mx-auto flex max-w-4xl justify-end px-4 py-3 sm:px-0 sm:pt-0 print:hidden">
         <DownloadPdfButton fileName={fileNameFor(view.guestName, view.queryNo)} />
       </div>
 
-      <article id="itinerary" className="mx-auto max-w-4xl overflow-hidden bg-white shadow-card sm:rounded-xl print:max-w-none print:shadow-none">
-        {/* cover */}
-        <header data-pdf-block="cover" className="relative flex min-h-72 items-end bg-olive-800 sm:min-h-96 print:min-h-64">
+      <article id="itinerary" className="mx-auto max-w-4xl overflow-hidden bg-white shadow-card sm:rounded-2xl print:max-w-none print:shadow-none">
+        {/* ---------------- cover ---------------- */}
+        <header data-pdf-block="cover" className="relative flex min-h-[88vh] flex-col justify-between bg-[var(--color-olive-900,#2B3318)] text-white sm:min-h-[640px] print:min-h-[960px]">
           {view.heroUrl && (
-            // eslint-disable-next-line @next/next/no-img-element -- public storage URL; next/image needs remote config
+            // eslint-disable-next-line @next/next/no-img-element -- public storage URL
             <img src={view.heroUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
           )}
-          <div className="absolute inset-0 bg-gradient-to-t from-olive-900/90 via-olive-900/30 to-transparent" />
-          <div className="relative p-8 text-white sm:p-10">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-gold-200">{view.company.name}</p>
-            <h1 className="mt-2 font-display text-3xl font-bold !text-white sm:text-4xl">{view.title}</h1>
-            {view.routeLine && <p className="mt-1 font-display text-lg text-gold-200 sm:text-xl">{view.routeLine}</p>}
-            <p className="mt-2 text-white/85">
-              Prepared for {view.guestName} &middot; {long(view.arrival)} - {long(view.departure)} &middot; {plan.days.length || view.nights + 1} days
+          <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/10 to-black/80" />
+          <div className="relative flex items-center justify-between px-6 pt-6 sm:px-12 sm:pt-10">
+            <p className="text-xs font-bold uppercase tracking-[0.3em] text-white/90">{view.company.name}</p>
+            <p className="hidden text-xs uppercase tracking-[0.2em] text-white/70 sm:block">Wildlife lodges &amp; experiences</p>
+          </div>
+          <div className="relative px-6 pb-10 sm:px-12 sm:pb-14">
+            <p className="text-sm uppercase tracking-[0.25em] text-[var(--color-gold-200,#EBD9A0)]">A private safari for {view.guestName}</p>
+            <h1 className="mt-3 max-w-3xl font-display text-[2.6rem] font-semibold leading-[1.05] !text-white sm:text-6xl">{view.title}</h1>
+            {view.routeLine && <p className="mt-4 font-display text-xl italic text-[var(--color-gold-200,#EBD9A0)] sm:text-2xl">{view.routeLine}</p>}
+            <div className="mt-6 h-px w-24 bg-[var(--color-gold-300,#DDC277)]" />
+            <p className="mt-5 text-base text-white/90 sm:text-lg">
+              {long(view.arrival)} &ndash; {long(view.departure)}
+              <span className="mx-2 text-white/50">|</span>
+              {plan.days.length || view.nights + 1} days
+              <span className="mx-2 text-white/50">|</span>
+              {view.guests} guest{view.guests === 1 ? "" : "s"}
             </p>
-            <p className="mt-1 text-sm text-white/70">
-              Quote {view.queryNo} &middot; quoted on {long(view.quotedOn)}
+            <p className="mt-2 text-xs uppercase tracking-[0.18em] text-white/60">
+              Quote {view.queryNo} &middot; prepared {long(view.quotedOn)}
             </p>
           </div>
         </header>
 
-        <div className="space-y-10 p-6 sm:p-10">
-          <section data-pdf-block="">
-            <h2 className="text-xl">About this trip</h2>
-            <p className="mt-3 whitespace-pre-line leading-relaxed">{view.sections.about}</p>
+        <div className="space-y-14 px-5 py-10 sm:px-12 sm:py-14">
+          {/* ---------------- at a glance ---------------- */}
+          <section data-pdf-block="" className="space-y-6">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--color-gold-600,#A8851C)]">Your journey at a glance</p>
+              <h2 className="mt-2 font-display text-3xl text-olive-800">The route</h2>
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {facts.map((f) => (
+                <div key={f.label} className="rounded-2xl bg-sand-50 px-4 py-4 text-center ring-1 ring-sand-200">
+                  <p className="font-display text-4xl font-semibold text-olive-800">{f.n}</p>
+                  <p className="mt-1 text-xs uppercase tracking-[0.15em] text-sand-500">{f.label}</p>
+                </div>
+              ))}
+            </div>
+            <ol className="relative space-y-3 sm:space-y-0 sm:pl-0">
+              {route.map((r, i) => (
+                <li key={i} className="flex items-center gap-4 rounded-xl px-1 py-2">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-olive-800 font-display text-sm font-semibold text-[var(--color-gold-200,#EBD9A0)]">{i + 1}</span>
+                  <div className="min-w-0 flex-1 border-b border-dashed border-sand-200 pb-2">
+                    <p className="font-display text-lg text-olive-800">
+                      {r.place}
+                      {r.flightIn && (
+                        <span className="ml-2 inline-flex items-center gap-1 align-middle text-xs font-sans uppercase tracking-wide text-[var(--color-gold-600,#A8851C)]">
+                          <Line name="plane" className="h-3.5 w-3.5" /> by air
+                        </span>
+                      )}
+                    </p>
+                    <p className="truncate text-sm text-sand-500">{r.detail}</p>
+                  </div>
+                  <p className="shrink-0 text-right text-sm font-semibold text-olive-700">
+                    {r.nights} night{r.nights === 1 ? "" : "s"}
+                  </p>
+                </li>
+              ))}
+            </ol>
           </section>
 
-          {/* day by day */}
+          {/* ---------------- about ---------------- */}
+          {view.sections.about && (
+            <section data-pdf-block="">
+              <p className="border-l-2 border-[var(--color-gold-400,#D2AD4C)] pl-5 font-display text-xl italic leading-relaxed text-olive-800 sm:text-2xl">{view.sections.about}</p>
+            </section>
+          )}
+
+          {/* ---------------- day by day ---------------- */}
           <section>
-            <h2 data-pdf-block="" className="text-xl">Your journey</h2>
-            <ol className="mt-6 space-y-8">
+            <div data-pdf-block="">
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--color-gold-600,#A8851C)]">Day by day</p>
+              <h2 className="mt-2 font-display text-3xl text-olive-800">Your itinerary</h2>
+            </div>
+            <ol className="mt-8 space-y-10">
               {plan.days.map((d, i) => {
                 const lodge = d.property_id && firstDayAt.get(d.property_id) === i ? view.lodges.find((l) => l.id === d.property_id) : null;
+                const items = (d.items ?? []).filter((it) => it.type !== "note" || it.title);
                 return (
-                  <li key={i} data-pdf-block="" className="grid gap-3 break-inside-avoid sm:grid-cols-[130px_1fr]">
-                    <div>
-                      <p className="font-display font-semibold text-olive-800">Day {i + 1}</p>
-                      <p className="text-sm text-sand-500">{dayName(d.date)} {short(d.date)}</p>
-                    </div>
-                    <div>
-                      <p className="font-semibold text-olive-800">{d.title}</p>
-                      <p className="mt-1 whitespace-pre-line leading-relaxed">{d.text}</p>
-                      {(d.items ?? []).filter((it) => it.type !== "note" || it.title).length > 0 && (
-                        <ul className="mt-2 space-y-1 text-sm">
-                          {(d.items ?? []).map((it) => (
-                            <li key={it.id} className="flex gap-2">
-                              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-gold-500" aria-hidden="true" />
-                              <span>
-                                <span className="font-medium text-olive-800">{it.title}</span>
-                                {it.type === "flight" && it.flight && (
-                                  <span className="text-sand-600">
-                                    {" "}
-                                    {[it.flight.airline && it.flight.number ? `${it.flight.airline} ${it.flight.number}` : it.flight.airline || it.flight.number, it.flight.time && `departs ${it.flight.time}`, it.flight.pnr && `PNR ${it.flight.pnr}`]
-                                      .filter(Boolean)
-                                      .map((x) => `- ${x}`)
-                                      .join(" ")}
-                                    {!it.flight.pnr && <span className="block text-xs italic text-sand-500">Subject to availability and fares at the time of booking.</span>}
-                                  </span>
-                                )}
-                                {it.detail && <span className="text-sand-600"> - {it.detail}</span>}
+                  <li key={i} className="space-y-6">
+                    <div data-pdf-block="" className="grid gap-4 sm:grid-cols-[110px_1fr]">
+                      <div className="flex items-baseline gap-3 sm:block">
+                        <p className="font-display text-5xl font-semibold leading-none text-[var(--color-gold-500,#C9A227)]">{pad2(i + 1)}</p>
+                        <p className="text-xs uppercase tracking-[0.15em] text-sand-500 sm:mt-2">
+                          {dayName(d.date)} {short(d.date)}
+                        </p>
+                      </div>
+                      <div>
+                        <h3 className="font-display text-2xl leading-snug text-olive-800">{d.title}</h3>
+                        <p className="mt-2 whitespace-pre-line">{d.text}</p>
+                        {d.safaris.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {d.safaris.map((sf, k) => (
+                              <span key={k} className="inline-flex items-center gap-1.5 rounded-full bg-olive-50 px-3 py-1 text-sm text-olive-800 ring-1 ring-olive-100">
+                                <Line name={sf.session === "morning" ? "sun" : "jeep"} className="h-4 w-4 text-olive-600" />
+                                {sf.session === "morning" ? "Morning" : "Evening"} safari &middot; {sf.zone} zone
+                                {sf.naturalist && <span className="ml-1 rounded-full bg-[var(--color-gold-100,#F6EDCC)] px-2 text-xs font-semibold text-[var(--color-gold-800,#6B5410)]">with naturalist</span>}
                               </span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      {lodge && (
-                        <div className="mt-4 rounded-xl bg-sand-50 p-4">
-                          <p className="font-display font-semibold text-olive-800">{lodge.name}</p>
-                          <PhotoCarousel photos={lodge.photos} label={lodge.name} />
-                          {lodge.description && <p className="mt-3 whitespace-pre-line text-sm leading-relaxed">{lodge.description}</p>}
-                          {lodge.website && (
-                            <a href={lodge.website} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-sm font-semibold text-olive-600 underline-offset-2 hover:underline">
-                              Visit the {lodge.name} website
-                            </a>
-                          )}
-                        </div>
-                      )}
+                            ))}
+                          </div>
+                        )}
+                        {items.length > 0 && (
+                          <ul className="mt-3 space-y-2">
+                            {items.map((it) => (
+                              <li key={it.id} className="flex gap-3">
+                                <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-sand-100 text-olive-700">
+                                  <Line name={it.type === "flight" ? "plane" : it.type === "hotel" ? "bed" : it.type === "meal" ? "star" : "leaf"} className="h-4 w-4" />
+                                </span>
+                                <span className="min-w-0">
+                                  <span className="font-medium text-olive-800">{it.title}</span>
+                                  {it.type === "flight" && it.flight && (
+                                    <span className="text-sand-600">
+                                      {[it.flight.airline && it.flight.number ? `${it.flight.airline} ${it.flight.number}` : it.flight.airline || it.flight.number, it.flight.time && `departs ${it.flight.time}`, it.flight.pnr && `PNR ${it.flight.pnr}`]
+                                        .filter(Boolean)
+                                        .map((x) => ` \u00b7 ${x}`)
+                                        .join("")}
+                                      {!it.flight.pnr && <span className="block text-sm italic text-sand-500">Subject to availability and fares at the time of booking.</span>}
+                                    </span>
+                                  )}
+                                  {it.detail && <span className="block text-sm text-sand-600">{it.detail}</span>}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
                     </div>
+
+                    {lodge && (
+                      <div data-pdf-block="" className="-mx-5 bg-sand-50 px-5 py-6 sm:mx-0 sm:rounded-2xl sm:px-8 sm:py-8">
+                        <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--color-gold-600,#A8851C)]">Where you stay</p>
+                        <h3 className="mt-1 font-display text-3xl text-olive-800">{lodge.name}</h3>
+                        {d.park_id && <p className="text-sm text-sand-500">{view.parkNames[d.park_id]}</p>}
+                        <PhotoCarousel photos={lodge.photos} label={lodge.name} />
+                        {lodge.description && <p className="mt-4 whitespace-pre-line leading-relaxed">{lodge.description}</p>}
+                        {lodge.website && (
+                          <a
+                            href={lodge.website}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-4 inline-flex items-center gap-2 rounded-full border border-olive-300 px-4 py-2 text-sm font-semibold text-olive-700 hover:bg-white"
+                          >
+                            Visit the lodge website <Line name="arrow" className="h-4 w-4" />
+                          </a>
+                        )}
+                      </div>
+                    )}
                   </li>
                 );
               })}
             </ol>
           </section>
 
-          {/* price (the sales member chooses whether the guest sees prices, and the breakup) */}
+          {/* ---------------- price ---------------- */}
           {view.show.prices && (
-            <section data-pdf-block="" className="space-y-4 rounded-xl bg-sand-100 p-6 break-inside-avoid">
-              <div className="grid gap-6 sm:grid-cols-2">
+            <section data-pdf-block="" className="-mx-5 bg-[var(--color-olive-900,#2B3318)] px-6 py-8 text-white sm:mx-0 sm:rounded-2xl sm:px-10 sm:py-10">
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--color-gold-200,#EBD9A0)]">Your investment</p>
+              <div className="mt-4 grid gap-6 sm:grid-cols-2 sm:items-end">
                 <div>
-                  <p className="eyebrow">Package price</p>
-                  <p className="mt-1 font-display text-3xl font-semibold text-olive-800">{money(view.perPerson, view.currency)}</p>
-                  <p className="text-sm text-sand-500">per person &middot; {view.guests} guest{view.guests === 1 ? "" : "s"}</p>
+                  <p className="font-display text-5xl font-semibold text-[var(--color-gold-200,#EBD9A0)]">{money(view.perPerson, view.currency)}</p>
+                  <p className="mt-1 text-white/75">
+                    per person &middot; {view.guests} guest{view.guests === 1 ? "" : "s"}
+                  </p>
                 </div>
                 <div className="sm:text-right">
-                  <p className="eyebrow">Total</p>
-                  <p className="mt-1 font-display text-2xl font-semibold text-olive-800">{money(view.total, view.currency)}</p>
-                  <p className="text-sm text-sand-500">Valid until {long(view.validUntil)}</p>
+                  <p className="text-sm uppercase tracking-[0.15em] text-white/60">Total</p>
+                  <p className="font-display text-3xl font-semibold">{money(view.total, view.currency)}</p>
+                  <p className="text-sm text-white/60">Valid until {long(view.validUntil)}</p>
                 </div>
               </div>
               {view.show.breakup && view.breakup.length > 0 && (
-                <table className="w-full text-sm">
+                <table className="mt-6 w-full text-sm">
                   <tbody>
                     {view.breakup.map((r, i) => (
-                      <tr key={i} className={r.gst ? "border-t border-sand-300" : ""}>
-                        <td className="py-1">{r.label}</td>
-                        <td className="tabular py-1 text-right">{money(r.amount, view.currency)}</td>
+                      <tr key={i} className={`border-t ${r.gst ? "border-white/40" : "border-white/10"}`}>
+                        <td className="py-2 text-white/85">{r.label}</td>
+                        <td className="tabular py-2 text-right">{money(r.amount, view.currency)}</td>
                       </tr>
                     ))}
-                    <tr className="border-t border-sand-300 font-semibold text-olive-800">
-                      <td className="py-1.5">Total including GST</td>
-                      <td className="tabular py-1.5 text-right">{money(view.total, view.currency)}</td>
+                    <tr className="border-t border-white/40 font-semibold text-[var(--color-gold-200,#EBD9A0)]">
+                      <td className="py-2.5">Total including GST</td>
+                      <td className="tabular py-2.5 text-right">{money(view.total, view.currency)}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -173,78 +300,99 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
             </section>
           )}
 
-          <section data-pdf-block="" className="grid gap-8 break-inside-avoid sm:grid-cols-2">
+          {/* ---------------- what is included ---------------- */}
+          <section data-pdf-block="" className="grid gap-8 sm:grid-cols-2">
             <div>
-              <h3 className="text-lg">Price includes</h3>
-              <ul className="mt-3 space-y-2 text-sm">
+              <h3 className="font-display text-2xl text-olive-800">Included</h3>
+              <ul className="mt-4 space-y-2.5">
                 {view.sections.inclusions.map((t, i) => (
-                  <li key={i} className="flex gap-2"><Icon name="check" className="mt-0.5 h-4 w-4 shrink-0 text-success" />{t}</li>
+                  <li key={i} className="flex gap-3">
+                    <Icon name="check" className="mt-1 h-4 w-4 shrink-0 text-success" />
+                    {t}
+                  </li>
                 ))}
               </ul>
             </div>
             <div>
-              <h3 className="text-lg">Price does not include</h3>
-              <ul className="mt-3 space-y-2 text-sm">
+              <h3 className="font-display text-2xl text-olive-800">Not included</h3>
+              <ul className="mt-4 space-y-2.5 text-sand-600">
                 {view.sections.exclusions.map((t, i) => (
-                  <li key={i} className="flex gap-2"><Icon name="x" className="mt-0.5 h-4 w-4 shrink-0 text-error" />{t}</li>
+                  <li key={i} className="flex gap-3">
+                    <Icon name="x" className="mt-1 h-4 w-4 shrink-0 text-sand-400" />
+                    {t}
+                  </li>
                 ))}
               </ul>
             </div>
           </section>
 
-          <section data-pdf-block="" className="break-inside-avoid">
-            <h3 className="text-lg">Payment schedule</h3>
-            <div className="mt-3 overflow-x-auto rounded-xl border border-sand-200">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="bg-sand-100 text-xs font-semibold uppercase tracking-wide text-sand-500">
-                    <th className="px-4 py-3">Instalment</th>
-                    <th className="px-4 py-3">Due</th>
-                    <th className="px-4 py-3 text-right">{view.show.prices ? "Amount" : "Share"}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {view.payments.map((p, i) => (
-                    <tr key={i} className="border-t border-sand-200">
-                      <td className="px-4 py-3">{p.label.charAt(0).toUpperCase() + p.label.slice(1)}</td>
-                      <td className="px-4 py-3">{p.due ? long(p.due) : "To confirm the booking"}</td>
-                      <td className="tabular px-4 py-3 text-right">{view.show.prices ? money(p.amountInCurrency, view.currency) : `${p.pct}%`}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* ---------------- payments ---------------- */}
+          <section data-pdf-block="">
+            <h3 className="font-display text-2xl text-olive-800">Payment schedule</h3>
+            <div className="mt-4 divide-y divide-sand-200 rounded-2xl ring-1 ring-sand-200">
+              {view.payments.map((p, i) => (
+                <div key={i} className="flex items-center justify-between gap-4 px-5 py-4">
+                  <div>
+                    <p className="font-medium text-olive-800">{p.label.charAt(0).toUpperCase() + p.label.slice(1)}</p>
+                    <p className="text-sm text-sand-500">{p.due ? `By ${long(p.due)}` : "To confirm the booking"}</p>
+                  </div>
+                  <p className="tabular font-display text-xl text-olive-800">{view.show.prices ? money(p.amountInCurrency, view.currency) : `${p.pct}%`}</p>
+                </div>
+              ))}
             </div>
-            {view.sections.paymentTerms && <p className="mt-3 whitespace-pre-line text-sm leading-relaxed">{view.sections.paymentTerms}</p>}
+            {view.sections.paymentTerms && <p className="mt-4 whitespace-pre-line text-sm text-sand-600">{view.sections.paymentTerms}</p>}
           </section>
 
           {view.sections.cancellation.length > 0 && (
-            <section data-pdf-block="" className="break-inside-avoid">
-              <h3 className="text-lg">Cancellation policy</h3>
-              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm">
-                {view.sections.cancellation.map((t, i) => <li key={i}>{t}</li>)}
+            <section data-pdf-block="">
+              <h3 className="font-display text-2xl text-olive-800">Cancellation policy</h3>
+              <ul className="mt-4 space-y-2 text-sm text-sand-600">
+                {view.sections.cancellation.map((t, i) => (
+                  <li key={i} className="flex gap-3">
+                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-gold-500,#C9A227)]" aria-hidden="true" />
+                    {t}
+                  </li>
+                ))}
               </ul>
             </section>
           )}
 
           {view.sections.notes.length > 0 && (
-            <section data-pdf-block="" className="break-inside-avoid">
-              <h3 className="text-lg">Good to know</h3>
-              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm">
-                {view.sections.notes.map((t, i) => <li key={i}>{t}</li>)}
+            <section data-pdf-block="">
+              <h3 className="font-display text-2xl text-olive-800">Good to know</h3>
+              <ul className="mt-4 grid gap-x-8 gap-y-2 text-sm text-sand-600 sm:grid-cols-2">
+                {view.sections.notes.map((t, i) => (
+                  <li key={i} className="flex gap-3">
+                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-gold-500,#C9A227)]" aria-hidden="true" />
+                    {t}
+                  </li>
+                ))}
               </ul>
             </section>
           )}
         </div>
 
-        <footer data-pdf-block="" className="flex flex-col gap-2 border-t border-sand-200 bg-sand-50 px-6 py-6 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-10">
-          <div>
-            <p className="font-display font-semibold text-olive-800">{view.company.name}</p>
-            <p className="text-xs text-sand-500">Quote {view.queryNo} &middot; version {view.versionNo}</p>
+        {/* ---------------- footer ---------------- */}
+        <footer data-pdf-block="" className="bg-[var(--color-olive-900,#2B3318)] px-6 py-10 text-white sm:px-12">
+          <p className="font-display text-2xl text-[var(--color-gold-200,#EBD9A0)]">We look forward to welcoming you to the wild.</p>
+          <div className="mt-6 grid gap-4 text-sm text-white/80 sm:grid-cols-2">
+            <div>
+              <p className="font-semibold text-white">{view.company.name}</p>
+              {(view.company.email || view.company.phone) && <p>{[view.company.email, view.company.phone].filter(Boolean).join(" \u00b7 ")}</p>}
+            </div>
+            {view.consultant.name && (
+              <div className="sm:text-right">
+                <p className="text-white/60">Your safari consultant</p>
+                <p className="font-semibold text-white">
+                  {view.consultant.name}
+                  {view.consultant.phone ? ` \u00b7 ${view.consultant.phone}` : ""}
+                </p>
+              </div>
+            )}
           </div>
-          <div className="text-sand-600 sm:text-right">
-            {view.consultant.name && <p>Your consultant: <b className="text-olive-800">{view.consultant.name}</b>{view.consultant.phone ? ` - ${view.consultant.phone}` : ""}</p>}
-            {(view.company.email || view.company.phone) && <p>{[view.company.email, view.company.phone].filter(Boolean).join(" - ")}</p>}
-          </div>
+          <p className="mt-6 text-xs uppercase tracking-[0.18em] text-white/40">
+            Quote {view.queryNo} &middot; version {view.versionNo}
+          </p>
         </footer>
       </article>
     </div>

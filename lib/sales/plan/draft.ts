@@ -96,7 +96,13 @@ export function defaultDraft(plan: Plan, inp: DraftInputs): DraftSections {
     about:
       textsFor("about_trip")[0] ??
       (nights
-        ? `A ${nights}-night journey through ${parks.join(", ")}, staying at ${lodges.join(" and ")}.`
+        ? (() => {
+            const shortParks = [...new Set(parks.map(shortPark))];
+            const parkList = shortParks.length > 1 ? `${shortParks.slice(0, -1).join(", ")} and ${shortParks[shortParks.length - 1]}` : shortParks[0];
+            const words = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+            const stay = lodges.length <= 3 ? lodges.join(lodges.length === 2 ? " and " : ", ") : `${words[lodges.length] ?? lodges.length} of our handpicked wildlife lodges`;
+            return `A ${nights}-night journey through ${parkList}, staying at ${stay}.`;
+          })()
         : ""),
     inclusions: inclusions.length
       ? inclusions
