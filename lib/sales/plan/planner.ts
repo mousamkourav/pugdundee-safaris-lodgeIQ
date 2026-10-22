@@ -126,22 +126,70 @@ export function findAddon(ctx: BuilderContext, propertyId: string, keyword: stri
   return pick(matches.filter((a) => a.property_id === propertyId)) ?? pick(matches.filter((a) => !a.property_id)) ?? null;
 }
 
+// A lodge's own experiences (only at that lodge): not meals, transfers, supplements,
+// vehicles or naturalists. One of each Indian / foreign pair, by the guest's nationality.
+const NOT_SPECIAL = /breakfast|lunch|dinner with|packed meal|meal|supplement|transfer|naturalist|modified|gate entry|full-day|maid|extra guest|each extra|accommodation|new year|to the lodge/i;
+export function lodgeSpecials(ctx: BuilderContext, propertyId: string, nationality?: "indian" | "foreign") {
+  const base = (n: string) => n.toLowerCase().replace(/\((indian|foreign)[^)]*\)/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const shared = new Set(ctx.pricing.addons.filter((a) => a.property_id && a.property_id !== propertyId).map((a) => base(a.name)));
+  const own = ctx.pricing.addons.filter((a) => a.active !== false && a.property_id === propertyId && !NOT_SPECIAL.test(a.name) && !shared.has(base(a.name)));
+  const byBase = new Map<string, (typeof own)[number]>();
+  for (const a of own) {
+    const k = base(a.name);
+    const cur = byBase.get(k);
+    const fits = (x: { name: string }) => !nationality || !/\((indian|foreign)/i.test(x.name) || new RegExp(`\\(${nationality}`, "i").test(x.name);
+    if (!cur || (fits(a) && !fits(cur))) byBase.set(k, a);
+  }
+  return [...byBase.values()].slice(0, 3);
+}
+
 // Honour what the guest asked for at each stop: how many safaris, how many with a
 // naturalist, and experiences (placed on the last evening at that lodge).
 function applyWants(plan: Plan, ctx: BuilderContext, days: PlanDay[]): PlanDay[] {
   let start = 0;
   plan.stops.forEach((stop, k) => {
+    const s0 = start; // this stop's arrival day
     const range = days.map((_, i) => i).filter((i) => i >= start && i <= start + stop.nights && days[i].park_id === stop.park_id);
     const lastNight = Math.min(days.length - 1, start + Math.max(0, stop.nights - 1));
     start += stop.nights;
     if (stop.want_safaris != null || stop.want_naturalists != null) {
-      const slots = range.flatMap((i) => days[i].safaris.map((s) => ({ i, session: s.session })));
+      // On a day shared with the previous / next stop (moving lodges), this stop owns
+      // the evening of its first day and the morning of its last day.
+      // The arrival day is shared with the journey in (evening only); the moving-on day
+      // with the next stop (morning only); the days in between are this stop's.
+      const moveOut = s0 + stop.nights;
+      const owns = (i: number, session: DaySafari["session"]) =>
+        (i === s0 && session === "afternoon") || (i === moveOut && session === "morning") || (i > s0 && i < moveOut);
+      // Short stays have no full day: if more safaris were asked for than planned, use the
+      // evening of the arrival day and the morning before leaving (open times only).
+      if (stop.want_safaris != null) {
+        let planned = range.reduce((t, i) => t + days[i].safaris.filter((s) => owns(i, s.session)).length, 0);
+        for (const x of [{ i: moveOut, session: "morning" as const }, { i: s0, session: "afternoon" as const }]) {
+          if (planned >= stop.want_safaris) break;
+          if (!range.includes(x.i)) continue; // a moving-on morning only when the next lodge is in the same park
+          if (days[x.i].safaris.some((s) => s.session === x.session)) continue;
+          const zone: DaySafari["zone"] | null = !closureFor(ctx.pricing, stop.park_id, "core", x.session, days[x.i].date)
+            ? "core"
+            : !closureFor(ctx.pricing, stop.park_id, "buffer", x.session, days[x.i].date)
+              ? "buffer"
+              : null;
+          if (!zone) continue;
+          const safaris = [...days[x.i].safaris, { session: x.session, zone }].sort((a, b) => (a.session === "morning" ? 0 : 1) - (b.session === "morning" ? 0 : 1));
+          days[x.i] = {
+            ...days[x.i],
+            safaris,
+            notes: [...days[x.i].notes, `${x.session === "afternoon" ? "Evening" : "Morning"} safari on a travel day, to fit the ${stop.want_safaris} safari${stop.want_safaris === 1 ? "" : "s"} asked for.`],
+          };
+          planned++;
+        }
+      }
+      const slots = range.flatMap((i) => days[i].safaris.filter((s) => owns(i, s.session)).map((s) => ({ i, session: s.session })));
       const keep = stop.want_safaris != null ? slots.slice(0, Math.max(0, stop.want_safaris)) : slots;
       const nat = stop.want_naturalists == null ? 0 : stop.want_naturalists < 0 ? keep.length : Math.min(stop.want_naturalists, keep.length);
       for (const i of range) {
         const safaris = days[i].safaris
-          .filter((s) => keep.some((x) => x.i === i && x.session === s.session))
-          .map((s) => ({ ...s, naturalist: keep.findIndex((x) => x.i === i && x.session === s.session) < nat }));
+          .filter((s) => !owns(i, s.session) || keep.some((x) => x.i === i && x.session === s.session))
+          .map((s) => (owns(i, s.session) ? { ...s, naturalist: keep.findIndex((x) => x.i === i && x.session === s.session) < nat } : s));
         const kind = days[i].kind === "safari" && !safaris.length ? "leisure" : days[i].kind;
         days[i] = describe(ctx, { ...days[i], safaris, kind }, plan.vehicle_type);
       }
@@ -150,7 +198,20 @@ function applyWants(plan: Plan, ctx: BuilderContext, days: PlanDay[]): PlanDay[]
         days[range[0]].notes = [...days[range[0]].notes, `${stop.want_safaris} safaris were asked for in ${park}, but only ${slots.length} fit in ${stop.nights} night${stop.nights === 1 ? "" : "s"}.`];
       }
     }
+    const specials = (stop.want_extras ?? []).includes("special") ? lodgeSpecials(ctx, stop.property_id, plan.guest.nationality) : [];
+    const usedIds = new Set<string>();
     for (const kw of stop.want_extras ?? []) {
+      if (kw === "special") continue;
+      const found = findAddon(ctx, stop.property_id, kw, plan.guest.nationality);
+      if (found) usedIds.add(found.id);
+    }
+    for (const sp of specials) {
+      if (usedIds.has(sp.id)) continue;
+      const item: PlanItem = { id: `auto-${k}-sp-${sp.id}`, type: "addon", title: sp.name, detail: "", price: null, addon_id: sp.id, qty: null, auto: `extra:${k}:special:${sp.id}` };
+      days[lastNight] = { ...days[lastNight], items: [...days[lastNight].items, item] };
+    }
+    for (const kw of stop.want_extras ?? []) {
+      if (kw === "special") continue;
       const addon = findAddon(ctx, stop.property_id, kw, plan.guest.nationality);
       const item: PlanItem = addon
         ? { id: `auto-${k}-${kw}`, type: "addon", title: addon.name, detail: "", price: null, addon_id: addon.id, qty: null, auto: `extra:${k}:${kw}` }
@@ -175,25 +236,33 @@ const cityDay = (date: string, title: string, text: string): PlanDay => ({
 });
 
 // Nights in a city outside our lodges, before the first lodge and after the last.
+// With a hotel price, each night carries a priced "hotel" item.
 function addCityDays(plan: Plan, days: PlanDay[]): PlanDay[] {
   const before = (plan.city_stays ?? []).find((c) => c.when === "before" && c.nights > 0);
   const after = (plan.city_stays ?? []).find((c) => c.when === "after" && c.nights > 0);
+  const where = (c: { city: string; hotel?: string }) => (c.hotel ? `${c.hotel}, ${c.city}` : `${c.city}; hotel to be confirmed`);
+  const night = (c: { when: string; city: string; hotel?: string; price?: number | null }, j: number): PlanItem[] =>
+    c.price
+      ? [{ id: `auto-hotel-${c.when}-${j}`, type: "hotel", title: `Hotel: ${c.hotel || c.city}`, detail: "", price: c.price, addon_id: null, qty: null, auto: `hotel:${c.when}:${j}` }]
+      : [];
   let out = [...days];
   if (before) {
-    const pre = Array.from({ length: before.nights }, (_, j) =>
-      j === 0
-        ? cityDay(addDays(days[0].date, -before.nights), `Arrive in ${before.city}`, `Arrive in ${before.city}. Overnight in ${before.city}; hotel to be confirmed.`)
-        : cityDay(addDays(days[0].date, -before.nights + j), before.city, `A day in ${before.city}. Overnight in ${before.city}.`)
-    );
+    const pre = Array.from({ length: before.nights }, (_, j) => {
+      const d =
+        j === 0
+          ? cityDay(addDays(days[0].date, -before.nights), `Arrive in ${before.city}`, `Arrive in ${before.city}. Overnight at ${where(before)}.`)
+          : cityDay(addDays(days[0].date, -before.nights + j), before.city, `A day in ${before.city}. Overnight at ${where(before)}.`);
+      return { ...d, items: night(before, j) };
+    });
     out = [...pre, ...out];
   }
   if (after) {
     const last = out[out.length - 1];
-    out[out.length - 1] = { ...last, text: `${last.text} Overnight in ${after.city}.`.trim() };
+    out[out.length - 1] = { ...last, text: `${last.text} Overnight at ${where(after)}.`.trim(), items: [...last.items, ...night(after, 0)] };
     for (let j = 1; j <= after.nights; j++) {
       out.push(
         j < after.nights
-          ? cityDay(addDays(last.date, j), after.city, `A day in ${after.city}. Overnight in ${after.city}.`)
+          ? { ...cityDay(addDays(last.date, j), after.city, `A day in ${after.city}. Overnight at ${where(after)}.`), items: night(after, j) }
           : cityDay(addDays(last.date, j), `Depart from ${after.city}`, "Transfer to the airport for your onward journey.")
       );
     }
@@ -378,13 +447,13 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
   const safaris: SafariInput[] = [];
   const transfers: TransferInput[] = [];
   const addons: { addon_id: string; date: string; qty?: number }[] = [];
-  const custom: { date: string; title: string; amount: number; group?: "flight" | "extra" }[] = [];
+  const custom: { date: string; title: string; amount: number; group?: "flight" | "extra" | "hotel" }[] = [];
   for (const d of plan.days) {
     if (d.park_id) for (const s of d.safaris) safaris.push({ date: d.date, park_id: d.park_id, zone: s.zone, session: s.session, naturalist: !!s.naturalist });
     if (d.transfer) transfers.push({ date: d.date, ...d.transfer, vehicle_type: plan.vehicle_type ?? undefined });
     for (const it of d.items ?? []) {
       if (it.addon_id) addons.push({ addon_id: it.addon_id, date: d.date, qty: it.qty ?? undefined });
-      else if (it.price) custom.push({ date: d.date, title: it.title, amount: it.price, group: it.type === "flight" ? "flight" : "extra" });
+      else if (it.price) custom.push({ date: d.date, title: it.title, amount: it.price, group: it.type === "flight" ? "flight" : it.type === "hotel" ? "hotel" : "extra" });
     }
   }
   return {

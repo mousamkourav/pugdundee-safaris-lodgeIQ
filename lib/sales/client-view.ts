@@ -19,12 +19,13 @@ export interface ClientView {
   versionNo: number;
   guestName: string;
   plan: Plan;
-  title: string;
+  title: string; // cover headline
+  routeLine: string; // "Satpura, Pench, Kanha, Bandhavgarh & Tadoba"
   arrival: string | null;
   departure: string | null;
   nights: number;
   guests: number;
-  currency: "INR" | "USD";
+  currency: "INR" | "USD" | "EUR" | "GBP" | "AUD";
   fx: number | null;
   total: number; // in quote currency
   perPerson: number; // in quote currency
@@ -148,6 +149,7 @@ async function loadClientViewUncached(link: string): Promise<ClientView | null> 
     guestName: query.guest_name,
     plan,
     title: sections.title,
+    routeLine: sections.routeLine,
     // the whole trip, including nights in a city before or after the lodges
     arrival: plan.days[0]?.date ?? pricing.arrival,
     departure: plan.days[plan.days.length - 1]?.date ?? pricing.departure,

@@ -148,7 +148,9 @@ export interface PaymentSlab {
 
 export interface PricingSettings {
   markup_pct?: number | null;
-  fx?: { USD?: number | null } | null;
+  fx?: Partial<Record<"USD" | "EUR" | "GBP" | "AUD", number | null>> | null; // rupees per 1 unit
+  fx_source?: string | null; // e.g. "ECB rate of 21 Oct 2026"
+  fx_margin_pct?: number | null; // cushion against rate moves, taken off the rate
   payment_slabs?: PaymentSlab[] | null;
   per_person_basis?: "guests" | "adults" | null; // default "guests"
 }
@@ -216,12 +218,12 @@ export interface TripInput {
   adjustment?: { amount: number; reason: string } | null;
   // A % discount: on accommodation at our own lodges, or on the whole itinerary.
   discount?: { pct: number; scope: "lodges" | "all"; reason: string } | null;
-  currency?: "INR" | "USD";
+  currency?: "INR" | "USD" | "EUR" | "GBP" | "AUD";
   booking_date: ISODate; // "today" when the quote is made
   // Prices typed by the sales person where master data has no rate, by MissingPrice.key.
   manual_prices?: Record<string, number>;
   // Items added by hand to a day (not from master data), already totalled.
-  custom_items?: { date: ISODate; title: string; amount: number; group?: "flight" | "extra" }[];
+  custom_items?: { date: ISODate; title: string; amount: number; group?: "flight" | "extra" | "hotel" }[];
 }
 
 // A rate the master data does not have. The sales person can type a price for it.
@@ -245,7 +247,7 @@ export interface PriceLine {
   unit_price: number;
   amount: number; // rupees, tax included
   tax: number; // tax portion of amount
-  group?: "naturalist" | "flight"; // shown separately in the price breakup
+  group?: "naturalist" | "flight" | "hotel"; // shown separately in the price breakup
   property_id: string | null; // which lodge bills it
   ref_id: string | null; // room_category / park / transfer rate / addon / offer id
   missing?: boolean; // no rate found and no typed price: amount is 0 and an error is reported
@@ -289,7 +291,7 @@ export interface PriceResult {
   perPerson: number;
   arrival: ISODate | null;
   departure: ISODate | null;
-  currency: "INR" | "USD";
+  currency: "INR" | "USD" | "EUR" | "GBP" | "AUD";
   fx: number | null;
   grandInCurrency: number;
   payments: Instalment[];

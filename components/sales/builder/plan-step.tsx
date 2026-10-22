@@ -31,6 +31,8 @@ export function flightSummary(f?: PlanItem["flight"]) {
   return [f.airline && f.number ? `${f.airline} ${f.number}` : f.airline || f.number, f.time && `departs ${f.time}`, f.pnr && `PNR ${f.pnr}`].filter(Boolean).join(" \u00b7 ");
 }
 
+export const CURRENCIES = ["INR", "USD", "EUR", "GBP", "AUD"] as const;
+
 const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
 type DragData = { kind: "new"; item: Omit<PlanItem, "id">; group?: string } | { kind: "move"; id: string; from: number };
@@ -458,78 +460,95 @@ export function PlanStep({
             )}
           </div>
 
-          {/* ---------- price adjustments (folded away) ---------- */}
-          <details className={`${ui.card} group`}>
-            <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-sm font-semibold text-olive-800">
-              Discount, offers, markup, currency
-              {plan.discount && plan.discount.pct > 0 && <span className="ml-auto mr-2 rounded-full bg-olive-50 px-2 py-0.5 text-[11px] font-semibold text-olive-700">{plan.discount.pct}% off</span>}
+          {/* ---------- discount, offers, markup, currency ---------- */}
+          <details className={`${ui.card} group`} open={!!plan.discount || plan.offer_ids.length > 0}>
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm font-semibold text-olive-800">
+              <span className="flex-1">Discount and offers</span>
+              {(plan.discount?.pct ?? 0) > 0 && <span className="rounded-full bg-olive-50 px-2 py-0.5 text-[11px] font-semibold text-olive-700">{plan.discount!.pct}% off</span>}
+              {plan.offer_ids.length > 0 && <span className="rounded-full bg-olive-50 px-2 py-0.5 text-[11px] font-semibold text-olive-700">offer</span>}
               <Icon name="chevronLeft" className="h-4 w-4 -rotate-90 text-sand-500 transition group-open:rotate-90" />
             </summary>
             <div className="space-y-3 border-t border-sand-200 p-3 text-sm">
-              <div className="space-y-2 rounded-lg border border-sand-200 p-2.5">
-                <p className={ui.label}>Discount</p>
-                <div className="grid grid-cols-[5.5rem_1fr] gap-2">
-                  <label className="block">
-                    <span className="sr-only">Discount %</span>
-                    <div className="flex items-center gap-1">
-                      <input
-                        className={ui.inputSm}
-                        type="number"
-                        min={0}
-                        max={100}
-                        step="any"
-                        placeholder="0"
-                        value={plan.discount?.pct ?? ""}
-                        onChange={(e) => {
-                          const pct = Math.max(0, Math.min(100, Number(e.target.value)));
-                          setPlan((p) => ({ ...p, discount: e.target.value === "" || !pct ? null : { pct, scope: p.discount?.scope ?? "lodges", reason: p.discount?.reason ?? "" } }));
-                        }}
-                        aria-label="Discount percent"
-                      />
-                      <span className="text-sm text-sand-500">%</span>
-                    </div>
-                  </label>
-                  <select
-                    className={`${ui.select} w-full !py-2 text-xs`}
-                    disabled={!plan.discount}
-                    value={plan.discount?.scope ?? "lodges"}
-                    onChange={(e) => setPlan((p) => (p.discount ? { ...p, discount: { ...p.discount, scope: e.target.value as "lodges" | "all" } } : p))}
-                    aria-label="Discount applies to"
-                  >
-                    <option value="lodges">on accommodation at our lodges</option>
-                    <option value="all">on the whole itinerary</option>
-                  </select>
+              {/* % discount: two clear choices instead of a dropdown */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className={`${ui.label} !mb-0 w-16`}>Discount</span>
+                  <input
+                    className="tabular w-16 rounded-md border border-sand-300 px-2 py-1.5 text-right text-sm"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="any"
+                    placeholder="0"
+                    value={plan.discount?.pct ?? ""}
+                    onChange={(e) => {
+                      const pct = Math.max(0, Math.min(100, Number(e.target.value)));
+                      setPlan((p) => ({ ...p, discount: e.target.value === "" || !pct ? null : { pct, scope: p.discount?.scope ?? "lodges", reason: p.discount?.reason ?? "" } }));
+                    }}
+                    aria-label="Discount percent"
+                  />
+                  <span className="text-sand-500">%</span>
                 </div>
-                {plan.discount && (
-                  <label className="block">
-                    <span className={ui.label}>Reason (internal) <span className="text-error">*</span></span>
-                    <input
-                      className={`${ui.inputSm} ${!plan.discount.reason.trim() ? "!border-error" : ""}`}
-                      value={plan.discount.reason}
-                      onChange={(e) => setPlan((p) => (p.discount ? { ...p, discount: { ...p.discount, reason: e.target.value } } : p))}
-                      placeholder="e.g. Repeat guest, agent rate, long stay"
-                    />
-                    <span className="mt-1 block text-[11px] text-sand-500">Not shown to the guest.</span>
-                  </label>
+                <div className="grid grid-cols-2 gap-1 rounded-lg bg-sand-100 p-1 text-xs" role="radiogroup" aria-label="Discount applies to">
+                  {(["lodges", "all"] as const).map((sc) => {
+                    const on = (plan.discount?.scope ?? "lodges") === sc;
+                    return (
+                      <button
+                        key={sc}
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        onClick={() => setPlan((p) => ({ ...p, discount: { pct: p.discount?.pct ?? 0, reason: p.discount?.reason ?? "", scope: sc } }))}
+                        className={`rounded-md px-2 py-1.5 font-medium ${on ? "bg-white text-olive-800 shadow-card" : "text-sand-600 hover:text-olive-700"}`}
+                      >
+                        {sc === "lodges" ? "Our lodges' rooms" : "Whole trip"}
+                      </button>
+                    );
+                  })}
+                </div>
+                {(plan.discount?.pct ?? 0) > 0 && (
+                  <input
+                    className={`${ui.inputSm} ${!plan.discount?.reason.trim() ? "!border-error" : ""}`}
+                    value={plan.discount?.reason ?? ""}
+                    onChange={(e) => setPlan((p) => (p.discount ? { ...p, discount: { ...p.discount, reason: e.target.value } } : p))}
+                    placeholder="Reason (internal, required), e.g. Repeat guest"
+                    aria-label="Discount reason"
+                  />
                 )}
               </div>
+
+              {/* offers, with what each needs */}
               {ctx.pricing.offers.length > 0 && (
-                <div className="space-y-1">
+                <div className="space-y-1 border-t border-sand-100 pt-2">
                   <p className={ui.label}>Offers</p>
-                  {ctx.pricing.offers.map((o) => (
-                    <label key={o.id} className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4"
-                        checked={plan.offer_ids.includes(o.id)}
-                        onChange={(e) => setPlan((p) => ({ ...p, offer_ids: e.target.checked ? [...p.offer_ids, o.id] : p.offer_ids.filter((x) => x !== o.id) }))}
-                      />
-                      {o.name}
-                    </label>
-                  ))}
+                  {ctx.pricing.offers.map((o) => {
+                    const ownIds = new Set(ctx.properties.filter((x) => x.kind === "own_lodge").map((x) => x.id));
+                    const lodges = new Set(plan.stops.filter((st) => ownIds.has(st.property_id)).map((st) => st.property_id)).size;
+                    const nights = plan.stops.reduce((t, st) => t + st.nights, 0);
+                    const needL = o.offer_type === "multi_lodge" ? o.min_lodges ?? 2 : 0;
+                    const ok = lodges >= needL && nights >= o.min_nights;
+                    return (
+                      <label key={o.id} className={`flex items-start gap-2 rounded-md px-1.5 py-1 ${ok ? "" : "opacity-60"}`}>
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 h-4 w-4 shrink-0"
+                          checked={plan.offer_ids.includes(o.id)}
+                          onChange={(e) => setPlan((p) => ({ ...p, offer_ids: e.target.checked ? [...p.offer_ids, o.id] : p.offer_ids.filter((x) => x !== o.id) }))}
+                        />
+                        <span className="min-w-0 flex-1 leading-snug">
+                          {o.name}
+                          <span className={`block text-[11px] font-semibold ${ok ? "text-success" : "text-sand-500"}`}>
+                            {ok ? "Qualifies" : `Needs ${needL ? `${needL} lodges, ` : ""}${o.min_nights} nights`}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-2">
+
+              {/* markup, currency, a manual adjustment */}
+              <div className="grid grid-cols-2 gap-2 border-t border-sand-100 pt-2">
                 <label className="block">
                   <span className={ui.label}>Markup %</span>
                   <input
@@ -542,15 +561,20 @@ export function PlanStep({
                   />
                 </label>
                 <label className="block">
-                  <span className={ui.label}>Currency</span>
-                  <select className={`${ui.select} w-full !py-2`} value={plan.currency} onChange={(e) => setPlan((p) => ({ ...p, currency: e.target.value as "INR" | "USD" }))}>
-                    <option value="INR">INR</option>
-                    <option value="USD">USD</option>
+                  <span className={ui.label}>Quote in</span>
+                  <select className={`${ui.select} w-full !py-2`} value={plan.currency} onChange={(e) => setPlan((p) => ({ ...p, currency: e.target.value as Plan["currency"] }))}>
+                    {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </label>
               </div>
-              {plan.currency === "USD" && !ctx.pricing.settings.fx?.USD && <p className="text-xs text-error">Set the USD rate in Sales settings first.</p>}
-              <div className="grid grid-cols-[6rem_1fr] gap-2">
+              {plan.currency !== "INR" && (
+                <p className="text-xs text-sand-500">
+                  {ctx.pricing.settings.fx?.[plan.currency]
+                    ? `1 ${plan.currency} = Rs ${ctx.pricing.settings.fx[plan.currency]!.toLocaleString("en-IN", { maximumFractionDigits: 2 })}${ctx.pricing.settings.fx_source ? ` (${ctx.pricing.settings.fx_source})` : ""}`
+                    : `No ${plan.currency} rate available right now; quote in INR or set it in Sales settings.`}
+                </p>
+              )}
+              <div className="grid grid-cols-[6.5rem_1fr] gap-2">
                 <label className="block">
                   <span className={ui.label}>Adjust Rs</span>
                   <input
@@ -571,7 +595,7 @@ export function PlanStep({
                     disabled={!plan.adjustment}
                     value={plan.adjustment?.reason ?? ""}
                     onChange={(e) => setPlan((p) => (p.adjustment ? { ...p, adjustment: { ...p.adjustment, reason: e.target.value } } : p))}
-                    placeholder="e.g. Repeat guest"
+                    placeholder="e.g. Rounding off"
                   />
                 </label>
               </div>

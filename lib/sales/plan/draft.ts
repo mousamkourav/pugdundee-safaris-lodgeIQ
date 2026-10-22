@@ -4,7 +4,8 @@
 import type { CancellationSlab, ContentBlock, Plan, PlanDraft } from "./types";
 
 export interface DraftSections {
-  title: string;
+  title: string; // the catchy headline on the cover
+  routeLine: string; // "Satpura, Pench, Kanha, Bandhavgarh & Tadoba"
   about: string;
   inclusions: string[];
   exclusions: string[];
@@ -40,6 +41,30 @@ const unique = (xs: string[]) => {
 
 const MEALS: Record<string, string> = { AP: "all meals", MAP: "breakfast and dinner", CP: "breakfast", EP: "room only" };
 
+// "Tadoba-Andhari Tiger Reserve" -> "Tadoba", "Pench National Park" -> "Pench"
+export const shortPark = (name: string) =>
+  name
+    .replace(/\b(national park|tiger reserve|wildlife sanctuary|sanctuary|reserve forest)\b/gi, "")
+    .replace(/-andhari/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const HEADLINES = [
+  "Into the Heart of Tiger Country",
+  "On the Trail of the Tiger",
+  "Where the Wild Tigers Roam",
+  "Journey Through Tiger Country",
+  "Footprints in the Sal Forest",
+  "Tigers, Forests and Starlit Nights",
+];
+
+// The same headline every time for a given route (it can be changed on Final draft).
+export function headlineFor(seed: string) {
+  let h = 0;
+  for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return HEADLINES[h % HEADLINES.length];
+}
+
 export function defaultDraft(plan: Plan, inp: DraftInputs): DraftSections {
   const parkIds = [...new Set(plan.stops.map((s) => s.park_id))];
   const lodgeIds = [...new Set(plan.stops.map((s) => s.property_id))];
@@ -63,7 +88,11 @@ export function defaultDraft(plan: Plan, inp: DraftInputs): DraftSections {
   const cancellation = unique(textsFor("cancellation_terms").flatMap(lines));
 
   return {
-    title: parks.length ? `${parks.join(" & ")} Safari` : "Your safari",
+    title: parks.length ? headlineFor(parkIds.join("|")) : "Your safari",
+    routeLine: (() => {
+      const names = [...new Set(parks.map(shortPark))];
+      return names.length > 1 ? `${names.slice(0, -1).join(", ")} & ${names[names.length - 1]}` : names[0] ?? "";
+    })(),
     about:
       textsFor("about_trip")[0] ??
       (nights
@@ -104,6 +133,7 @@ export function withEdits(def: DraftSections, draft?: PlanDraft): DraftSections 
   return {
     ...def,
     title: draft.title?.trim() || def.title,
+    routeLine: draft.subtitle?.trim() || def.routeLine,
     about: draft.about !== undefined ? draft.about : def.about,
     inclusions: draft.inclusions ?? def.inclusions,
     exclusions: draft.exclusions ?? def.exclusions,

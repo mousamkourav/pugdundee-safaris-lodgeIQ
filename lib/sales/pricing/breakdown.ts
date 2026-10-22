@@ -5,18 +5,19 @@
 import type { PriceLine, PriceResult } from "./types";
 
 export interface BreakdownRow {
-  key: "accommodation" | "safaris" | "naturalists" | "transfers" | "flights" | "extras" | "discount" | "adjustment" | "gst";
+  key: "accommodation" | "hotels" | "safaris" | "naturalists" | "transfers" | "flights" | "extras" | "discount" | "adjustment" | "gst";
   label: string;
   amount: number;
 }
 
 const SERVICE_ROWS: { key: BreakdownRow["key"]; label: string; match: (l: PriceLine) => boolean }[] = [
   { key: "accommodation", label: "Accommodation", match: (l) => l.kind === "room" },
+  { key: "hotels", label: "City hotels", match: (l) => l.kind === "addon" && l.group === "hotel" },
   { key: "safaris", label: "Safaris", match: (l) => l.kind === "safari" && l.group !== "naturalist" },
   { key: "naturalists", label: "Naturalists", match: (l) => l.kind === "safari" && l.group === "naturalist" },
   { key: "transfers", label: "Road transfers", match: (l) => l.kind === "transfer" },
   { key: "flights", label: "Flights", match: (l) => l.kind === "addon" && l.group === "flight" },
-  { key: "extras", label: "Experiences and extras", match: (l) => l.kind === "addon" && l.group !== "flight" },
+  { key: "extras", label: "Experiences and extras", match: (l) => l.kind === "addon" && l.group !== "flight" && l.group !== "hotel" },
 ];
 
 export function priceBreakdown(r: Pick<PriceResult, "lines" | "totals">): { rows: BreakdownRow[]; net: number; gst: number; total: number } {

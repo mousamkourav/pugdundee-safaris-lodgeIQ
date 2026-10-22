@@ -10,7 +10,7 @@ import { dayName } from "@/lib/sales/pricing/dates";
 export async function generateMetadata({ params }: { params: Promise<{ token: string }> }): Promise<Metadata> {
   const view = await loadClientView((await params).token);
   return {
-    title: view ? `${view.title} - ${view.guestName} - Pugdundee Safaris` : "Your safari itinerary - Pugdundee Safaris",
+    title: view ? `${view.routeLine || view.title} safari - ${view.guestName} - Pugdundee Safaris` : "Your safari itinerary - Pugdundee Safaris",
     robots: { index: false, follow: false },
   };
 }
@@ -29,11 +29,11 @@ const SHORT = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short",
 const long = (d: string | null) => (d ? LONG.format(new Date(d + "T00:00:00Z")) : "");
 const short = (d: string) => SHORT.format(new Date(d + "T00:00:00Z"));
 
-function money(n: number, currency: "INR" | "USD") {
-  return new Intl.NumberFormat(currency === "USD" ? "en-US" : "en-IN", {
+function money(n: number, currency: string) {
+  return new Intl.NumberFormat(currency === "INR" ? "en-IN" : "en-GB", {
     style: "currency",
     currency,
-    maximumFractionDigits: currency === "USD" ? 2 : 0,
+    maximumFractionDigits: currency === "INR" ? 0 : 2,
   }).format(n);
 }
 
@@ -66,6 +66,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
           <div className="relative p-8 text-white sm:p-10">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-gold-200">{view.company.name}</p>
             <h1 className="mt-2 font-display text-3xl font-bold !text-white sm:text-4xl">{view.title}</h1>
+            {view.routeLine && <p className="mt-1 font-display text-lg text-gold-200 sm:text-xl">{view.routeLine}</p>}
             <p className="mt-2 text-white/85">
               Prepared for {view.guestName} &middot; {long(view.arrival)} - {long(view.departure)} &middot; {plan.days.length || view.nights + 1} days
             </p>

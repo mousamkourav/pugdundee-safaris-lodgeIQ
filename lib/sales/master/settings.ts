@@ -16,9 +16,17 @@ export const SETTINGS_FIELDS: (FieldDef & { path: string[] })[] = [
     options: [
       { value: "INR", label: "INR" },
       { value: "USD", label: "USD" },
+      { value: "EUR", label: "EUR" },
+      { value: "GBP", label: "GBP" },
+      { value: "AUD", label: "AUD" },
     ],
   },
-  { name: "fx_usd", path: ["fx", "USD"], label: "Rupees per 1 USD", type: "number", help: "Used to show USD prices. Update when the rate moves." },
+  { name: "fx_mode", path: ["fx_mode"], label: "Exchange rates", type: "select", options: [{ value: "live", label: "Live (European Central Bank, daily)" }, { value: "manual", label: "Manual (the rates below)" }], help: "Live rates update daily; the rates below are used if the live service cannot be reached." },
+  { name: "fx_margin_pct", path: ["fx_margin_pct"], label: "Exchange-rate cushion %", type: "number", help: "Optional. Lowers the rate a little to protect against it moving before the guest pays, e.g. 2." },
+  { name: "fx_usd", path: ["fx", "USD"], label: "Rupees per 1 USD (fallback)", type: "number" },
+  { name: "fx_eur", path: ["fx", "EUR"], label: "Rupees per 1 EUR (fallback)", type: "number" },
+  { name: "fx_gbp", path: ["fx", "GBP"], label: "Rupees per 1 GBP (fallback)", type: "number" },
+  { name: "fx_aud", path: ["fx", "AUD"], label: "Rupees per 1 AUD (fallback)", type: "number" },
   {
     name: "per_person_basis",
     path: ["per_person_basis"],

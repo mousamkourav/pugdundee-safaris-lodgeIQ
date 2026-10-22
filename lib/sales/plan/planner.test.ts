@@ -148,3 +148,27 @@ test("extras priced by nationality: the guest's version is chosen", async () => 
   assert.equal(findAddon(boats, "PTL", "boat safari", "indian")!.id, "BI");
   assert.equal(findAddon(boats, "PTL", "boat safari")!.id, "BI"); // unknown: the cheaper one
 });
+
+test("city hotel nights are priced as City hotels; short stays still get the safaris asked for", async () => {
+  const { priceBreakdown } = await import("@/lib/sales/pricing/breakdown");
+  const p = sheetPlan();
+  p.city_stays = [{ when: "before", city: "Delhi", nights: 1, hotel: "The Imperial", price: 18000 }, { when: "after", city: "Delhi", nights: 1, hotel: "The Imperial", price: 18000 }];
+  p.stops[1] = { ...p.stops[1], nights: 1, want_safaris: 1 };
+  p.days = buildDays(p, ctx);
+  assert.match(p.days[0].text, /Overnight at The Imperial, Delhi/);
+  const pench = p.days.filter((d) => d.park_id === "PENCH").flatMap((d) => d.safaris);
+  assert.equal(pench.length, 1);
+  const r = priceTrip(planToTrip(p, "2026-10-05"), data);
+  const b = priceBreakdown(r);
+  assert.equal(b.rows.find((x) => x.key === "hotels")!.amount, 36000);
+  assert.equal(b.total, r.totals.grand);
+});
+
+test("short park names and a steady headline", async () => {
+  const { shortPark, headlineFor } = await import("./draft");
+  assert.equal(shortPark("Tadoba-Andhari Tiger Reserve"), "Tadoba");
+  assert.equal(shortPark("Pench National Park"), "Pench");
+  assert.equal(shortPark("Satpura Tiger Reserve"), "Satpura");
+  assert.equal(headlineFor("a|b"), headlineFor("a|b"));
+  assert.ok(headlineFor("a|b").split(" ").length <= 6);
+});

@@ -23,7 +23,9 @@ export interface ChatFlags {
   nightsUnknown: string[]; // park ids added without a number of nights
   roomDecided?: string[]; // park ids where Cottage / Tree House is settled
   roomFor?: string | null; // the park the last Cottage / Tree House question was about
-  pending: "parks" | "nights" | "date" | "adults" | "arrival" | "departure" | "room" | "name" | null;
+  hotelAsked?: string[]; // city stays ("before:Delhi") whose hotel has been asked
+  hotelFor?: string | null;
+  pending: "parks" | "nights" | "date" | "adults" | "arrival" | "departure" | "room" | "hotel" | "name" | null;
 }
 
 export interface QuickReply {
@@ -115,7 +117,7 @@ export function chatTurn(
   }
 
   const next: Plan = JSON.parse(JSON.stringify(plan));
-  const f: ChatFlags = { ...flags, nightsUnknown: [...flags.nightsUnknown], roomDecided: [...(flags.roomDecided ?? [])] };
+  const f: ChatFlags = { ...flags, nightsUnknown: [...flags.nightsUnknown], roomDecided: [...(flags.roomDecided ?? [])], hotelAsked: [...(flags.hotelAsked ?? [])] };
   const chips: string[] = [];
   const warnings: string[] = [];
   const parkName = (id: string) => ctx.pricing.parks.find((p) => p.id === id)?.name ?? "the park";
@@ -273,19 +275,23 @@ export function chatTurn(
       warnings.push(`I do not know the park "${p.name}".`);
       continue;
     }
-    const idx = next.stops.findIndex((s) => s.park_id === park.id);
+    const lodgeObj = p.lodge ? lodgesInPark(ctx, park.id).find((l) => l.name.toLowerCase() === p.lodge!.toLowerCase()) : undefined;
+    const twoInPark = parsed.parks.filter((x) => x.name === p.name).length > 1;
+    let idx = lodgeObj ? next.stops.findIndex((s) => s.property_id === lodgeObj.id) : -1;
+    if (idx < 0 && !twoInPark) idx = next.stops.findIndex((s) => s.park_id === park.id);
     if (idx < 0 && !lodgesInPark(ctx, park.id).length) {
       warnings.push(`No lodge is set up in ${park.name} yet, so it cannot be added. Add one in Master data.`);
       continue;
     }
+    let i = idx;
     if (idx < 0) {
       next.stops.push(defaultStop(ctx, park.id, p.nights ?? 2));
+      i = next.stops.length - 1;
       if (!p.nights) f.nightsUnknown.push(park.id);
     } else if (p.nights) {
       next.stops[idx] = { ...next.stops[idx], nights: p.nights };
       f.nightsUnknown = f.nightsUnknown.filter((x) => x !== park.id);
     }
-    const i = next.stops.findIndex((s) => s.park_id === park.id);
     if (p.lodge) {
       const lodge = lodgesInPark(ctx, park.id).find((l) => l.name.toLowerCase() === p.lodge!.toLowerCase());
       if (lodge && lodge.id !== next.stops[i].property_id) {
@@ -321,7 +327,53 @@ export function chatTurn(
       const nat = p.naturalists === -1 ? "all with a naturalist" : p.naturalists ? `${p.naturalists} with a naturalist` : p.naturalists === 0 ? "no naturalist" : "";
       chips.push(`${n != null ? `${n} safari${n === 1 ? "" : "s"}` : "safaris"}${nat ? `, ${nat}` : ""} in ${park.name.split(/[ -]/)[0]}`);
     }
-    for (const x of p.extras ?? []) chips.push(`${x} at ${lodgeName ?? park.name}`);
+    for (const x of p.extras ?? []) chips.push(`${x === "special" ? "the lodge's own experiences" : x} at ${lodgeName ?? park.name}`);
+  }
+
+  // ---- with flights, the airports are where they fly in and out: "fly to Bhopal ... leave from Nagpur to Delhi"
+  if (parsed.flights?.length) {
+    const airportFor = (city: string) => placesOf(ctx).find((l) => l.type === "airport" && l.name.toLowerCase().startsWith(city.toLowerCase()));
+    const fl = parsed.flights;
+    const beforeCity = parsed.cityStays?.find((c) => c.when === "before")?.city;
+    const afterCity = parsed.cityStays?.find((c) => c.when === "after")?.city;
+    const inbound = fl.find((x) => x.from === beforeCity) ?? (fl.length > 1 || !afterCity ? fl[0] : undefined);
+    const outbound = [...fl].reverse().find((x) => x.to === afterCity && x !== inbound) ?? (fl.length > 1 ? fl[fl.length - 1] : undefined);
+    const inAirport = inbound && airportFor(inbound.to);
+    const outAirport = outbound && airportFor(outbound.from);
+    if (inAirport && next.arrival_location_id !== inAirport.id) {
+      next.arrival_location_id = inAirport.id;
+      f.arrivalAsked = true;
+      chips.push(`arriving via ${inAirport.name} (flight from ${inbound!.from})`);
+    }
+    if (outAirport && next.departure_location_id !== outAirport.id) {
+      next.departure_location_id = outAirport.id;
+      f.departureAsked = true;
+      chips.push(`leaving via ${outAirport.name} (flight to ${outbound!.to})`);
+    }
+  }
+
+  // ---- the hotel for a city stay (answer to "Which hotel in Delhi?")
+  if (f.pending === "hotel" && f.hotelFor && !parsed.parks.length) {
+    const stay = (next.city_stays ?? []).find((c) => `${c.when}:${c.city}` === f.hotelFor);
+    if (stay) {
+      const tbc = /\b(tbc|to be confirmed|later|not sure|skip|no idea|none|own|their own)\b/.test(low);
+      // "same" / "same hotel": copy the other stay in this city
+      const same = /^(same|same hotel|same as before|same one|same as the other)\b/.test(low) ? (next.city_stays ?? []).find((c) => c !== stay && c.city === stay.city && c.hotel) : undefined;
+      if (same) {
+        next.city_stays = (next.city_stays ?? []).map((c) => (c === stay ? { ...c, hotel: same.hotel, ...(same.price ? { price: same.price } : {}) } : c));
+        f.hotelAsked = [...new Set([...(f.hotelAsked ?? []), f.hotelFor])];
+        chips.push(`${stay.city}: ${same.hotel}${same.price ? `, ${rupees(same.price)} a night` : ""}`);
+      }
+      const priceM = msg.replace(/,/g, "").match(/(\d+(?:\.\d+)?)\s*(k|thousand|lakh|lac)?\b/i);
+      let price: number | null = null;
+      if (priceM) price = Math.round(Number(priceM[1]) * (/^k|thousand/i.test(priceM[2] ?? "") ? 1000 : /lakh|lac/i.test(priceM[2] ?? "") ? 100000 : 1));
+      const name = tbc ? "" : msg.replace(/(?:rs\.?|inr|\u20b9)?\s*[\d,]+(?:\.\d+)?\s*(?:k|thousand|lakh|lac)?\b.*$/i, "").replace(/\b(per night|a night|night|hotel is|hotel)\b/gi, "").replace(/[,;:-]+\s*$/, "").trim();
+      if (!same) {
+        next.city_stays = (next.city_stays ?? []).map((c) => (c === stay ? { ...c, ...(name ? { hotel: name } : {}), ...(price && price >= 500 ? { price } : {}) } : c));
+        f.hotelAsked = [...new Set([...(f.hotelAsked ?? []), f.hotelFor])];
+        chips.push(tbc ? `${stay.city} hotel to be confirmed` : `${stay.city}: ${name || "hotel"}${price && price >= 500 ? `, ${rupees(price)} a night` : ""}`);
+      }
+    }
   }
 
   // ---- "no Delhi stay", "remove the flights"
@@ -428,6 +480,7 @@ export function chatTurn(
   const step = nextQuestion(next, f, ctx, today);
   f.pending = step.pending;
   f.roomFor = step.roomFor ?? null;
+  f.hotelFor = step.hotelFor ?? null;
 
   let text = step.text;
   if (!understood) {
@@ -452,7 +505,7 @@ export function nextQuestion(
   f: ChatFlags,
   ctx: BuilderContext,
   today: ISODate
-): { text: string; pending: ChatFlags["pending"]; quick?: QuickReply[]; warnings: string[]; ready: boolean; roomFor?: string } {
+): { text: string; pending: ChatFlags["pending"]; quick?: QuickReply[]; warnings: string[]; ready: boolean; roomFor?: string; hotelFor?: string } {
   const parks = ctx.pricing.parks.filter((p) => lodgesInPark(ctx, p.id).length);
   if (!plan.stops.length) {
     return {
@@ -515,6 +568,25 @@ export function nextQuestion(
       pending: "room",
       roomFor: roomStop.park_id,
       quick: rooms.map((r) => ({ label: label(r.name), text: label(r.name).toLowerCase() })),
+      warnings: [],
+      ready: false,
+    };
+  }
+
+  // The hotel for nights in a city (Delhi) before or after the safari.
+  const hotelStay = [...(plan.city_stays ?? [])]
+    .sort((a, b) => (a.when === b.when ? 0 : a.when === "before" ? -1 : 1))
+    .find((c) => !c.hotel && !(f.hotelAsked ?? []).includes(`${c.when}:${c.city}`));
+  if (hotelStay) {
+    const other = (plan.city_stays ?? []).find((c) => c !== hotelStay && c.city === hotelStay.city && c.hotel);
+    return {
+      text: `Which hotel in ${hotelStay.city} (${hotelStay.nights} night${hotelStay.nights === 1 ? "" : "s"} ${hotelStay.when === "before" ? "before the safari" : "at the end"})? Give the name and the price per night for all rooms, e.g. "The Imperial, 18000", or say "to be confirmed".`,
+      pending: "hotel",
+      hotelFor: `${hotelStay.when}:${hotelStay.city}`,
+      quick: [
+        ...(other ? [{ label: `Same: ${other.hotel}`, text: `${other.hotel}${other.price ? `, ${other.price}` : ""}` }] : []),
+        { label: "To be confirmed", text: "to be confirmed" },
+      ],
       warnings: [],
       ready: false,
     };

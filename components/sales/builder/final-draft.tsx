@@ -96,12 +96,18 @@ export function FinalDraft({
 
       <article className={`${ui.card} overflow-hidden`}>
         <header className="space-y-2 bg-olive-800 p-6 text-white sm:p-8">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-gold-200">Itinerary title</p>
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-gold-200">Headline and route</p>
           <input
             className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 font-display text-2xl font-bold text-white placeholder:text-white/50 focus:border-gold-300 focus:outline-none"
             value={plan.draft?.title ?? def.title}
             onChange={(e) => setDraft({ title: e.target.value })}
             aria-label="Itinerary title"
+          />
+          <input
+            className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 font-display text-base text-gold-200 placeholder:text-white/50 focus:border-gold-300 focus:outline-none"
+            value={plan.draft?.subtitle ?? def.routeLine}
+            onChange={(e) => setDraft({ subtitle: e.target.value })}
+            aria-label="Route line under the headline"
           />
           <p className="text-sm text-white/85">
             Prepared for {plan.guest.name || "the guest"} &middot; {plan.days.length ? `${fmtDate(plan.days[0].date)} - ${fmtDate(plan.days[plan.days.length - 1].date)}` : ""} &middot; {plan.days.length || nights + 1} days
@@ -205,7 +211,7 @@ export function FinalDraft({
                 <div className="sm:text-right">
                   <p className="eyebrow">Total</p>
                   <p className="tabular mt-1 font-display text-xl font-semibold text-olive-800">
-                    {result.currency === "USD" && result.fx ? `USD ${result.grandInCurrency.toLocaleString("en-US")}` : rupees(result.totals.grand)}
+                    {result.currency !== "INR" && result.fx ? `${result.currency} ${result.grandInCurrency.toLocaleString("en-GB", { maximumFractionDigits: 2 })}` : rupees(result.totals.grand)}
                   </p>
                 </div>
               </div>

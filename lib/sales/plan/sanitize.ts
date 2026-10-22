@@ -79,6 +79,7 @@ export function sanitizePlan(input: unknown): Plan | null {
   const list = (v: unknown) => (Array.isArray(v) ? v.map((x) => str(x, 500).trim()).filter(Boolean).slice(0, 40) : undefined);
   const draft: PlanDraft = {};
   if (typeof dr.title === "string" && dr.title.trim()) draft.title = str(dr.title, 200).trim();
+  if (typeof dr.subtitle === "string" && dr.subtitle.trim()) draft.subtitle = str(dr.subtitle, 200).trim();
   if (typeof dr.about === "string") draft.about = str(dr.about, 4000);
   const inc = list(dr.inclusions), exc = list(dr.exclusions), notes = list(dr.notes);
   if (inc) draft.inclusions = inc;
@@ -114,12 +115,18 @@ export function sanitizePlan(input: unknown): Plan | null {
     offer_ids: (Array.isArray(p.offer_ids) ? p.offer_ids : []).map((x) => str(x, 100)).filter(Boolean).slice(0, 5),
     markup_pct: p.markup_pct === null || p.markup_pct === undefined || p.markup_pct === "" ? null : Math.max(-50, Math.min(200, Number(p.markup_pct) || 0)),
     adjustment: Number.isFinite(adjAmount) && adjAmount !== 0 ? { amount: Math.round(adjAmount), reason: str(adj.reason, 300).trim() } : null,
-    currency: p.currency === "USD" ? "USD" : "INR",
+    currency: (["USD", "EUR", "GBP", "AUD"] as const).find((c) => c === p.currency) ?? "INR",
     city_stays: (Array.isArray(p.city_stays) ? p.city_stays : [])
       .map((x) => obj(x))
       .filter((c) => (c.when === "before" || c.when === "after") && typeof c.city === "string" && Number(c.nights) > 0)
       .slice(0, 2)
-      .map((c) => ({ when: c.when as "before" | "after", city: str(c.city, 60), nights: Math.min(14, Math.round(Number(c.nights))) })),
+      .map((c) => ({
+        when: c.when as "before" | "after",
+        city: str(c.city, 60),
+        nights: Math.min(14, Math.round(Number(c.nights))),
+        ...(typeof c.hotel === "string" && c.hotel.trim() ? { hotel: str(c.hotel, 120).trim() } : {}),
+        ...(Number(c.price) > 0 ? { price: Math.min(Math.round(Number(c.price)), 10_000_000) } : {}),
+      })),
     flights: (Array.isArray(p.flights) ? p.flights : [])
       .map((x) => obj(x))
       .filter((f) => typeof f.from === "string" && typeof f.to === "string")

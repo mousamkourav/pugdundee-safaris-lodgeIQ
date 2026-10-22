@@ -36,6 +36,8 @@ export interface CityStay {
   when: "before" | "after";
   city: string;
   nights: number;
+  hotel?: string; // name, or empty = to be confirmed
+  price?: number | null; // per night, all rooms, incl. tax
 }
 
 // A flight the guest takes; placed on the right day automatically.
@@ -93,7 +95,8 @@ export interface PlanDay {
 // Edits made on the Final draft step. Only fields the sales member changed
 // are stored; everything else is generated from master data.
 export interface PlanDraft {
-  title?: string;
+  title?: string; // the cover headline
+  subtitle?: string; // the route line under it
   about?: string;
   inclusions?: string[];
   exclusions?: string[];
@@ -112,7 +115,7 @@ export interface Plan {
   offer_ids: string[];
   markup_pct: number | null;
   adjustment: { amount: number; reason: string } | null;
-  currency: "INR" | "USD";
+  currency: "INR" | "USD" | "EUR" | "GBP" | "AUD";
   draft?: PlanDraft;
   // % discount: on accommodation at our own lodges, or the whole itinerary. Reason is internal.
   discount?: { pct: number; scope: "lodges" | "all"; reason: string } | null;

@@ -186,3 +186,23 @@ test("a lodge with four room types: asks with their names; forest suite / deluxe
   r = chatTurn(plan, initialFlags(plan), "2 adults, 16 Jan 2027, Nagpur in and out, Pench 3 nights in the forest suite", c4, TODAY);
   assert.equal(r.plan.stops[0].room_category_id, "PTL_S");
 });
+
+test("asks the hotel for city nights; 'same' copies the other stay", () => {
+  let plan = emptyPlan(TODAY);
+  let flags = initialFlags(plan);
+  const say = (m: string) => {
+    const r = chatTurn(plan, flags, m, ctx, TODAY);
+    plan = r.plan;
+    flags = r.flags;
+    return r;
+  };
+  let r = say("2 adults, Indian, land in delhi, stay one night at delhi then fly to nagpur on 16 Jan 2027, Tadoba 4 nights then Pench 3 nights, then leave from nagpur to delhi, stay in delhi one night");
+  assert.equal(plan.arrival_location_id, "NAG");
+  assert.equal(plan.departure_location_id, "NAG");
+  assert.match(r.reply.text, /Which hotel in Delhi \(1 night before the safari\)/);
+  r = say("The Imperial, 18k");
+  assert.match(r.reply.text, /Which hotel in Delhi \(1 night at the end\)/);
+  assert.ok(r.reply.quick!.some((q) => q.label === "Same: The Imperial"));
+  r = say("same");
+  assert.deepEqual(plan.city_stays!.map((c) => [c.hotel, c.price]), [["The Imperial", 18000], ["The Imperial", 18000]].slice(0, plan.city_stays!.length));
+});

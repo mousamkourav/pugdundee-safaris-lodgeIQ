@@ -252,14 +252,21 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     const label = `${from?.name ?? "?"} to ${to?.name ?? "?"}`;
     const billTo = from?.property_id ?? to?.property_id ?? null;
 
-    const candidates = data.transferRates.filter(
+    // Rates for this road: this direction first; a rate entered only the other way
+    // round is used too (the same road). The chosen vehicle first; if it has no rate
+    // here, the cheapest vehicle that fits, with a note.
+    const onRoute = data.transferRates.filter((r) => r.active && inRange(t.date, r.valid_from, r.valid_to));
+    const forward = onRoute.filter(
       (r) =>
-        r.active &&
-        inRange(t.date, r.valid_from, r.valid_to) &&
-        (!t.vehicle_type || r.vehicle_type.toLowerCase() === t.vehicle_type.toLowerCase()) &&
-        ((r.from_location_id === t.from_location_id && r.to_location_id === t.to_location_id) ||
-          (r.bidirectional && r.from_location_id === t.to_location_id && r.to_location_id === t.from_location_id))
+        (r.from_location_id === t.from_location_id && r.to_location_id === t.to_location_id) ||
+        (r.bidirectional && r.from_location_id === t.to_location_id && r.to_location_id === t.from_location_id)
     );
+    const route = forward.length ? forward : onRoute.filter((r) => r.from_location_id === t.to_location_id && r.to_location_id === t.from_location_id);
+    const sameVehicle = route.filter((r) => !t.vehicle_type || r.vehicle_type.toLowerCase() === t.vehicle_type.toLowerCase());
+    if (t.vehicle_type && route.length && !sameVehicle.length) {
+      warnings.push(`No ${t.vehicle_type} rate for ${label}; the cheapest vehicle that fits is used.`);
+    }
+    const candidates = sameVehicle.length ? sameVehicle : route;
     const priced = candidates
       .map((r: TransferRate) => {
         const vehicles = t.vehicles ?? Math.max(1, Math.ceil(guests / Math.max(1, r.capacity)));
@@ -311,7 +318,7 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
   for (const c of trip.custom_items ?? []) {
     const amount = round(c.amount || 0);
     if (!amount) continue;
-    lines.push({ kind: "addon", ...(c.group === "flight" ? { group: "flight" as const } : {}), date: c.date, description: c.title, quantity: 1, unit_price: amount, amount, tax: 0, property_id: stayOn(c.date)?.property_id ?? null, ref_id: null, manual: true });
+    lines.push({ kind: "addon", ...(c.group === "flight" || c.group === "hotel" ? { group: c.group } : {}), date: c.date, description: c.title, quantity: 1, unit_price: amount, amount, tax: 0, property_id: stayOn(c.date)?.property_id ?? null, ref_id: null, manual: true });
   }
 
   // ---------------- offers ----------------
@@ -475,9 +482,11 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
   const arrival = trip.stays.length ? trip.stays.map((s) => s.check_in).sort()[0] : null;
   const departure = trip.stays.length ? trip.stays.map((s) => addDays(s.check_in, s.nights)).sort().slice(-1)[0] : null;
   const currency = trip.currency ?? "INR";
-  const fx = data.settings.fx?.USD ?? null;
-  if (currency === "USD" && !fx) errors.push("Set the USD exchange rate in Sales settings to quote in USD.");
-  const grandInCurrency = currency === "USD" && fx ? Math.round((grand / fx) * 100) / 100 : grand;
+  const rawFx = currency === "INR" ? null : data.settings.fx?.[currency] ?? null;
+  // a cushion against the rate moving before the guest pays: a slightly lower rate
+  const fx = rawFx ? Math.round(rawFx * (1 - Math.max(0, Math.min(20, data.settings.fx_margin_pct ?? 0)) / 100) * 100) / 100 : null;
+  if (currency !== "INR" && !fx) errors.push(`No ${currency} exchange rate is available right now. Quote in INR, or set the rate in Sales settings.`);
+  const grandInCurrency = currency !== "INR" && fx ? Math.round((grand / fx) * 100) / 100 : grand;
 
   const payments = paymentSchedule(grand, arrival, trip.booking_date, data.settings.payment_slabs?.length ? data.settings.payment_slabs : DEFAULT_PAYMENT_SLABS);
 

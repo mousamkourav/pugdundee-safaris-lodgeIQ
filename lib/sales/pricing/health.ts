@@ -43,7 +43,7 @@ export function checkData(d: PricingData, today: ISODate): HealthIssue[] {
     if (!d.closures.some((c) => c.park_id === park.id)) out.push({ level: "warning", message: `${park.name}: no closures entered (weekly core closure, Holi, Diwali).`, href: `/sales/admin/closures?f_park_id=${park.id}` });
   }
 
-  if (!d.settings.fx?.USD) out.push({ level: "warning", message: "No USD exchange rate in Sales settings, so USD quotes are not possible.", href: "/sales/admin/settings" });
+  if (!d.settings.fx?.USD) out.push({ level: "warning", message: "No USD exchange rate: the live rate could not be fetched and none is saved in Sales settings.", href: "/sales/admin/settings" });
   const slabs = d.settings.payment_slabs;
   if (slabs && slabs.length && Math.abs(slabs.reduce((t, s) => t + s.pct, 0) - 100) > 0.001) {
     out.push({ level: "error", message: "Payment schedule percentages do not add up to 100.", href: "/sales/admin/settings" });

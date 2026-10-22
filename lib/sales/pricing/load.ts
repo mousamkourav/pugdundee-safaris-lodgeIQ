@@ -1,3 +1,4 @@
+import { liveFx } from "@/lib/sales/fx";
 // Loads master data from Supabase in the shape the pricing engine expects.
 // Server-side only (uses the signed-in user's client; sales users can read
 // all sales_* master tables through RLS).
@@ -53,7 +54,10 @@ export async function loadPricingData(): Promise<{ data: PricingData; error: str
   const rows = (r: { data: unknown }) => (r.data ?? []) as Row[];
 
   const s = ((settings.data as { data?: Row } | null)?.data ?? {}) as Row;
-  const fx = (s.fx ?? null) as { USD?: unknown } | null;
+  const fx = (s.fx ?? null) as Record<string, unknown> | null;
+  // Live ECB rates first; the rates saved in Sales settings when the service is unreachable
+  // (or when the admin chose manual rates).
+  const live = s.fx_mode === "manual" ? null : await liveFx();
 
   const data: PricingData = {
     properties: rows(props).map((r): Property => ({ id: str(r.id), name: str(r.name), park_id: strOrNull(r.park_id), kind: str(r.kind) || "own_lodge" })),
@@ -178,7 +182,14 @@ export async function loadPricingData(): Promise<{ data: PricingData; error: str
     ),
     settings: {
       markup_pct: numOrNull(s.markup_pct),
-      fx: fx ? { USD: numOrNull(fx.USD) } : null,
+      fx: {
+        USD: live?.rates.USD ?? numOrNull(fx?.USD),
+        EUR: live?.rates.EUR ?? numOrNull(fx?.EUR),
+        GBP: live?.rates.GBP ?? numOrNull(fx?.GBP),
+        AUD: live?.rates.AUD ?? numOrNull(fx?.AUD),
+      },
+      fx_source: live ? `ECB rate of ${live.date}` : "rate saved in Sales settings",
+      fx_margin_pct: numOrNull(s.fx_margin_pct),
       payment_slabs: Array.isArray(s.payment_slabs)
         ? (s.payment_slabs as Row[]).map((p): PaymentSlab => ({
             label: str(p.label) || "Instalment",

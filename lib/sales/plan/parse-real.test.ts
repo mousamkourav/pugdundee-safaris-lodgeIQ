@@ -135,3 +135,20 @@ test("corrections and room words", () => {
   assert.equal(read("Tree House Hideaway 2 nights").parks[0].room, undefined); // the lodge's name is not a room choice
   assert.equal(read("Kanha 2 nights, 3 safaris without naturalist").parks[0].naturalists, 0);
 });
+
+test("second US enquiry: Delhi night before, fly Delhi-Bhopal, two Bandhavgarh lodges, leave Nagpur-Delhi", () => {
+  const T = "there are 4 adults coming from US one 20th dec 2026 they land on delhi stay one night at delhi than fly to bhopal travel to denwa stay there for 2 days do 2 core safari, 1 boat safari, bush dinner than they will go to pench stay there 2 night do 2 core safari, than kanha 2 nights do 2 core safaris, than they will go to bandhavgarh stay in kings for 1 night 1 core safari, than 1 night in tree house 1 core safari there than they will go to tadoba stay there 2 nights do 2 core safari with naturalist than 1 bush dinner there, all stays they will do nature walk and any special also if any lodge is having they will do that as well, then they will leave from nagpur to delhi stay in delhi one night and leave back to USA";
+  const p = read(T);
+  assert.deepEqual(p.flights, [{ from: "Delhi", to: "Bhopal" }, { from: "Nagpur", to: "Delhi" }]);
+  assert.deepEqual([...(p.cityStays ?? [])].sort((a, b) => a.when.localeCompare(b.when)), [{ when: "after", city: "Delhi", nights: 1 }, { when: "before", city: "Delhi", nights: 1 }]);
+  assert.deepEqual(
+    p.parks.map((x) => [x.lodge ?? x.name.split(" ")[0], x.nights, x.safaris ?? null]),
+    [["Denwa Backwater Escape", 2, 2], ["Pench", 2, 2], ["Kanha", 2, 2], ["Kings Lodge", 1, 1], ["Tree House Hideaway", 1, 1], ["Tadoba-Andhari", 2, 2]]
+  );
+  assert.equal(p.parks[5].naturalists, 2);
+  // "all stays ... nature walk ... any special": every lodge; bush dinner only where it was asked
+  assert.ok(p.parks.every((x) => x.extras?.includes("nature walk") && x.extras?.includes("special")));
+  assert.deepEqual(p.parks.filter((x) => x.extras?.includes("bush dinner")).map((x) => x.lodge ?? x.name.split(" ")[0]), ["Denwa Backwater Escape", "Tadoba-Andhari"]);
+  // "Tadoba stay there 2 nights" is Tadoba, not a city stay
+  assert.ok(!(p.cityStays ?? []).some((c) => c.nights === 2));
+});

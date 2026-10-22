@@ -241,3 +241,15 @@ test("multi-lodge offer: 2 lodges and 6 nights = 10% off rooms; suggested when n
   assert.ok(oneLodge.warnings.some((w) => w.includes("needs 2 of our lodges")));
   assert.equal(oneLodge.totals.discount, 0);
 });
+
+test("transfers: a rate entered only the other way round is used; a chosen vehicle without a rate falls back", () => {
+  const oneWay = { ...data, transferRates: data.transferRates.map((r) => ({ ...r, bidirectional: false })) };
+  const t0 = trip.transfers[trip.transfers.length - 1]; // Pench to Nagpur in the sheet
+  const reversed = { ...trip, transfers: [{ ...t0, from_location_id: t0.to_location_id, to_location_id: t0.from_location_id }] };
+  const r = priceTrip(reversed, oneWay);
+  assert.equal(r.missing.length, 0);
+  assert.ok(r.lines.find((l) => l.kind === "transfer")!.amount > 0);
+  const odd = priceTrip({ ...trip, transfers: trip.transfers.map((t) => ({ ...t, vehicle_type: "AC Innova" })) }, data);
+  assert.equal(odd.missing.length, 0);
+  assert.ok(odd.warnings.some((w) => w.includes("No AC Innova rate")));
+});
