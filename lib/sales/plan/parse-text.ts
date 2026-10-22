@@ -42,7 +42,24 @@ export interface ParsedPark {
   safaris?: number; // jeep safaris wanted
   naturalists?: number; // how many of them with a naturalist
   extras?: string[]; // experience keywords: "bush dinner", "boat safari"...
-  room?: "tree" | "cottage";
+  room?: RoomWish;
+}
+
+// Room wishes people write: "tree house", "cottage", "forest suite", "deluxe room".
+export type RoomWish = "tree" | "cottage" | "suite" | "deluxe";
+export const ROOM_MATCH: Record<RoomWish, RegExp> = {
+  suite: /suite/i,
+  deluxe: /deluxe room/i,
+  tree: /tree ?house/i,
+  cottage: /cottage|bungalow/i,
+};
+export function roomWishIn(text: string): RoomWish | null {
+  const t = text.toLowerCase().replace(/tree ?house hideaway/g, "");
+  if (/\bforest\s*suites?\b|\bsuites?\b/.test(t)) return "suite";
+  if (/\bdeluxe\s*rooms?\b/.test(t)) return "deluxe";
+  if (/\btree\s?houses?\b/.test(t)) return "tree";
+  if (/\b(cottages?|bungalows?)\b/.test(t)) return "cottage";
+  return null;
 }
 
 // Experiences people mention, and the words that find them among the add-ons.
@@ -383,8 +400,8 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
     }
     const extras = EXTRA_WORDS.filter(([re]) => re.test(seg)).map(([, k]) => k);
     if (extras.length) p.extras = extras;
-    if (/\btree\s?houses?\b/.test(seg.replace(/tree house hideaway|treehouse hideaway/g, ""))) p.room = "tree";
-    else if (/\b(cottages?|bungalows?)\b/.test(seg)) p.room = "cottage";
+    const room = roomWishIn(seg);
+    if (room) p.room = room;
   });
 
   // ---- flights and city stays (Delhi nights before or after the safari)

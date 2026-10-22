@@ -116,11 +116,13 @@ export function buildDays(plan: Plan, ctx: BuilderContext): PlanDay[] {
 }
 
 // The add-on at this lodge (else a general one) whose name has all the words, cheapest first.
-export function findAddon(ctx: BuilderContext, propertyId: string, keyword: string) {
+export function findAddon(ctx: BuilderContext, propertyId: string, keyword: string, nationality?: "indian" | "foreign") {
   const words = keyword.toLowerCase().replace(/-/g, " ").split(/\s+/);
   const norm = (s: string) => ` ${s.toLowerCase().replace(/[^a-z0-9]+/g, " ")} `;
   const matches = ctx.pricing.addons.filter((a) => a.active !== false && words.every((w) => norm(a.name).includes(` ${w}`)));
-  const pick = (xs: typeof matches) => xs.sort((a, b) => a.rate - b.rate)[0];
+  // Indian / foreign versions (boat safari at Denwa): the guest's nationality first, then the cheapest.
+  const natScore = (name: string) => (!nationality || !/\((indian|foreign)/i.test(name) ? 1 : new RegExp(`\\(${nationality}`, "i").test(name) ? 0 : 2);
+  const pick = (xs: typeof matches) => xs.sort((a, b) => natScore(a.name) - natScore(b.name) || a.rate - b.rate)[0];
   return pick(matches.filter((a) => a.property_id === propertyId)) ?? pick(matches.filter((a) => !a.property_id)) ?? null;
 }
 
@@ -149,7 +151,7 @@ function applyWants(plan: Plan, ctx: BuilderContext, days: PlanDay[]): PlanDay[]
       }
     }
     for (const kw of stop.want_extras ?? []) {
-      const addon = findAddon(ctx, stop.property_id, kw);
+      const addon = findAddon(ctx, stop.property_id, kw, plan.guest.nationality);
       const item: PlanItem = addon
         ? { id: `auto-${k}-${kw}`, type: "addon", title: addon.name, detail: "", price: null, addon_id: addon.id, qty: null, auto: `extra:${k}:${kw}` }
         : { id: `auto-${k}-${kw}`, type: "activity", title: kw.replace(/\b\w/g, (c) => c.toUpperCase()), detail: "", price: null, addon_id: null, qty: null, auto: `extra:${k}:${kw}` };

@@ -161,8 +161,28 @@ test("asks Cottage or Tree House where a lodge has both; asks the way out separa
   r = say("leaving on their own");
   assert.equal(plan.departure_location_id, null);
   assert.equal(plan.arrival_location_id, "NAG"); // only the way out was cleared
-  assert.match(r.reply.text, /Cottage or Tree House at Pench Tree Lodge/);
+  assert.match(r.reply.text, /Cottage or Tree ?house at Pench Tree Lodge/i);
   r = say("tree house");
   assert.equal(plan.stops[1].room_category_id, "PTL_T");
-  assert.doesNotMatch(r.reply.text, /Cottage or Tree House/);
+  assert.doesNotMatch(r.reply.text, /Cottage or Tree ?house/i);
+});
+
+test("a lodge with four room types: asks with their names; forest suite / deluxe room understood", () => {
+  const four = [
+    { id: "PTL_C", property_id: "PTL", name: "AC Cottage", sort: 0 },
+    { id: "PTL_T", property_id: "PTL", name: "AC Treehouse", sort: 1 },
+    { id: "PTL_S", property_id: "PTL", name: "Forest Suite", sort: 2 },
+    { id: "PTL_D", property_id: "PTL", name: "Deluxe Room", sort: 3 },
+  ];
+  const base = ctx.pricing.roomRates.filter((r) => r.room_category_id === "PTL_AC");
+  const c4 = { ...ctx, rooms: [...ctx.rooms.filter((r) => r.property_id !== "PTL"), ...four], pricing: { ...ctx.pricing, roomRates: [...ctx.pricing.roomRates, ...four.flatMap((rm) => base.map((r) => ({ ...r, id: r.id + rm.id, room_category_id: rm.id })))] } };
+  let plan = emptyPlan(TODAY);
+  let r = chatTurn(plan, initialFlags(plan), "2 adults, Indian, 16 Jan 2027, Nagpur in and out, Pench 3 nights", c4, TODAY);
+  assert.match(r.reply.text, /Which room at Pench Tree Lodge: Cottage, Treehouse, Forest Suite or Deluxe Room/);
+  assert.deepEqual(r.reply.quick!.map((q) => q.label), ["Cottage", "Treehouse", "Forest Suite", "Deluxe Room"]);
+  r = chatTurn(r.plan, r.flags, "deluxe room", c4, TODAY);
+  assert.equal(r.plan.stops[0].room_category_id, "PTL_D");
+  plan = emptyPlan(TODAY);
+  r = chatTurn(plan, initialFlags(plan), "2 adults, 16 Jan 2027, Nagpur in and out, Pench 3 nights in the forest suite", c4, TODAY);
+  assert.equal(r.plan.stops[0].room_category_id, "PTL_S");
 });

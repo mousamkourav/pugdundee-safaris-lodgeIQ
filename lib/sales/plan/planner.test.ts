@@ -130,3 +130,21 @@ test("the plan honours wishes, city nights and flights; edited flights survive a
   // city days cost nothing and do not change the lodge pricing
   assert.equal(priceTrip(planToTrip(p, "2026-10-05"), data).errors.length, 0);
 });
+
+test("extras priced by nationality: the guest's version is chosen", async () => {
+  const { findAddon } = await import("./planner");
+  const boats = {
+    ...ctx,
+    pricing: {
+      ...ctx.pricing,
+      addons: [
+        { id: "BI", name: "Boat safari, 2 hours, up to 2 guests (Indian nationals)", property_id: "PTL", pricing_unit: "per_group" as const, rate: 10000, tax_pct: 5, active: true },
+        { id: "BF", name: "Boat safari, 2 hours, up to 2 guests (foreign nationals)", property_id: "PTL", pricing_unit: "per_group" as const, rate: 14000, tax_pct: 5, active: true },
+        { id: "BX", name: "Boat trip: each extra guest (Indian nationals)", property_id: "PTL", pricing_unit: "per_person" as const, rate: 750, tax_pct: 5, active: true },
+      ],
+    },
+  };
+  assert.equal(findAddon(boats, "PTL", "boat safari", "foreign")!.id, "BF");
+  assert.equal(findAddon(boats, "PTL", "boat safari", "indian")!.id, "BI");
+  assert.equal(findAddon(boats, "PTL", "boat safari")!.id, "BI"); // unknown: the cheaper one
+});

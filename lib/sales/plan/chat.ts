@@ -10,7 +10,7 @@ import { rupees } from "@/lib/sales/format";
 import { countryName, findPhone } from "@/lib/sales/countries";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 import type { ISODate } from "@/lib/sales/pricing/types";
-import { aliasesOf, extractTrip, locationAliases, matchByName, mergeParsed, type ParsedTrip } from "./parse-text";
+import { ROOM_MATCH, aliasesOf, extractTrip, locationAliases, matchByName, mergeParsed, roomWishIn, type ParsedTrip, type RoomWish } from "./parse-text";
 import { buildDays, defaultStop, emptyPlan, lodgesInPark, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems } from "./planner";
 import type { BuilderContext, Plan, PlanStop } from "./types";
 
@@ -52,6 +52,11 @@ export interface ChatResult {
 const WORDNUM: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
 const num = (s: string) => (/^\d+$/.test(s) ? Number(s) : WORDNUM[s] ?? NaN);
 const shortName = (name: string) => aliasesOf(name).sort((a, b) => a.length - b.length)[0]?.replace(/^\w/, (c) => c.toUpperCase()) ?? name;
+
+// The room type for a wish ("tree", "suite"...); for "cottage", any room that is not a tree house.
+function pickRoom<T extends { name: string }>(rooms: T[], wish: RoomWish): T | undefined {
+  return rooms.find((r) => ROOM_MATCH[wish].test(r.name)) ?? (wish === "cottage" ? rooms.find((r) => !/tree ?house|suite|deluxe room/i.test(r.name)) : undefined);
+}
 
 export function initialFlags(plan: Plan): ChatFlags {
   const editing = plan.stops.length > 0;
@@ -294,8 +299,7 @@ export function chatTurn(
     if (p.naturalists != null) wish.want_naturalists = p.naturalists;
     if (p.extras?.length) wish.want_extras = [...new Set([...(next.stops[i].want_extras ?? []), ...p.extras])];
     if (p.room) {
-      const rooms = roomsOf(ctx, next.stops[i].property_id);
-      const want = rooms.find((r) => (p.room === "tree") === /tree ?house/i.test(r.name));
+      const want = pickRoom(roomsOf(ctx, next.stops[i].property_id), p.room);
       if (want) {
         const meals = mealPlansOf(ctx, want.id);
         wish.room_category_id = want.id;
@@ -365,12 +369,12 @@ export function chatTurn(
 
   // ---- a short reply naming a room type ("treehouse", "cottage"): the stop the
   // last question was about, or every stop that has such a room
-  const roomWord = /\btree ?houses?\b/.test(low) ? "tree" : /\b(cottages?|bungalows?)\b/.test(low) ? "cottage" : null;
+  const roomWord = roomWishIn(low);
   if (roomWord && !parsed.parks.length) {
     const targets = f.pending === "room" && f.roomFor ? next.stops.filter((s) => s.park_id === f.roomFor) : next.stops;
     for (const s of targets) {
       const i = next.stops.indexOf(s);
-      const want = roomsOf(ctx, s.property_id).find((r) => (roomWord === "tree") === /tree ?house/i.test(r.name));
+      const want = pickRoom(roomsOf(ctx, s.property_id), roomWord);
       if (want && want.id !== s.room_category_id) {
         const meals = mealPlansOf(ctx, want.id);
         next.stops[i] = { ...s, room_category_id: want.id, meal_plan: meals.includes(s.meal_plan) ? s.meal_plan : meals[0] ?? s.meal_plan };
@@ -499,22 +503,18 @@ export function nextQuestion(
       ready: false,
     };
   }
-  // Cottage or Tree House, where a lodge has both.
-  const roomStop = plan.stops.find((s) => {
-    if ((f.roomDecided ?? []).includes(s.park_id)) return false;
-    const rooms = roomsOf(ctx, s.property_id);
-    return rooms.some((r) => /tree ?house/i.test(r.name)) && rooms.some((r) => !/tree ?house/i.test(r.name));
-  });
+  // Which room, where a lodge has more than one type (Cottage / Tree House / Forest Suite...).
+  const roomStop = plan.stops.find((s) => !(f.roomDecided ?? []).includes(s.park_id) && roomsOf(ctx, s.property_id).length > 1);
   if (roomStop) {
     const lodge = ctx.properties.find((p) => p.id === roomStop.property_id)?.name ?? "the lodge";
+    const rooms = roomsOf(ctx, roomStop.property_id);
+    const label = (n: string) => n.replace(/^AC\s+/i, "");
+    const names = rooms.map((r) => label(r.name));
     return {
-      text: `Cottage or Tree House at ${lodge}?`,
+      text: rooms.length === 2 ? `${names[0]} or ${names[1]} at ${lodge}?` : `Which room at ${lodge}: ${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}?`,
       pending: "room",
       roomFor: roomStop.park_id,
-      quick: [
-        { label: "Cottage", text: "cottage" },
-        { label: "Tree House", text: "tree house" },
-      ],
+      quick: rooms.map((r) => ({ label: label(r.name), text: label(r.name).toLowerCase() })),
       warnings: [],
       ready: false,
     };
