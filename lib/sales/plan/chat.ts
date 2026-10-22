@@ -11,7 +11,7 @@ import { countryName, findPhone } from "@/lib/sales/countries";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 import type { ISODate } from "@/lib/sales/pricing/types";
 import { ROOM_MATCH, aliasesOf, extractTrip, locationAliases, matchByName, mergeParsed, roomWishIn, type ParsedTrip, type RoomWish } from "./parse-text";
-import { buildDays, defaultStop, emptyPlan, lodgesInPark, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems } from "./planner";
+import { buildDays, defaultStop, defaultVehicle, emptyPlan, lodgesInPark, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems } from "./planner";
 import type { BuilderContext, Plan, PlanStop } from "./types";
 
 export interface ChatFlags {
@@ -106,7 +106,7 @@ export function chatTurn(
   const low = msg.toLowerCase();
 
   if (/^(start over|start again|reset|new trip|clear( all)?)\b/.test(low)) {
-    const fresh = emptyPlan(today);
+    const fresh = { ...emptyPlan(today), vehicle_type: defaultVehicle(ctx) };
     return {
       plan: fresh,
       flags: initialFlags(fresh),

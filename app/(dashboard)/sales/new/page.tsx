@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { ui } from "@/components/ui";
 import { Builder } from "@/components/sales/builder/builder";
 import { loadBuilderContext, todayIST } from "@/lib/sales/plan/load-context";
-import { emptyPlan } from "@/lib/sales/plan/planner";
+import { defaultVehicle, emptyPlan } from "@/lib/sales/plan/planner";
 import { sanitizePlan } from "@/lib/sales/plan/sanitize";
 import type { Plan } from "@/lib/sales/plan/types";
 import { aiEnabled } from "./ai-actions";
@@ -44,6 +44,9 @@ export default async function NewItineraryPage({
 
   const aiAvailable = await aiEnabled();
   const ready = ctx.pricing.parks.length > 0 && ctx.properties.length > 0 && ctx.pricing.roomRates.length > 0;
+
+  // a new itinerary starts with the Innova (saved ones keep their own choice)
+  if (!fromId && !initial.vehicle_type) initial = { ...initial, vehicle_type: defaultVehicle(ctx) };
 
   return (
     <div className="space-y-6">

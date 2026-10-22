@@ -492,3 +492,26 @@ export function routeProblems(plan: Plan, ctx: BuilderContext): string[] {
   if (plan.guest.rooms < 1) out.push("At least 1 room.");
   return out;
 }
+
+// Vehicles with transfer rates at every lodge that has any transfers (so the choice
+// works on any route); Innova first. A vehicle only one lodge has is not offered.
+export function commonVehicles(ctx: BuilderContext): string[] {
+  const lodgeOfLoc = new Map(ctx.locations.filter((l) => l.property_id).map((l) => [l.id, l.property_id!]));
+  const byLodge = new Map<string, Set<string>>();
+  for (const r of ctx.pricing.transferRates) {
+    if (r.active === false) continue;
+    for (const loc of [r.from_location_id, r.to_location_id]) {
+      const lodge = lodgeOfLoc.get(loc);
+      if (!lodge) continue;
+      if (!byLodge.has(lodge)) byLodge.set(lodge, new Set());
+      byLodge.get(lodge)!.add(r.vehicle_type);
+    }
+  }
+  const sets = [...byLodge.values()];
+  if (!sets.length) return [];
+  const common = [...sets[0]].filter((v) => sets.every((s) => s.has(v)));
+  return common.sort((a, b) => Number(!/innova/i.test(a)) - Number(!/innova/i.test(b)) || a.localeCompare(b));
+}
+
+// New itineraries start with the Innova (or the first common vehicle).
+export const defaultVehicle = (ctx: BuilderContext) => commonVehicles(ctx)[0] ?? null;

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
-import { defaultStop, lodgesInPark, mealPlansOf, roomsOf } from "@/lib/sales/plan/planner";
+import { commonVehicles, defaultStop, lodgesInPark, mealPlansOf, roomsOf } from "@/lib/sales/plan/planner";
 import type { BuilderContext, Plan, PlanStop } from "@/lib/sales/plan/types";
 import type { ChatFlags } from "@/lib/sales/plan/chat";
 import { Field } from "./field";
@@ -40,7 +40,7 @@ export function TripDetails({
   const setGuest = (patch: Partial<Plan["guest"]>) => setPlan((p) => ({ ...p, guest: { ...p.guest, ...patch } }));
   const setStop = (i: number, patch: Partial<PlanStop>) => setPlan((p) => ({ ...p, stops: p.stops.map((s, j) => (j === i ? { ...s, ...patch } : s)) }));
   const places = ctx.locations.filter((l) => l.type !== "property");
-  const vehicleTypes = [...new Set(ctx.pricing.transferRates.map((t) => t.vehicle_type))].sort();
+  const vehicleTypes = commonVehicles(ctx);
   const emailError = plan.guest.email && !EMAIL_RE.test(plan.guest.email) ? "This email address does not look right." : null;
   const dateError = plan.arrival_date < today ? "This date is in the past." : null;
 
@@ -168,10 +168,10 @@ export function TripDetails({
               }}
             />
           </Field>
-          {vehicleTypes.length > 1 ? (
+          {vehicleTypes.length > 0 ? (
             <Field label="Transfer vehicle">
               <select className={`${ui.select} w-full`} value={plan.vehicle_type ?? ""} onChange={(e) => setPlan((p) => ({ ...p, vehicle_type: e.target.value || null }))}>
-                <option value="">Cheapest suitable</option>
+                <option value="">Cheapest for the group</option>
                 {vehicleTypes.map((v) => <option key={v}>{v}</option>)}
               </select>
             </Field>
