@@ -28,8 +28,11 @@ export interface ParsedTrip {
   meal_plan?: "AP" | "MAP" | "CP" | "EP";
   notes: string[]; // assumptions made while reading
   flights?: { from: string; to: string; time?: string }[];
-  cityStays?: { when: "before" | "after"; city: string; nights: number }[];
+  cityStays?: { when: "before" | "after"; city: string; nights: number; hotel?: string; price?: number }[];
   reverse?: boolean; // "wrong direction", "the other way round"
+  removeParks?: string[]; // parks to take out (from the AI)
+  order?: string[]; // parks in a new order (from the AI)
+  replaceRoute?: boolean; // the message describes a whole new route (from the AI)
 }
 
 // What was said about one park / lodge, read from its own part of the message:
@@ -639,7 +642,9 @@ export function scrubForAI(text: string) {
   return text
     .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, "[email]")
     .replace(/\+?\d[\d\s-]{8,}\d/g, "[number]")
-    .slice(0, 1500);
+    .replace(/\b(?:[Mm](?:r|rs|s|iss)|[Dd]r|[Pp]rof)\.?\s+(?:&\s*(?:[Mm]rs?)\.?\s+)?[A-Za-z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+)?/g, "[guest]")
+    .replace(/\b(?:guest(?:'s)?\s+name|name)\s*(?:is|:|-)\s*[^,.;\n]{2,60}/gi, "name: [guest]")
+    .slice(0, 2000);
 }
 
 export const needsHelp = (p: ParsedTrip) => p.parks.length === 0 || !p.arrival_date;

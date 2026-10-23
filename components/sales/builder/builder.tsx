@@ -12,7 +12,7 @@ import { chatTurn, greeting, initialFlags, nextQuestion, type ChatFlags, type Ch
 import { closureFor } from "@/lib/sales/pricing/engine";
 import type { BuilderContext, Plan } from "@/lib/sales/plan/types";
 import { saveItinerary } from "@/app/(dashboard)/sales/new/actions";
-import { aiReadTrip } from "@/app/(dashboard)/sales/new/ai-actions";
+import { aiUnderstand } from "@/app/(dashboard)/sales/new/ai-actions";
 import { ChatPanel } from "./chat-panel";
 import { TripDetails, EMAIL_RE } from "./trip-details";
 import { PlanStep } from "./plan-step";
@@ -277,21 +277,19 @@ export function Builder({
     setChatBusy(true);
     try {
       let r = chatTurn(plan, flags, text, ctx, today);
-      // Ask the AI when the reader missed the important parts, not only when it
-      // understood nothing: e.g. it caught "2 adults" but not the parks or the date.
-      const missedParks = !r.plan.stops.length && /\d|night|park|lodge|safari|trip|stay/i.test(text);
-      const missedDate = flags.pending === "date" && !r.flags.dateSet;
-      if ((!r.understood || missedParks || missedDate) && aiAvailable && text.trim().length > 8) {
+      // With the AI assistant on, Gemini reads every message first (with the conversation
+      // and the trip so far); the built-in reader fills gaps and takes over if the AI is
+      // unavailable. Short replies to the assistant's own questions ("cottage", "same",
+      // "3") are handled by the built-in reader alone: instant, and they save AI quota.
+      const shortAnswer = !!flags.pending && flags.pending !== "parks" && text.trim().length <= 30;
+      if (aiAvailable && !shortAnswer && text.trim().length > 3) {
         try {
-          const ai = await aiReadTrip(text);
-          if (ai.parsed) {
-            const r2 = chatTurn(plan, flags, text, ctx, today, ai.parsed);
-            if (r2.understood) r = { ...r2, reply: { ...r2.reply, warnings: [...(r2.reply.warnings ?? []), "Read with AI help. Please check the details."] } };
-          } else if (ai.error) {
-            r = { ...r, reply: { ...r.reply, warnings: [...(r.reply.warnings ?? []), ai.error] } };
-          }
+          const history = messages.filter((m) => m.text).map((m) => ({ role: m.role, text: m.text }));
+          const ai = await aiUnderstand({ message: text, history, planJson: JSON.stringify(plan) });
+          if (ai.parsed) r = chatTurn(plan, flags, text, ctx, today, ai.parsed, { aiPrimary: true });
+          else if (ai.error) r = { ...r, reply: { ...r.reply, warnings: [...(r.reply.warnings ?? []), ai.error] } };
         } catch {
-          r = { ...r, reply: { ...r.reply, warnings: [...(r.reply.warnings ?? []), "AI help is not reachable right now."] } };
+          r = { ...r, reply: { ...r.reply, warnings: [...(r.reply.warnings ?? []), "The AI is not reachable right now; the built-in reader was used."] } };
         }
       }
       if (r.routeChanged && daysEdited) {
@@ -349,7 +347,9 @@ export function Builder({
     }
     startSave(async () => {
       try {
-        const res = await saveItinerary(JSON.stringify(plan), currentId, mode);
+        // the first enquiry typed in this session teaches the AI assistant once the quote is saved
+        const enquiry = messages.find((m) => m.role === "user" && m.text.trim().length > 15)?.text;
+        const res = await saveItinerary(JSON.stringify(plan), currentId, mode, enquiry);
         if (res.error) setSaveError(res.error);
         else if (res.problems?.length) setSaveProblems(res.problems);
         else if (res.id) {

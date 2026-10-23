@@ -2,12 +2,15 @@
 
 import { safe } from "@/lib/sales/safe";
 import { makeShareSlug } from "@/lib/sales/share-slug";
+import { planToExample } from "@/lib/sales/plan/ai";
+import { scrubForAI } from "@/lib/sales/plan/parse-text";
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, isSalesUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadBuilderContext, todayIST } from "@/lib/sales/plan/load-context";
 import { sanitizePlan } from "@/lib/sales/plan/sanitize";
+import type { Plan } from "@/lib/sales/plan/types";
 import { planToTrip, routeProblems } from "@/lib/sales/plan/planner";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 
@@ -35,7 +38,7 @@ async function insertVersion(
 // mode "final": the full checks, then the query is Open with a client link.
 // The price is always recalculated here from current master data and the
 // prices the sales person typed; the browser's numbers are never trusted.
-async function saveItineraryUnsafe(planJson: string, queryId: string | null, mode: SaveMode = "final"): Promise<SaveResult> {
+async function saveItineraryUnsafe(planJson: string, queryId: string | null, mode: SaveMode = "final", enquiry?: string): Promise<SaveResult> {
   const cu = await getCurrentUser();
   if (!cu?.user || !isSalesUser(cu.profile?.role)) return { error: "You do not have access to Sales." };
 
@@ -108,6 +111,7 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
       const fin = await supabase.from("sales_queries").update({ status: "open" }).eq("id", queryId);
       if (fin.error) return { error: "Saved, but the draft could not be finalised: " + fin.error.message };
     }
+    if (mode === "final") await learnFrom(supabase, enquiry, plan, ctx, queryId, cu.user.id);
     revalidatePath(`/sales/queries/${queryId}`);
     revalidatePath("/sales", "layout");
     return { id: queryId };
@@ -127,11 +131,30 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
     await createAdminClient().from("sales_queries").delete().eq("id", id);
     return { error: "Could not save the itinerary: " + ins.error.message };
   }
+  if (mode === "final") await learnFrom(supabase, enquiry, plan, ctx, id, cu.user.id);
   revalidatePath("/sales", "layout");
   return { id };
 }
 
+// A quote saved for the guest becomes an example for the AI assistant: the
+// enquiry as typed (without names or contact details) and the trip that was quoted.
+async function learnFrom(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  enquiry: string | undefined,
+  plan: Plan,
+  ctx: Awaited<ReturnType<typeof loadBuilderContext>>["ctx"],
+  queryId: string,
+  userId: string
+) {
+  const text = scrubForAI(enquiry ?? "").trim();
+  if (text.length < 15 || !plan.stops.length) return;
+  await supabase
+    .from("sales_chat_examples")
+    .insert({ message: text, expected: planToExample(plan, ctx), query_id: queryId, created_by: userId })
+    .then(() => undefined, () => undefined); // the table may not exist yet: never block a save
+}
+
 // Public actions: same as above, but failures come back as { error } instead of crashing.
-export async function saveItinerary(planJson: string, queryId: string | null, mode: SaveMode = "final"): Promise<SaveResult> {
-  return safe("saveItinerary", () => saveItineraryUnsafe(planJson, queryId, mode));
+export async function saveItinerary(planJson: string, queryId: string | null, mode: SaveMode = "final", enquiry?: string): Promise<SaveResult> {
+  return safe("saveItinerary", () => saveItineraryUnsafe(planJson, queryId, mode, enquiry));
 }

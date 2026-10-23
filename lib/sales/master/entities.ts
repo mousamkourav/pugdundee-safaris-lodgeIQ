@@ -415,9 +415,41 @@ export const ENTITIES: EntityDef[] = [
     filters: ["kind"],
     order: [{ column: "kind", ascending: true }, { column: "sort", ascending: true }],
   },
+  {
+    key: "glossary",
+    table: "sales_glossary",
+    title: "AI glossary",
+    singular: "term",
+    group: "AI assistant",
+    icon: "list",
+    description: "The team's shorthand and Hindi words, so the AI assistant understands them (THH = Tree House Hideaway, raat = night).",
+    fields: [
+      { name: "term", label: "Term", type: "text", required: true, placeholder: "e.g. THH, raat, JBP" },
+      { name: "meaning", label: "Means", type: "text", required: true, wide: true, placeholder: "e.g. Tree House Hideaway (Bandhavgarh)" },
+      active,
+    ],
+    list: ["term", "meaning", "active"],
+    order: [{ column: "term", ascending: true }],
+  },
+  {
+    key: "ai-examples",
+    table: "sales_chat_examples",
+    title: "AI examples",
+    singular: "example",
+    group: "AI assistant",
+    icon: "clipboard",
+    description: "Enquiries already quoted, saved automatically with the trip that was sent. The AI assistant learns from the most similar ones. Switch off any that would teach it something wrong.",
+    fields: [
+      { name: "message", label: "Enquiry as typed (names removed)", type: "textarea", required: true, wide: true },
+      { name: "expected", label: "The trip that was quoted (used by the AI)", type: "textarea", required: true, wide: true },
+      active,
+    ],
+    list: ["message", "active"],
+    order: [{ column: "created_at", ascending: false }],
+  },
 ];
 
-export const ENTITY_GROUPS = ["Places", "Stay", "Safaris & travel", "Commercial", "Content"];
+export const ENTITY_GROUPS = ["Places", "Stay", "Safaris & travel", "Commercial", "Content", "AI assistant"];
 
 export function getEntity(key: string) {
   return ENTITIES.find((e) => e.key === key) ?? null;

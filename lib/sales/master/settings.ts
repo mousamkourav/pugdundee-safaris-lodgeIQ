@@ -44,9 +44,9 @@ export const SETTINGS_FIELDS: (FieldDef & { path: string[] })[] = [
   {
     name: "ai_parsing_enabled",
     path: ["ai_parsing_enabled"],
-    label: "AI reading of trip descriptions",
+    label: "AI trip assistant (Google Gemini)",
     type: "bool",
-    help: "Used only when the built-in reader cannot find the parks or date. Also needs GEMINI_API_KEY set in Vercel (never stored here). Emails and phone numbers are removed before sending.",
+    help: "Gemini reads every chat message, using your parks, lodges, glossary and past quotes; prices always come from your own rates. Needs GEMINI_API_KEY in Vercel (never stored here). Guest names, emails and phone numbers are removed before sending. If the AI is unavailable, the built-in reader is used.",
   },
   {
     name: "payment_slabs",

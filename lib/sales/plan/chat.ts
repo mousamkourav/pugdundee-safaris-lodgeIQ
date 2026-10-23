@@ -10,6 +10,7 @@ import { rupees } from "@/lib/sales/format";
 import { countryName, findPhone } from "@/lib/sales/countries";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 import type { ISODate } from "@/lib/sales/pricing/types";
+import { mergePrimary } from "./ai";
 import { ROOM_MATCH, aliasesOf, extractTrip, locationAliases, matchByName, mergeParsed, roomWishIn, type ParsedTrip, type RoomWish } from "./parse-text";
 import { buildDays, defaultStop, defaultVehicle, emptyPlan, lodgesInPark, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems } from "./planner";
 import type { BuilderContext, Plan, PlanStop } from "./types";
@@ -100,7 +101,8 @@ export function chatTurn(
   message: string,
   ctx: BuilderContext,
   today: ISODate,
-  aiParsed?: ParsedTrip
+  aiParsed?: ParsedTrip,
+  opts: { aiPrimary?: boolean } = {}
 ): ChatResult {
   const msg = message.trim();
   const low = msg.toLowerCase();
@@ -176,7 +178,24 @@ export function chatTurn(
 
   // ---- read the message
   let parsed = extractTrip(msg, ctx, today);
-  if (aiParsed) parsed = mergeParsed(parsed, aiParsed);
+  // With the AI assistant on, its reading comes first and the built-in reader fills gaps;
+  // otherwise the AI only fills what the built-in reader missed.
+  if (aiParsed) parsed = opts.aiPrimary ? mergePrimary(aiParsed, parsed) : mergeParsed(parsed, aiParsed);
+
+  // ---- from the AI: a whole new route, parks to take out
+  if (parsed.replaceRoute && parsed.parks.length && next.stops.length) {
+    next.stops = [];
+    f.nightsUnknown = [];
+    chips.push("new route");
+  }
+  for (const name of parsed.removeParks ?? []) {
+    const park = ctx.pricing.parks.find((p) => p.name === name);
+    if (park && next.stops.some((s) => s.park_id === park.id)) {
+      next.stops = next.stops.filter((s) => s.park_id !== park.id);
+      removed.add(park.name);
+      chips.push(`removed ${park.name}`);
+    }
+  }
   parsed.parks = parsed.parks.filter((p) => !removed.has(p.name));
   warnings.push(...parsed.notes.filter((n) => !n.startsWith("Assumed the guest also leaves")));
 
@@ -400,7 +419,12 @@ export function chatTurn(
   }
 
   // ---- corrections to the order: "wrong direction", "Pench first", "Kanha then Pench"
-  if (parsed.reverse && next.stops.length > 1) {
+  const aiOrder = (parsed.order ?? []).map((n) => ctx.pricing.parks.find((p) => p.name === n)?.id).filter((x): x is string => !!x && next.stops.some((s) => s.park_id === x));
+  if (aiOrder.length && next.stops.length > 1 && !parsed.reverse) {
+    const named = aiOrder.flatMap((id) => next.stops.filter((s) => s.park_id === id));
+    next.stops = [...named, ...next.stops.filter((s) => !aiOrder.includes(s.park_id))];
+    chips.push(`new order: ${next.stops.map((s) => parkName(s.park_id).split(/[ -]/)[0]).join(" then ")}`);
+  } else if (parsed.reverse && next.stops.length > 1) {
     next.stops = [...next.stops].reverse();
     // swap the way in and out only when both are known
     if (next.arrival_location_id && next.departure_location_id) {

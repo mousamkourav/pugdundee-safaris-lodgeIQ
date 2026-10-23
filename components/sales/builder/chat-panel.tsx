@@ -45,7 +45,7 @@ export function ChatPanel({
         </span>
         <div className="min-w-0">
           <p className="text-sm font-semibold text-olive-800">Trip assistant</p>
-          <p className="text-xs text-sand-500">{aiAvailable ? "Built-in reader, with AI help when needed" : "Built-in reader"}</p>
+          <p className="text-xs text-sand-500">{aiAvailable ? "Gemini AI, checked against your master data" : "Built-in reader (AI assistant is off)"}</p>
         </div>
       </header>
 
