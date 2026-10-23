@@ -68,7 +68,7 @@ function PriceBar({ plan, result, blockers }: { plan: Plan; result: PriceResult 
         </div>
         <div className="text-right text-xs text-sand-500">
           {nights > 0 && <p>{nights} nights</p>}
-          {result?.arrival && <p>{fmtDate(result.arrival)} - {fmtDate(result.departure)}</p>}
+          {plan.dateless ? <p>Dates not fixed</p> : result?.arrival && <p>{fmtDate(result.arrival)} - {fmtDate(result.departure)}</p>}
         </div>
       </div>
       {plan.stops.length > 0 && !plan.guest.country && (

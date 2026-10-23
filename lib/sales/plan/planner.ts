@@ -4,7 +4,7 @@
 
 import { addDays, dayName } from "@/lib/sales/pricing/dates";
 import { closureFor } from "@/lib/sales/pricing/engine";
-import type { ISODate, SafariInput, TransferInput, TripInput } from "@/lib/sales/pricing/types";
+import type { ISODate, RateBasis, SafariInput, TransferInput, TripInput } from "@/lib/sales/pricing/types";
 import type { BuilderContext, DaySafari, Plan, PlanDay, PlanItem, PlanStop } from "./types";
 
 export const MEAL_ORDER = ["AP", "MAP", "CP", "EP"];
@@ -59,11 +59,16 @@ function hasBufferRate(ctx: BuilderContext, parkId: string, session: string) {
   return ctx.pricing.safariRates.some((r) => r.park_id === parkId && r.zone === "buffer" && r.session === session);
 }
 
+// Park closures on a date; none when the dates are not fixed yet (the weekday is unknown).
+export const closedAt = (ctx: BuilderContext, plan: Pick<Plan, "dateless">, parkId: string, zone: string, session: string, date: ISODate) =>
+  plan.dateless ? undefined : closureFor(ctx.pricing, parkId, zone, session, date);
+
 // Morning + afternoon in the core zone; if the core is closed for a session,
 // use the buffer zone when it has rates, otherwise drop that session.
-export function autoSafaris(ctx: BuilderContext, parkId: string, date: ISODate): { safaris: DaySafari[]; notes: string[] } {
+export function autoSafaris(ctx: BuilderContext, parkId: string, date: ISODate, dateless = false): { safaris: DaySafari[]; notes: string[] } {
   const safaris: DaySafari[] = [];
   const notes: string[] = [];
+  const closureFor = (_: unknown, park: string, zone: string, session: string, d: ISODate) => closedAt(ctx, { dateless }, park, zone, session, d);
   for (const session of ["morning", "afternoon"] as const) {
     const core = closureFor(ctx.pricing, parkId, "core", session, date);
     if (!core) {
@@ -168,9 +173,9 @@ function applyWants(plan: Plan, ctx: BuilderContext, days: PlanDay[]): PlanDay[]
           if (planned >= stop.want_safaris) break;
           if (!range.includes(x.i)) continue; // a moving-on morning only when the next lodge is in the same park
           if (days[x.i].safaris.some((s) => s.session === x.session)) continue;
-          const zone: DaySafari["zone"] | null = !closureFor(ctx.pricing, stop.park_id, "core", x.session, days[x.i].date)
+          const zone: DaySafari["zone"] | null = !closedAt(ctx, plan, stop.park_id, "core", x.session, days[x.i].date)
             ? "core"
-            : !closureFor(ctx.pricing, stop.park_id, "buffer", x.session, days[x.i].date)
+            : !closedAt(ctx, plan, stop.park_id, "buffer", x.session, days[x.i].date)
               ? "buffer"
               : null;
           if (!zone) continue;
@@ -307,13 +312,17 @@ function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
   legs.forEach(({ stop, checkIn }, i) => {
     const toLoc = locationOfProperty(ctx, stop.property_id);
     const fromLoc = i === 0 ? plan.arrival_location_id : locationOfProperty(ctx, legs[i - 1].stop.property_id);
+    // Moving between two lodges in the same park (Tree House Hideaway to Kings Lodge):
+    // a morning safari first, then the short drive.
+    const samePark = i > 0 && legs[i - 1].stop.park_id === stop.park_id;
+    const morning = samePark ? autoSafaris(ctx, stop.park_id, checkIn, plan.dateless).safaris.filter((x) => x.session === "morning") : [];
     days.push(
       describe(ctx, {
         date: checkIn,
         kind: i === 0 ? "arrival" : "transfer",
         property_id: stop.property_id,
         park_id: stop.park_id,
-        safaris: [],
+        safaris: morning,
         transfer: fromLoc && toLoc ? { from_location_id: fromLoc, to_location_id: toLoc } : null,
         title: "",
         text: "",
@@ -323,7 +332,7 @@ function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
     );
     for (let n = 1; n < stop.nights; n++) {
       const date = addDays(checkIn, n);
-      const { safaris, notes } = autoSafaris(ctx, stop.park_id, date);
+      const { safaris, notes } = autoSafaris(ctx, stop.park_id, date, plan.dateless);
       days.push(
         describe(ctx, {
           date,
@@ -364,12 +373,13 @@ function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
 
 // ---------------- titles and text ----------------
 
-function driveHours(ctx: BuilderContext, from: string, to: string, vehicle: string | null) {
-  const r = ctx.pricing.transferRates.find(
-    (t) =>
-      (!vehicle || t.vehicle_type === vehicle) &&
-      ((t.from_location_id === from && t.to_location_id === to) || (t.bidirectional && t.from_location_id === to && t.to_location_id === from))
+// Approximate drive time between two places: the same road either way, the chosen
+// vehicle first, else any vehicle that has a time for that road.
+export function driveHours(ctx: BuilderContext, from: string, to: string, vehicle: string | null) {
+  const road = ctx.pricing.transferRates.filter(
+    (t) => t.drive_hours != null && ((t.from_location_id === from && t.to_location_id === to) || (t.from_location_id === to && t.to_location_id === from))
   );
+  const r = road.find((t) => vehicle && t.vehicle_type === vehicle) ?? road[0];
   return r?.drive_hours ?? null;
 }
 
@@ -392,11 +402,19 @@ function pickTemplate(ctx: BuilderContext, kind: string, parkId: string | null, 
   );
 }
 
+const sessionWord = (x: DaySafari) => (x.session === "full_day" ? "Full-day" : x.session === "morning" ? "Morning" : "Evening");
+
 function safariPhrase(s: DaySafari[]) {
   if (!s.length) return "No safaris";
-  const sessions = s.length === 2 ? "Morning and evening jeep safaris" : `${s[0].session === "morning" ? "Morning" : "Evening"} jeep safari`;
+  const sessions = s.length === 2 ? "Morning and evening jeep safaris" : `${sessionWord(s[0])} jeep safari`;
   const zones = [...new Set(s.map((x) => x.zone))];
   return `${sessions} (${zones.join(" and ")} zone)`;
+}
+
+// One safari on a travel day, as a sentence: "Early morning jeep safari in Bandhavgarh (core zone), with a naturalist."
+function travelDaySafari(x: DaySafari, park: string) {
+  const when = x.session === "morning" ? "Early morning jeep safari" : x.session === "afternoon" ? "Evening jeep safari" : "Full-day jeep safari";
+  return `${when}${park ? ` in ${park}` : ""} (${x.zone} zone)${x.naturalist ? ", accompanied by a naturalist" : ""}.`;
 }
 
 export function describe(ctx: BuilderContext, day: PlanDay, vehicle: string | null): PlanDay {
@@ -427,10 +445,30 @@ export function describe(ctx: BuilderContext, day: PlanDay, vehicle: string | nu
     .replaceAll("{safaris}", safariPhrase(day.safaris))
     .replace(/,? with a resident naturalist/gi, "")
     .replace(/resident naturalists?/gi, (m) => (m.toLowerCase().endsWith("s") ? "naturalists" : "naturalist"));
-  const nat = day.safaris.filter((s) => s.naturalist).length;
-  const withNat = nat === 0 ? "" : nat === day.safaris.length ? (nat === 1 ? " Accompanied by a naturalist." : " Each safari is accompanied by a naturalist.") : ` A naturalist accompanies the ${day.safaris.find((s) => s.naturalist)!.session === "morning" ? "morning" : "evening"} safari.`;
-
-  return { ...day, title: titles[day.kind], text: text + (day.park_id && day.safaris.length ? withNat : "") };
+  // Safari days: one sentence about the naturalist. Travel days (arrival, moving
+  // lodges, departure): each safari is written into the text where it happens,
+  // so the text never mentions a naturalist without the safari.
+  if (day.kind === "safari" || day.kind === "leisure") {
+    const nat = day.safaris.filter((s) => s.naturalist).length;
+    const withNat =
+      nat === 0
+        ? ""
+        : nat === day.safaris.length
+          ? nat === 1
+            ? " Accompanied by a naturalist."
+            : " Each safari is accompanied by a naturalist."
+          : ` A naturalist accompanies the ${sessionWord(day.safaris.find((s) => s.naturalist)!).toLowerCase()} safari.`;
+    return { ...day, title: titles[day.kind], text: text + (day.park_id && day.safaris.length ? withNat : "") };
+  }
+  let travel = text;
+  const early = day.safaris.filter((x) => x.session !== "afternoon");
+  const late = day.safaris.filter((x) => x.session === "afternoon");
+  if (early.length) travel = `${early.map((x) => travelDaySafari(x, park)).join(" ")} ${travel}`;
+  if (late.length) {
+    const evening = late.map((x) => travelDaySafari(x, park)).join(" ");
+    travel = /evening at leisure\.?/i.test(travel) ? travel.replace(/evening at leisure\.?/i, evening) : `${travel} ${evening}`;
+  }
+  return { ...day, title: titles[day.kind], text: travel.trim() };
 }
 
 // ---------------- plan -> pricing input ----------------
@@ -448,12 +486,17 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
   const transfers: TransferInput[] = [];
   const addons: { addon_id: string; date: string; qty?: number }[] = [];
   const custom: { date: string; title: string; amount: number; group?: "flight" | "extra" | "hotel" }[] = [];
+  const flightPax = plan.guest.adults + plan.guest.children.length;
   for (const d of plan.days) {
-    if (d.park_id) for (const s of d.safaris) safaris.push({ date: d.date, park_id: d.park_id, zone: s.zone, session: s.session, naturalist: !!s.naturalist });
+    if (d.park_id) for (const s of d.safaris) safaris.push({ date: d.date, park_id: d.park_id, zone: s.zone, session: s.session, naturalist: !!s.naturalist, ...(s.jeeps ? { vehicles: s.jeeps } : {}) });
     if (d.transfer) transfers.push({ date: d.date, ...d.transfer, vehicle_type: plan.vehicle_type ?? undefined });
     for (const it of d.items ?? []) {
       if (it.addon_id) addons.push({ addon_id: it.addon_id, date: d.date, qty: it.qty ?? undefined });
-      else if (it.price) custom.push({ date: d.date, title: it.title, amount: it.price, group: it.type === "flight" ? "flight" : it.type === "hotel" ? "hotel" : "extra" });
+      else {
+        // a flight with a fare per person follows the number of guests
+        const amount = it.type === "flight" && it.flight?.fare_pp ? it.flight.fare_pp * flightPax : it.price;
+        if (amount) custom.push({ date: d.date, title: it.title, amount, group: it.type === "flight" ? "flight" : it.type === "hotel" ? "hotel" : "extra" });
+      }
     }
   }
   return {
@@ -472,12 +515,18 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
     adjustment: plan.adjustment,
     currency: plan.currency,
     booking_date: bookingDate,
+    rate_basis: plan.dateless ? plan.rate_basis ?? DEFAULT_BASIS : null,
+    fx_rate: plan.fx_rate ?? null,
+    gst: plan.gst ?? null,
+    line_prices: plan.line_prices ?? {},
   };
 }
 
+export const DEFAULT_BASIS: RateBasis = { season: "high", safari_days: "weekday", year: "current" };
+
 // Everything that changes the day plan. If this changes, the days are rebuilt.
 export const routeKey = (p: Plan) =>
-  JSON.stringify([p.arrival_date, p.arrival_location_id, p.departure_location_id, p.stops, p.vehicle_type, p.guest.rooms, p.city_stays ?? [], p.flights ?? []]);
+  JSON.stringify([p.arrival_date, p.arrival_location_id, p.departure_location_id, p.stops, p.vehicle_type, p.guest.rooms, p.city_stays ?? [], p.flights ?? [], !!p.dateless]);
 
 // Problems with the route itself (before pricing).
 export function routeProblems(plan: Plan, ctx: BuilderContext): string[] {
@@ -512,6 +561,10 @@ export function commonVehicles(ctx: BuilderContext): string[] {
   const common = [...sets[0]].filter((v) => sets.every((s) => s.has(v)));
   return common.sort((a, b) => Number(!/innova/i.test(a)) - Number(!/innova/i.test(b)) || a.localeCompare(b));
 }
+
+// Rooms after the number of adults changes: more than 3 adults in a room (2 + an
+// extra bed) needs more rooms, so add enough for 2 per room; otherwise keep the choice.
+export const roomsFor = (adults: number, rooms: number) => (adults > rooms * 3 ? Math.ceil(adults / 2) : rooms);
 
 // New itineraries start with the Innova (or the first common vehicle).
 export const defaultVehicle = (ctx: BuilderContext) => commonVehicles(ctx)[0] ?? null;

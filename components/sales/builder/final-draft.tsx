@@ -5,7 +5,7 @@ import { Icon } from "@/components/icons";
 import { rupees, fmtDate } from "@/lib/sales/format";
 import { dayName } from "@/lib/sales/pricing/dates";
 import { defaultDraft, withEdits, type DraftInputs } from "@/lib/sales/plan/draft";
-import { priceBreakdown } from "@/lib/sales/pricing/breakdown";
+import { detailedBreakdown, priceBreakdown } from "@/lib/sales/pricing/breakdown";
 import { flightSummary } from "./plan-step";
 import type { PriceResult } from "@/lib/sales/pricing/types";
 import type { BuilderContext, Plan, PlanDraft } from "@/lib/sales/plan/types";
@@ -18,8 +18,16 @@ export function draftInputs(ctx: BuilderContext): DraftInputs {
     lodgeNames: Object.fromEntries(ctx.properties.map((p) => [p.id, p.name])),
     blocks: ctx.content,
     cancellationSlabs: ctx.cancellation,
+    closures: ctx.pricing.closures,
+    today: new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10),
   };
 }
+
+const BREAKUP_OPTIONS: { value: "none" | "summary" | "detailed"; label: string; help: string }[] = [
+  { value: "none", label: "Total only", help: "Per-person price and total" },
+  { value: "summary", label: "Breakup with GST", help: "By service: accommodation, safaris, transfers... and GST" },
+  { value: "detailed", label: "Detailed breakup", help: "Every rate with its GST %" },
+];
 
 const toLines = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
 
@@ -110,7 +118,7 @@ export function FinalDraft({
             aria-label="Route line under the headline"
           />
           <p className="text-sm text-white/85">
-            Prepared for {plan.guest.name || "the guest"} &middot; {plan.days.length ? `${fmtDate(plan.days[0].date)} - ${fmtDate(plan.days[plan.days.length - 1].date)}` : ""} &middot; {plan.days.length || nights + 1} days
+            Prepared for {plan.guest.name || "the guest"} &middot; {plan.dateless ? "travel dates to be confirmed" : plan.days.length ? `${fmtDate(plan.days[0].date)} - ${fmtDate(plan.days[plan.days.length - 1].date)}` : ""} &middot; {plan.days.length || nights + 1} days
           </p>
         </header>
 
@@ -130,7 +138,7 @@ export function FinalDraft({
                 <li key={d.date + i} className="grid gap-2 sm:grid-cols-[120px_1fr]">
                   <div>
                     <p className="font-display font-semibold text-olive-800">Day {i + 1}</p>
-                    <p className="text-sm text-sand-500">{dayName(d.date)} {fmtDate(d.date)}</p>
+                    {!plan.dateless && <p className="text-sm text-sand-500">{dayName(d.date)} {fmtDate(d.date)}</p>}
                   </div>
                   <div className="space-y-1.5">
                     <input
@@ -173,66 +181,98 @@ export function FinalDraft({
             </ol>
           </section>
 
-          {/* what the guest sees about prices */}
-          <section className="flex flex-wrap gap-x-6 gap-y-2 rounded-xl border border-dashed border-sand-300 px-4 py-3 text-sm print:hidden">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                className="h-4 w-4"
-                checked={plan.client?.show_prices !== false}
-                onChange={(e) => setPlan((p) => ({ ...p, client: { show_prices: e.target.checked, show_breakup: e.target.checked ? !!p.client?.show_breakup : false } }))}
-              />
-              Show prices to the guest
-            </label>
-            <label className={`flex items-center gap-2 ${plan.client?.show_prices === false ? "opacity-50" : ""}`}>
-              <input
-                type="checkbox"
-                className="h-4 w-4"
-                disabled={plan.client?.show_prices === false}
-                checked={!!plan.client?.show_breakup && plan.client?.show_prices !== false}
-                onChange={(e) => setPlan((p) => ({ ...p, client: { show_prices: true, show_breakup: e.target.checked } }))}
-              />
-              Show the price breakup with GST
-            </label>
-            <span className="w-full text-xs text-sand-500">The breakup is always on the query page for internal use. The PDF follows these choices.</span>
-          </section>
-
-          {result && plan.client?.show_prices === false && (
-            <p className="rounded-xl bg-sand-100 p-4 text-sm text-sand-600">Prices are hidden from the guest. Payment terms show percentages only.</p>
-          )}
-          {result && plan.client?.show_prices !== false && (
-            <section className="space-y-3 rounded-xl bg-sand-100 p-5">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <p className="eyebrow">Package price</p>
-                  <p className="tabular mt-1 font-display text-2xl font-semibold text-olive-800">{rupees(result.perPerson)}</p>
-                  <p className="text-sm text-sand-500">per person</p>
-                </div>
-                <div className="sm:text-right">
-                  <p className="eyebrow">Total</p>
-                  <p className="tabular mt-1 font-display text-xl font-semibold text-olive-800">
-                    {result.currency !== "INR" && result.fx ? `${result.currency} ${result.grandInCurrency.toLocaleString("en-GB", { maximumFractionDigits: 2 })}` : rupees(result.totals.grand)}
-                  </p>
-                </div>
-              </div>
-              {plan.client?.show_breakup && (
-                <table className="w-full text-sm">
-                  <tbody>
-                    {priceBreakdown(result).rows.map((r) => (
-                      <tr key={r.key} className={r.key === "gst" ? "border-t border-sand-300" : ""}>
-                        <td className="py-1">{r.label}</td>
-                        <td className="tabular py-1 text-right">{rupees(r.amount)}</td>
-                      </tr>
+          {/* what the guest sees about prices: the total always, the breakup as chosen */}
+          {(() => {
+            const mode = plan.client?.breakup ?? (plan.client?.show_breakup ? "summary" : "none");
+            const setMode = (m: "none" | "summary" | "detailed") => setPlan((p) => ({ ...p, client: { show_prices: true, show_breakup: m !== "none", breakup: m } }));
+            const fx = result && result.currency !== "INR" && result.fx ? result.fx : null;
+            const money = (n: number) => (fx ? `${result!.currency} ${(n / fx).toLocaleString("en-GB", { maximumFractionDigits: 2 })}` : rupees(n));
+            return (
+              <>
+                <section className="space-y-2 rounded-xl border border-dashed border-sand-300 px-4 py-3 text-sm print:hidden">
+                  <p className="font-semibold text-olive-800">Price shown to the guest</p>
+                  <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Price shown to the guest">
+                    {BREAKUP_OPTIONS.map((o) => (
+                      <label key={o.value} className={`flex cursor-pointer gap-2 rounded-lg border px-3 py-2 ${mode === o.value ? "border-olive-600 bg-olive-50" : "border-sand-200 hover:border-sand-300"}`}>
+                        <input type="radio" name="breakup" className="mt-0.5 h-4 w-4" checked={mode === o.value} onChange={() => setMode(o.value)} />
+                        <span>
+                          <span className="block font-medium text-olive-800">{o.label}</span>
+                          <span className="block text-xs text-sand-500">{o.help}</span>
+                        </span>
+                      </label>
                     ))}
-                    <tr className="border-t border-sand-300 font-semibold text-olive-800">
-                      <td className="py-1.5">Total including GST</td>
-                      <td className="tabular py-1.5 text-right">{rupees(result.totals.grand)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              )}
-            </section>
-          )}
+                  </div>
+                  <p className="text-xs text-sand-500">The trip quotation (per person and total) is always shown. The team always sees the full breakup on the query page and in the detailed price check.</p>
+                </section>
+
+                {result && (
+                  <section className="space-y-3 rounded-xl bg-sand-100 p-5">
+                    <p className="eyebrow">Trip quotation</p>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <p className="tabular font-display text-2xl font-semibold text-olive-800">{money(result.perPerson)}</p>
+                        <p className="text-sm text-sand-500">per person</p>
+                      </div>
+                      <div className="sm:text-right">
+                        <p className="eyebrow">Total</p>
+                        <p className="tabular mt-1 font-display text-xl font-semibold text-olive-800">{money(result.totals.grand)}</p>
+                      </div>
+                    </div>
+                    {mode === "summary" && (
+                      <table className="w-full text-sm">
+                        <tbody>
+                          {priceBreakdown(result).rows.map((r) => (
+                            <tr key={r.key} className={r.key === "gst" ? "border-t border-sand-300" : ""}>
+                              <td className="py-1">{r.label}</td>
+                              <td className="tabular py-1 text-right">{money(r.amount)}</td>
+                            </tr>
+                          ))}
+                          <tr className="border-t border-sand-300 font-semibold text-olive-800">
+                            <td className="py-1.5">Total including GST</td>
+                            <td className="tabular py-1.5 text-right">{money(result.totals.grand)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    )}
+                    {mode === "detailed" && (
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[480px] text-sm">
+                          <thead>
+                            <tr className="text-left text-xs uppercase tracking-wide text-sand-500">
+                              <th className="py-1 pr-2">Service</th>
+                              <th className="py-1 pr-2 text-right">Before GST</th>
+                              <th className="py-1 pr-2 text-right">GST</th>
+                              <th className="py-1 text-right">Amount</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {detailedBreakdown(result).rows.map((r, k) => (
+                              <tr key={k} className="border-t border-sand-200 align-top">
+                                <td className="py-1 pr-2">
+                                  {r.label}
+                                  {r.date && !plan.dateless && <span className="block text-xs text-sand-500">{fmtDate(r.date)}</span>}
+                                </td>
+                                <td className="tabular py-1 pr-2 text-right">{money(r.net)}</td>
+                                <td className="tabular py-1 pr-2 text-right">
+                                  {money(r.gst)}
+                                  {r.gstPct ? <span className="block text-xs text-sand-500">{r.gstPct}%</span> : null}
+                                </td>
+                                <td className="tabular py-1 text-right">{money(r.amount)}</td>
+                              </tr>
+                            ))}
+                            <tr className="border-t border-sand-300 font-semibold text-olive-800">
+                              <td className="py-1.5" colSpan={3}>Total including GST</td>
+                              <td className="tabular py-1.5 text-right">{money(result.totals.grand)}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </section>
+                )}
+              </>
+            );
+          })()}
 
           <section className="grid gap-6 sm:grid-cols-2">
             {listEditor("inclusions", "Price includes")}
@@ -246,7 +286,7 @@ export function FinalDraft({
               <ul className="mt-2 space-y-1 text-sm">
                 {result.payments.map((p, i) => (
                   <li key={i} className="flex justify-between gap-3">
-                    <span>{p.label}<span className="text-sand-500"> - {p.due ? `by ${fmtDate(p.due)}` : "to confirm the booking"}</span></span>
+                    <span>{p.label}<span className="text-sand-500"> - {p.due ? `by ${fmtDate(p.due)}` : p.note && plan.dateless ? p.note : "to confirm the booking"}</span></span>
                     <span className="tabular">{rupees(p.amount)}</span>
                   </li>
                 ))}

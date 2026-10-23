@@ -7,7 +7,7 @@ import { Icon } from "@/components/icons";
 import { StatusBadge } from "@/components/sales/status-badge";
 import { StatusActions } from "@/components/sales/status-actions";
 import { ShareLink } from "@/components/sales/share-link";
-import { priceBreakdown } from "@/lib/sales/pricing/breakdown";
+import { detailedBreakdown, priceBreakdown } from "@/lib/sales/pricing/breakdown";
 import { DraftActions } from "@/components/sales/draft-actions";
 import { todayIST } from "@/lib/sales/plan/load-context";
 import { getMemberNames } from "@/lib/sales/members";
@@ -210,8 +210,52 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
                   Discount {plan.discount.pct}% {plan.discount.scope === "lodges" ? "on accommodation at our lodges" : "on the whole itinerary"}. Reason (internal): {plan.discount.reason || "-"}
                 </p>
               )}
+              {pricing.lines && (
+                <details className="group mt-4 rounded-lg border border-sand-200">
+                  <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm font-semibold text-olive-800">
+                    Detailed breakup: every rate with its GST %
+                    <Icon name="chevronLeft" className="h-4 w-4 -rotate-90 text-sand-500 transition group-open:rotate-90" />
+                  </summary>
+                  <div className="overflow-x-auto border-t border-sand-200">
+                    <table className="w-full min-w-[640px] text-left text-xs">
+                      <thead>
+                        <tr className="bg-sand-100 font-semibold uppercase tracking-wide text-sand-500">
+                          {!plan?.dateless && <th className="px-3 py-2">Date</th>}
+                          <th className="px-3 py-2">Service</th>
+                          <th className="px-3 py-2 text-right">Qty</th>
+                          <th className="px-3 py-2 text-right">Before GST</th>
+                          <th className="px-3 py-2 text-right">GST %</th>
+                          <th className="px-3 py-2 text-right">GST</th>
+                          <th className="px-3 py-2 text-right">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detailedBreakdown(pricing, { spreadMarkup: false }).rows.map((r, k) => (
+                          <tr key={k} className={`border-t border-sand-100 ${r.edited ? "bg-gold-50" : ""}`}>
+                            {!plan?.dateless && <td className="whitespace-nowrap px-3 py-1.5 text-sand-500">{r.date ? fmtDate(r.date) : "-"}</td>}
+                            <td className="px-3 py-1.5 text-olive-800">
+                              {r.label}
+                              {r.edited && <span className="ml-1 text-[10px] font-semibold uppercase text-warning">corrected by hand</span>}
+                            </td>
+                            <td className="tabular px-3 py-1.5 text-right">{r.quantity}</td>
+                            <td className="tabular px-3 py-1.5 text-right">{rupees(r.net)}</td>
+                            <td className="tabular px-3 py-1.5 text-right">{r.gstPct != null ? `${r.gstPct}%` : "-"}</td>
+                            <td className="tabular px-3 py-1.5 text-right">{rupees(r.gst)}</td>
+                            <td className="tabular px-3 py-1.5 text-right">{rupees(r.amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              )}
               <p className="mt-2 text-xs text-sand-500">
-                The guest sees {plan?.client?.show_prices === false ? "no prices" : plan?.client?.show_breakup ? "prices with this breakup" : "the total and per-person price"}.
+                The guest sees the trip quotation (per person and total)
+                {(() => {
+                  const mode = plan?.client?.breakup ?? (plan?.client?.show_breakup ? "summary" : "none");
+                  return mode === "summary" ? " with the breakup by service and GST" : mode === "detailed" ? " with the detailed breakup (every rate with GST)" : "";
+                })()}
+                .{plan?.dateless ? " Dates are not fixed: priced by season." : ""}
               </p>
               <div className="mt-4 space-y-1 border-t border-sand-200 pt-3 text-sm">
                 {pricing.payments.map((p, i) => (
@@ -232,7 +276,7 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
                   <li key={i} className="grid gap-1 sm:grid-cols-[150px_1fr]">
                     <div>
                       <p className="font-display font-semibold text-olive-800">Day {i + 1}</p>
-                      <p className="text-xs text-sand-500">{fmtDate(d.date)} ({dayName(d.date)})</p>
+                      {!plan.dateless && <p className="text-xs text-sand-500">{fmtDate(d.date)} ({dayName(d.date)})</p>}
                     </div>
                     <div>
                       <p className="font-medium text-olive-800">{d.title}</p>

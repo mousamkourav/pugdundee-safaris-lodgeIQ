@@ -47,6 +47,7 @@ export interface RoomRate {
   tax_pct: number;
   rates_include_tax: boolean;
   active: boolean;
+  notes?: string | null; // "Shoulder.", "High.", "Peak - Diwali..." (tells the season)
 }
 
 export interface Park {
@@ -118,6 +119,22 @@ export interface Addon {
   rate: number;
   tax_pct: number;
   active: boolean;
+  min_guests?: number | null; // per person: charged for at least this many (walking safari, min 2)
+  included_guests?: number | null; // per group: the rate covers this many guests...
+  extra_guest_rate?: number | null; // ...and each further guest (adults and children 5+) pays this
+  unavailable_weekdays?: number[]; // 0 = Sunday; a warning if added on one of these days
+  availability_note?: string | null; // e.g. "Closed on Wednesday evenings"
+}
+
+// A yearly increase applied to last year's rates for dates the master data
+// does not cover yet (quoting 2027-28 on 2026-27 rates).
+export interface RateHike {
+  label: string; // e.g. "2027-28"
+  from: ISODate;
+  to: ISODate;
+  hotels_pct: number;
+  safaris_pct: number;
+  transfers_pct: number;
 }
 
 export interface Offer {
@@ -153,6 +170,7 @@ export interface PricingSettings {
   fx_margin_pct?: number | null; // cushion against rate moves, taken off the rate
   payment_slabs?: PaymentSlab[] | null;
   per_person_basis?: "guests" | "adults" | null; // default "guests"
+  hike?: RateHike | null;
 }
 
 export interface PricingData {
@@ -190,6 +208,13 @@ export interface SafariInput {
   naturalist?: boolean; // an accompanying naturalist on this safari (per jeep)
 }
 
+// Rates to use when the travel dates are not fixed yet.
+export interface RateBasis {
+  season: "shoulder" | "high" | "peak";
+  safari_days: "weekday" | "weekend";
+  year: "current" | "next"; // "next" = this year's rates plus the yearly hike
+}
+
 export interface TransferInput {
   date: ISODate;
   from_location_id: string;
@@ -220,6 +245,14 @@ export interface TripInput {
   discount?: { pct: number; scope: "lodges" | "all"; reason: string } | null;
   currency?: "INR" | "USD" | "EUR" | "GBP" | "AUD";
   booking_date: ISODate; // "today" when the quote is made
+  // Dates not fixed yet: rates are chosen by season and weekday/weekend, not by date.
+  rate_basis?: RateBasis | null;
+  // Rupees per 1 unit of the quote currency, typed by the sales person (else settings / live).
+  fx_rate?: number | null;
+  // One GST rate on the whole package instead of GST per service.
+  gst?: { mode: "itemised" | "consolidated"; pct: number } | null;
+  // Prices corrected by hand on the detailed price check, by PriceLine.lkey (incl. tax).
+  line_prices?: Record<string, number>;
   // Prices typed by the sales person where master data has no rate, by MissingPrice.key.
   manual_prices?: Record<string, number>;
   // Items added by hand to a day (not from master data), already totalled.
@@ -237,7 +270,7 @@ export interface MissingPrice {
 
 // ---------- result ----------
 
-export type LineKind = "room" | "safari" | "transfer" | "addon" | "discount" | "markup" | "adjustment";
+export type LineKind = "room" | "safari" | "transfer" | "addon" | "discount" | "markup" | "adjustment" | "tax";
 
 export interface PriceLine {
   kind: LineKind;
@@ -247,6 +280,10 @@ export interface PriceLine {
   unit_price: number;
   amount: number; // rupees, tax included
   tax: number; // tax portion of amount
+  tax_pct?: number; // GST rate on this line
+  lkey?: string; // stable key, so a price corrected by hand finds its line again
+  edited?: boolean; // price corrected by hand on the detailed price check
+  hike?: number; // % yearly hike applied to last year's rate
   group?: "naturalist" | "flight" | "hotel"; // shown separately in the price breakup
   property_id: string | null; // which lodge bills it
   ref_id: string | null; // room_category / park / transfer rate / addon / offer id
@@ -284,6 +321,7 @@ export interface PriceResult {
     discount: number;
     markup: number;
     adjustment: number;
+    tax?: number; // consolidated GST on the package (0 when GST is per service)
     grand: number;
   };
   byProperty: PropertyTotals[];
@@ -298,6 +336,8 @@ export interface PriceResult {
   appliedOffers: string[];
   missing: MissingPrice[]; // every rate master data does not have, whether a price was typed or not
   manualCount: number; // lines priced by hand
+  dateless?: boolean; // priced by season, dates not fixed
+  basis?: RateBasis | null;
   errors: string[]; // must be fixed before the quote is sent
   warnings: string[]; // worth checking
 }

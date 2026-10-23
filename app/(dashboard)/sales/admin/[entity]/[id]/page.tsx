@@ -39,7 +39,9 @@ export default async function EntityEditPage({
 
   const fields = await withOptions(entity.fields);
   const media = entity.media && !isNew ? await getMedia(entity.media.owner, id) : [];
-  const listHref = `/sales/admin/${entity.key}`;
+  // Back to the list with the search that was open (from the list's Edit link).
+  const backQ = (sp.back_q ?? "").trim().slice(0, 100);
+  const listHref = `/sales/admin/${entity.key}${backQ ? `?q=${encodeURIComponent(backQ)}` : ""}`;
   const heading = isNew ? `Add ${entity.singular}` : String(values.name ?? values.title ?? values.label ?? `Edit ${entity.singular}`);
 
   return (

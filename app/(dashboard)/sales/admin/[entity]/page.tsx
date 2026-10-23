@@ -1,9 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { ui, Badge } from "@/components/ui";
+import { ui } from "@/components/ui";
+import { MasterSearchTable, type SearchRow } from "@/components/sales/master-search-table";
+import { normaliseSearch } from "@/lib/sales/master/search";
 import { getEntity } from "@/lib/sales/master/entities";
 import { withOptions, formatCell } from "@/lib/sales/master/load";
+
+// Rows loaded per list; the search box covers all of them.
+const LIMIT = 2000;
 
 export default async function EntityListPage({
   params,
@@ -32,8 +37,24 @@ export default async function EntityListPage({
   if (entity.listFilter) q = entity.listFilter.op === "eq" ? q.eq(entity.listFilter.column, entity.listFilter.value) : q.neq(entity.listFilter.column, entity.listFilter.value);
   for (const [name, v] of Object.entries(active)) q = q.eq(name, v);
   for (const o of entity.order) q = q.order(o.column, { ascending: o.ascending, nullsFirst: false });
-  const { data, error } = await q.limit(500);
+  const { data, error } = await q.limit(LIMIT);
   const rows = (data ?? []) as Record<string, unknown>[];
+
+  // What the list shows, plus the free-text fields behind each row (notes,
+  // descriptions, codes), so the search finds a row by anything on it.
+  const textFields = entity.fields.filter((f) => f.type === "text" || f.type === "textarea" || f.type === "tags");
+  const searchRows: SearchRow[] = rows.map((r) => {
+    const cells = entity.list.map((name) => {
+      const f = byName[name];
+      const v = r[name];
+      if (f?.type === "bool" && name === "active") return { text: v ? "Active" : "Inactive", kind: "active" as const };
+      return { text: f ? formatCell(f, v) : String(v ?? "-"), kind: f?.type === "money" ? ("money" as const) : ("text" as const) };
+    });
+    const extra = textFields.map((f) => (Array.isArray(r[f.name]) ? (r[f.name] as unknown[]).join(" ") : String(r[f.name] ?? "")));
+    return { id: String(r.id), cells, search: normaliseSearch([...cells.map((c) => c.text), ...extra].join(" ")) };
+  });
+  const columns = entity.list.map((name) => ({ label: byName[name]?.label ?? name, money: byName[name]?.type === "money" }));
+  const hint = columns.filter((c) => !c.money).slice(0, 3).map((c) => c.label.toLowerCase()).join(", ");
 
   const filterQs = new URLSearchParams(Object.entries(active).map(([k, v]) => [`f_${k}`, v])).toString();
   const newHref = `/sales/admin/${entity.key}/new${filterQs ? "?" + filterQs : ""}`;
@@ -83,47 +104,21 @@ export default async function EntityListPage({
 
       {rows.length === 0 ? (
         <div className={ui.empty}>
-          Nothing here yet. <Link href={newHref} className="font-semibold text-olive-600 underline">Add the first {entity.singular}</Link>.
+          {filterQs ? "Nothing matches these filters." : "Nothing here yet."}{" "}
+          <Link href={newHref} className="font-semibold text-olive-600 underline">Add {filterQs ? "one" : `the first ${entity.singular}`}</Link>.
         </div>
       ) : (
-        <div className={`${ui.card} overflow-hidden`}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="bg-sand-100 text-xs font-semibold uppercase tracking-wide text-sand-500">
-                  {entity.list.map((name) => (
-                    <th key={name} className={"whitespace-nowrap px-4 py-3 " + (byName[name]?.type === "money" ? "text-right" : "")}>
-                      {byName[name]?.label ?? name}
-                    </th>
-                  ))}
-                  <th className="px-4 py-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={String(r.id)} className="border-t border-sand-200 hover:bg-sand-50">
-                    {entity.list.map((name, i) => {
-                      const f = byName[name];
-                      const v = r[name];
-                      let cell: React.ReactNode = f ? formatCell(f, v) : String(v ?? "-");
-                      if (f?.type === "bool" && name === "active") cell = <Badge tone={v ? "success" : "neutral"}>{v ? "Active" : "Inactive"}</Badge>;
-                      return (
-                        <td key={name} className={"px-4 py-3 " + (f?.type === "money" ? "tabular whitespace-nowrap text-right " : "") + (i === 0 ? "font-medium text-olive-800" : "")}>
-                          {cell}
-                        </td>
-                      );
-                    })}
-                    <td className="px-4 py-3 text-right">
-                      <Link href={`/sales/admin/${entity.key}/${r.id}`} className={`${ui.btnGhost} ${ui.btnSm}`}>Edit</Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <MasterSearchTable
+          entityKey={entity.key}
+          singular={entity.singular}
+          columns={columns}
+          rows={searchRows}
+          initialQuery={(sp.q ?? "").slice(0, 100)}
+          newHref={newHref}
+          truncated={rows.length === LIMIT}
+          placeholder={`Search ${entity.title.toLowerCase()}${hint ? ` by ${hint}...` : "..."}`}
+        />
       )}
-      {rows.length === 500 && <p className="text-xs text-sand-500">Showing the first 500. Use the filters to narrow down.</p>}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 // STORAGE CONTRACT: add keys freely, never rename existing ones. Bump
 // schema_version if the shape changes in a way old plans cannot be read.
 
-import type { ISODate, PricingData, Nationality } from "@/lib/sales/pricing/types";
+import type { ISODate, PricingData, Nationality, RateBasis } from "@/lib/sales/pricing/types";
 
 export interface PlanGuest {
   name: string;
@@ -50,9 +50,10 @@ export interface PlanFlight {
 export type DayKind = "arrival" | "safari" | "transfer" | "leisure" | "departure" | "city";
 
 export interface DaySafari {
-  session: "morning" | "afternoon";
+  session: "morning" | "afternoon" | "full_day"; // full day replaces morning and evening
   zone: "core" | "buffer";
   naturalist?: boolean; // accompanying naturalist on this safari
+  jeeps?: number; // jeeps on this safari; empty = enough for the group (1 up to 6 guests)
 }
 
 // A flight leg (Delhi to Jabalpur...). Ticket details can be added once booked.
@@ -63,6 +64,9 @@ export interface FlightInfo {
   number: string;
   time: string; // departure time, e.g. 08:30
   pnr: string; // empty until booked
+  fare_pp?: number | null; // fare per person in rupees (typed, not live); the item price = fare x guests
+  cabin?: string; // e.g. "Economy"
+  baggage?: string; // e.g. "check-in baggage 15 kgs / cabin baggage 07 kgs"
 }
 
 // Something added to a day by hand: an add-on from master data, or anything
@@ -119,8 +123,16 @@ export interface Plan {
   draft?: PlanDraft;
   // % discount: on accommodation at our own lodges, or the whole itinerary. Reason is internal.
   discount?: { pct: number; scope: "lodges" | "all"; reason: string } | null;
-  // What the guest's itinerary and PDF show.
-  client?: { show_prices: boolean; show_breakup: boolean };
+  // What the guest's itinerary and PDF show. The total is always shown; the breakup is
+  // "none", "summary" (by service, with GST) or "detailed" (every rate with its GST %).
+  // show_prices / show_breakup are kept for quotes saved before "breakup" existed.
+  client?: { show_prices: boolean; show_breakup: boolean; breakup?: "none" | "summary" | "detailed" };
+  // Dates not fixed yet: priced by season and weekday/weekend; days shown as Day 1, Day 2...
+  dateless?: boolean;
+  rate_basis?: RateBasis;
+  fx_rate?: number | null; // rupees per 1 unit of the quote currency, typed (manual ROE)
+  gst?: { mode: "itemised" | "consolidated"; pct: number } | null;
+  line_prices?: Record<string, number>; // prices corrected on the detailed price check, by line key
   manual_prices: Record<string, number>; // prices typed for rates master data does not have
   city_stays?: CityStay[];
   flights?: PlanFlight[];

@@ -67,13 +67,13 @@ async function createSalesMemberUnsafe(input: { full_name: string; email: string
 
 async function updateSalesMemberUnsafe(
   id: string,
-  input: { full_name?: string; phone?: string; role?: string; status?: string; password?: string }
+  input: { full_name?: string; phone?: string; role?: string; status?: string; password?: string; emergency_id?: string | null }
 ): Promise<Result> {
   const cu = await requireSalesAdmin();
   if (!cu) return { error: "Only Sales admins can change members." };
 
   const admin = createAdminClient();
-  const { data: target } = await admin.from("profiles").select("id, role").eq("id", id).maybeSingle();
+  const { data: target } = await admin.from("profiles").select("id, role, extra").eq("id", id).maybeSingle();
   if (!target) return { error: "Member not found." };
   if (!isSalesRole((target as { role: string }).role)) {
     return { error: "This account is not a Sales member, so it is managed in Users & access." };
@@ -98,6 +98,17 @@ async function updateSalesMemberUnsafe(
     if (input.status !== "active" && input.status !== "disabled") return { error: "Unknown status." };
     patch.status = input.status;
   }
+  // The emergency contact printed on this member's guest itineraries (another Sales member).
+  if (input.emergency_id !== undefined) {
+    const extra = { ...(((target as { extra?: Record<string, unknown> }).extra ?? {}) as Record<string, unknown>) };
+    if (input.emergency_id) {
+      if (input.emergency_id === id) return { error: "Choose someone else as the emergency contact." };
+      const { data: other } = await admin.from("profiles").select("id, role").eq("id", input.emergency_id).maybeSingle();
+      if (!other || !isSalesRole((other as { role: string }).role)) return { error: "The emergency contact must be a Sales member." };
+      extra.sales_emergency_contact_id = input.emergency_id;
+    } else delete extra.sales_emergency_contact_id;
+    patch.extra = extra;
+  }
   if (Object.keys(patch).length) {
     const { error } = await admin.from("profiles").update(patch).eq("id", id);
     if (error) return { error: error.message };
@@ -119,7 +130,7 @@ export async function createSalesMember(input: { full_name: string; email: strin
 }
 export async function updateSalesMember(
   id: string,
-  input: { full_name?: string; phone?: string; role?: string; status?: string; password?: string }
+  input: { full_name?: string; phone?: string; role?: string; status?: string; password?: string; emergency_id?: string | null }
 ): Promise<Result> {
   return safe("updateSalesMember", () => updateSalesMemberUnsafe(id, input));
 }

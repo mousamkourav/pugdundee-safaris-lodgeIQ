@@ -35,8 +35,13 @@ export function sanitizePlan(input: unknown): Plan | null {
     const t = obj(d.transfer);
     const safaris: DaySafari[] = (Array.isArray(d.safaris) ? d.safaris : [])
       .map((y) => obj(y))
-      .filter((y) => (y.session === "morning" || y.session === "afternoon") && (y.zone === "core" || y.zone === "buffer"))
-      .map((y) => ({ session: y.session as DaySafari["session"], zone: y.zone as DaySafari["zone"], ...(y.naturalist === true ? { naturalist: true } : {}) }))
+      .filter((y) => (y.session === "morning" || y.session === "afternoon" || y.session === "full_day") && (y.zone === "core" || y.zone === "buffer"))
+      .map((y) => ({
+        session: y.session as DaySafari["session"],
+        zone: y.zone as DaySafari["zone"],
+        ...(y.naturalist === true ? { naturalist: true } : {}),
+        ...(Number.isInteger(Number(y.jeeps)) && Number(y.jeeps) >= 1 ? { jeeps: Math.min(10, Number(y.jeeps)) } : {}),
+      }))
       .slice(0, 2);
     const kind = ["arrival", "safari", "transfer", "leisure", "departure", "city"].includes(String(d.kind)) ? (d.kind as PlanDay["kind"]) : "leisure";
     return {
@@ -66,7 +71,18 @@ export function sanitizePlan(input: unknown): Plan | null {
             ? {
                 flight: (() => {
                   const f = obj(it.flight);
-                  return { from: str(f.from, 60), to: str(f.to, 60), airline: str(f.airline, 60), number: str(f.number, 20), time: str(f.time, 10), pnr: str(f.pnr, 20) };
+                  const pp = Number(f.fare_pp);
+                  return {
+                    from: str(f.from, 60),
+                    to: str(f.to, 60),
+                    airline: str(f.airline, 60),
+                    number: str(f.number, 20),
+                    time: str(f.time, 10),
+                    pnr: str(f.pnr, 20),
+                    ...(Number.isFinite(pp) && pp > 0 ? { fare_pp: Math.min(Math.round(pp), 10_000_000) } : {}),
+                    ...(typeof f.cabin === "string" && f.cabin.trim() ? { cabin: str(f.cabin, 40).trim() } : {}),
+                    ...(typeof f.baggage === "string" && f.baggage.trim() ? { baggage: str(f.baggage, 120).trim() } : {}),
+                  };
                 })(),
               }
             : {}),
@@ -140,7 +156,35 @@ export function sanitizePlan(input: unknown): Plan | null {
     })(),
     client: (() => {
       const c = obj(p.client);
-      return { show_prices: c.show_prices !== false, show_breakup: c.show_breakup === true };
+      // older quotes: show_breakup true = the summary breakup
+      const breakup = c.breakup === "summary" || c.breakup === "detailed" || c.breakup === "none" ? c.breakup : c.show_breakup === true ? "summary" : "none";
+      return { show_prices: true, show_breakup: breakup !== "none", breakup };
+    })(),
+    ...(p.dateless === true ? { dateless: true } : {}),
+    ...(() => {
+      const b = obj(p.rate_basis);
+      if (!Object.keys(b).length) return {};
+      return {
+        rate_basis: {
+          season: b.season === "shoulder" || b.season === "peak" ? b.season : ("high" as const),
+          safari_days: b.safari_days === "weekend" ? ("weekend" as const) : ("weekday" as const),
+          year: b.year === "next" ? ("next" as const) : ("current" as const),
+        },
+      };
+    })(),
+    ...(Number(p.fx_rate) > 0 ? { fx_rate: Math.min(Math.round(Number(p.fx_rate) * 10000) / 10000, 100000) } : {}),
+    ...(() => {
+      const g = obj(p.gst);
+      if (g.mode !== "consolidated") return {};
+      const pct = Number(g.pct);
+      return { gst: { mode: "consolidated" as const, pct: Number.isFinite(pct) ? Math.max(0, Math.min(28, pct)) : 5 } };
+    })(),
+    ...(() => {
+      const lp = Object.entries(obj(p.line_prices))
+        .filter(([k, v]) => k.length <= 400 && Number.isFinite(Number(v)) && Number(v) >= 0)
+        .slice(0, 300)
+        .map(([k, v]) => [k, Math.min(Math.round(Number(v)), 100_000_000)] as const);
+      return lp.length ? { line_prices: Object.fromEntries(lp) } : {};
     })(),
     manual_prices: Object.fromEntries(
       Object.entries(obj(p.manual_prices))

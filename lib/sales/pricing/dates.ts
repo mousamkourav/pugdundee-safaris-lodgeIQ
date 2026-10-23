@@ -21,6 +21,13 @@ export function weekday(d: ISODate): number {
   return new Date(toUTC(d)).getUTCDay();
 }
 
+// The same day n years later (29 Feb becomes 28 Feb).
+export function addYears(d: ISODate, n: number): ISODate {
+  const y = Number(d.slice(0, 4)) + n;
+  const md = d.slice(5);
+  return md === "02-29" ? `${y}-02-28` : `${y}-${md}`;
+}
+
 export function nightsOf(checkIn: ISODate, nights: number): ISODate[] {
   return Array.from({ length: Math.max(0, nights) }, (_, i) => addDays(checkIn, i));
 }

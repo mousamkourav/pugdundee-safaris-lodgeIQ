@@ -20,7 +20,7 @@
 //   the deposit at booking.
 // =====================================================================
 
-import { addDays, dayName, inRange, nightsOf, weekday } from "./dates";
+import { addDays, addYears, dayName, inRange, nightsOf, weekday } from "./dates";
 import type {
   Instalment,
   ISODate,
@@ -31,6 +31,8 @@ import type {
   PriceResult,
   PricingData,
   PropertyTotals,
+  RateBasis,
+  RateHike,
   RoomRate,
   SafariInput,
   SafariRate,
@@ -67,6 +69,65 @@ function pickRoomRate(rates: RoomRate[], roomId: string, meal: string, night: IS
   return rates
     .filter((r) => r.active && r.room_category_id === roomId && r.meal_plan === meal && inRange(night, r.valid_from, r.valid_to))
     .sort((a, b) => (a.valid_from < b.valid_from ? 1 : -1))[0]; // most recent start wins
+}
+
+// ---------------- seasons (itineraries without fixed dates) ----------------
+
+export type Season = RateBasis["season"];
+const SEASON_WORDS: [RegExp, Season][] = [
+  [/^\s*peak/i, "peak"],
+  [/^\s*high/i, "high"],
+  [/^\s*(shoulder|low|lean|off)/i, "shoulder"],
+];
+
+// The season of a room rate: from its note ("Shoulder.", "High.", "Peak - Diwali")
+// or, without one, by price among the same room's rates (cheapest = shoulder,
+// dearest = peak, in between = high).
+export function seasonOfRate(r: RoomRate, siblings: RoomRate[]): Season {
+  for (const [re, season] of SEASON_WORDS) if (re.test(r.notes ?? "")) return season;
+  const prices = [...new Set(siblings.map((x) => x.rate_double))].sort((a, b) => a - b);
+  if (prices.length <= 1) return "high";
+  if (r.rate_double === prices[0]) return "shoulder";
+  if (r.rate_double === prices[prices.length - 1]) return "peak";
+  return "high";
+}
+
+// A room rate for a season (no date): this year's rates that have not ended,
+// the season asked for, else the nearest season. "next" = next year's rates if
+// master data has them, else this year's (the hike is added by the caller).
+function pickRoomRateBySeason(rates: RoomRate[], roomId: string, meal: string, basis: RateBasis, today: ISODate, hike: RateHike | null | undefined) {
+  const all = rates.filter((r) => r.active && r.room_category_id === roomId && r.meal_plan === meal);
+  const live = all.filter((r) => r.valid_to >= today);
+  const nextYear = basis.year === "next" && hike ? live.filter((r) => r.valid_from >= hike.from) : [];
+  const pool = nextYear.length ? nextYear : live.filter((r) => !hike || basis.year !== "next" || r.valid_from < hike.from);
+  const source = pool.length ? pool : live.length ? live : all;
+  const order: Record<Season, Season[]> = { shoulder: ["shoulder", "high", "peak"], high: ["high", "peak", "shoulder"], peak: ["peak", "high", "shoulder"] };
+  for (const season of order[basis.season]) {
+    const match = source.filter((r) => seasonOfRate(r, all) === season).sort((a, b) => (a.valid_from < b.valid_from ? -1 : 1))[0];
+    if (match) return { rate: match, nextYearFound: nextYear.length > 0 };
+  }
+  return { rate: undefined, nextYearFound: false };
+}
+
+function pickSafariRateBySeason(rates: SafariRate[], s: SafariInput, nationality: string, basis: RateBasis, today: ISODate, hike: RateHike | null | undefined) {
+  const vehicle = s.vehicle_type ?? "exclusive_jeep";
+  const all = rates.filter(
+    (r) => r.active && r.park_id === s.park_id && r.zone === s.zone && r.session === s.session && r.vehicle_type === vehicle && (r.nationality === "all" || r.nationality === nationality) && r.valid_to >= today
+  );
+  const nextYear = basis.year === "next" && hike ? all.filter((r) => r.valid_from >= hike.from) : [];
+  const pool = nextYear.length ? nextYear : all.filter((r) => !hike || basis.year !== "next" || r.valid_from < hike.from);
+  const source = pool.length ? pool : all;
+  const days = (r: SafariRate) => Date.parse(r.valid_to) - Date.parse(r.valid_from);
+  const rate = source.sort((a, b) => {
+    const na = a.nationality === "all" ? 1 : 0;
+    const nb = b.nationality === "all" ? 1 : 0;
+    const wa = a.book_min_days != null || a.book_max_days != null ? 1 : 0; // an open booking window first
+    const wb = b.book_min_days != null || b.book_max_days != null ? 1 : 0;
+    // peak: the dearest rate (premium dates); otherwise the main rate of the season (longest period)
+    const pick = basis.season === "peak" ? b.weekday_rate - a.weekday_rate : days(b) - days(a);
+    return na - nb || wa - wb || pick;
+  })[0];
+  return { rate, nextYearFound: nextYear.length > 0 };
 }
 
 function pickSafariRate(rates: SafariRate[], s: SafariInput, nationality: string, bookingDate?: ISODate) {
@@ -130,6 +191,15 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     if (!missing.some((x) => x.key === m.key)) missing.push(m);
   };
 
+  // ---------------- dates not fixed / yearly hike ----------------
+  const basis = trip.rate_basis ?? null;
+  const hike = data.settings.hike ?? null;
+  const hikeUsed = { hotels: false, safaris: false, transfers: false };
+  // dates not fixed: weekday or weekend rates as chosen, not by the calendar
+  const isWeekend = (days: number[], date: ISODate) => (basis ? basis.safari_days === "weekend" && days.length > 0 : days.includes(weekday(date)));
+  const withHike = (n: number, pct: number) => (pct ? n * (1 + pct / 100) : n);
+  const hikeLabel = (pct: number) => (pct && hike ? ` (${hike.label} rate, +${pct}%)` : "");
+
   // ---------------- rooms ----------------
   const totalRooms = trip.stays.reduce((m, s) => Math.max(m, s.rooms), 0);
   for (const stay of trip.stays) {
@@ -144,14 +214,29 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
 
     let minNightsChecked = false;
     for (const night of nightsOf(stay.check_in, stay.nights)) {
-      const rate = pickRoomRate(data.roomRates, stay.room_category_id, stay.meal_plan, night);
+      // The rate for this night: by date; with dates not fixed, by season. No rate
+      // for the date but last year's exists and a yearly hike covers it: last year + hike.
+      let rate: RoomRate | undefined;
+      let hikePct = 0;
+      if (basis) {
+        const found = pickRoomRateBySeason(data.roomRates, stay.room_category_id, stay.meal_plan, basis, trip.booking_date, hike);
+        rate = found.rate;
+        if (rate && basis.year === "next" && hike && !found.nextYearFound) hikePct = hike.hotels_pct;
+      } else {
+        rate = pickRoomRate(data.roomRates, stay.room_category_id, stay.meal_plan, night);
+        if (!rate && hike && inRange(night, hike.from, hike.to)) {
+          rate = pickRoomRate(data.roomRates, stay.room_category_id, stay.meal_plan, addYears(night, -1));
+          if (rate) hikePct = hike.hotels_pct;
+        }
+      }
+      if (hikePct) hikeUsed.hotels = true;
       if (!rate) {
         const key = `room|${stay.property_id}|${stay.room_category_id}|${stay.meal_plan}|${stay.check_in}`;
-        const roomMissing: MissingPrice = { key, kind: "room", label: `${room?.name ?? "Room"} at ${propName(stay.property_id)} (${stay.meal_plan})`, unit: `per night, all ${stay.rooms} room${stay.rooms === 1 ? "" : "s"}, incl. tax`, date: stay.check_in };
+        const roomMissing: MissingPrice = { key, kind: "room", label: `${room?.name ?? "Room"} at ${propName(stay.property_id)} (${stay.meal_plan})`, unit: `per night, all ${stay.rooms} room${stay.rooms === 1 ? "" : "s"}, incl. tax`, date: basis ? null : stay.check_in };
         if (manual[key] !== undefined) {
           needPrice(roomMissing, "typed");
           const amount = round(manual[key]);
-          lines.push({ kind: "room", date: night, description: label, quantity: stay.rooms, unit_price: round(amount / stay.rooms), amount, tax: 0, property_id: stay.property_id, ref_id: stay.room_category_id, manual: true, key });
+          lines.push({ kind: "room", date: night, description: label, quantity: stay.rooms, unit_price: round(amount / stay.rooms), amount, tax: 0, tax_pct: 0, property_id: stay.property_id, ref_id: stay.room_category_id, manual: true, key });
           continue;
         }
         needPrice(roomMissing, `No ${stay.meal_plan} rate for ${room?.name ?? "room"} at ${propName(stay.property_id)} from ${night}.`);
@@ -163,7 +248,7 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
       }
       minNightsChecked = true;
 
-      const weekend = rate.weekend_days.includes(weekday(night));
+      const weekend = isWeekend(rate.weekend_days, night);
       const double = weekend && rate.weekend_rate_double != null ? rate.weekend_rate_double : rate.rate_double;
       const singleRaw = weekend && rate.weekend_rate_single != null ? rate.weekend_rate_single : rate.rate_single;
       const single = singleRaw ?? double;
@@ -174,8 +259,9 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
         const band = rate.child_rates.find((b) => age >= b.min_age && age <= b.max_age);
         base += band?.rate ?? 0;
       }
+      base = withHike(base, hikePct);
       const { amount, tax } = withTax(base, rate.tax_pct, rate.rates_include_tax);
-      lines.push({ kind: "room", date: night, description: label, quantity: stay.rooms, unit_price: round(base / stay.rooms), amount, tax, property_id: stay.property_id, ref_id: stay.room_category_id });
+      lines.push({ kind: "room", date: night, description: label + hikeLabel(hikePct), quantity: stay.rooms, unit_price: round(base / stay.rooms), amount, tax, tax_pct: rate.tax_pct, property_id: stay.property_id, ref_id: stay.room_category_id, ...(hikePct ? { hike: hikePct } : {}) });
     }
   }
 
@@ -192,14 +278,14 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     const label = `Accompanying naturalist, ${where}`;
     if (rate && rate.naturalist_fee > 0) {
       const { amount, tax } = withTax(rate.naturalist_fee * vehicles, rate.tax_pct, false);
-      lines.push({ kind: "safari", group: "naturalist", date: s.date, description: label, quantity: vehicles, unit_price: rate.naturalist_fee, amount, tax, property_id: billTo, ref_id: s.park_id });
+      lines.push({ kind: "safari", group: "naturalist", date: s.date, description: label, quantity: vehicles, unit_price: rate.naturalist_fee, amount, tax, tax_pct: rate.tax_pct, property_id: billTo, ref_id: s.park_id });
       return;
     }
     const nat = (data.addons ?? []).filter((a) => a.active !== false && /naturalist/i.test(a.name));
     const addon = nat.find((a) => a.property_id === billTo) ?? nat.find((a) => !a.property_id) ?? null;
     if (addon) {
       const { amount, tax } = withTax(addon.rate * vehicles, addon.tax_pct, false);
-      lines.push({ kind: "safari", group: "naturalist", date: s.date, description: label, quantity: vehicles, unit_price: addon.rate, amount, tax, property_id: billTo, ref_id: addon.id });
+      lines.push({ kind: "safari", group: "naturalist", date: s.date, description: label, quantity: vehicles, unit_price: addon.rate, amount, tax, tax_pct: addon.tax_pct, property_id: billTo, ref_id: addon.id });
       return;
     }
     const key = `naturalist|${s.park_id}`;
@@ -210,39 +296,53 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
 
   // ---------------- safaris ----------------
   for (const s of trip.safaris) {
-    const sessionName = s.session === "afternoon" ? "evening" : s.session.replace("_", " ");
+    const sessionName = s.session === "afternoon" ? "evening" : s.session.replace("_", "-");
     const where = `${parkName(s.park_id)} ${s.zone} ${sessionName} safari`;
-    const closed = closureFor(data, s.park_id, s.zone, s.session, s.date);
+    const closed = basis ? null : closureFor(data, s.park_id, s.zone, s.session, s.date);
     if (closed) {
       errors.push(
         `${dayName(s.date)} ${readableDate(s.date)}: the ${s.zone} ${sessionName} safari in ${parkName(s.park_id)} is at a closed time${closed.label ? ` (${closed.label})` : ""}. Remove it or choose another zone - park closed.`
       );
     }
 
-    const rate = pickSafariRate(data.safariRates, s, trip.nationality, trip.booking_date);
+    let rate: SafariRate | undefined;
+    let hikePct = 0;
+    if (basis) {
+      const found = pickSafariRateBySeason(data.safariRates, s, trip.nationality, basis, trip.booking_date, hike);
+      rate = found.rate;
+      if (rate && basis.year === "next" && hike && !found.nextYearFound) hikePct = hike.safaris_pct;
+    } else {
+      rate = pickSafariRate(data.safariRates, s, trip.nationality, trip.booking_date);
+      if (!rate && hike && inRange(s.date, hike.from, hike.to)) {
+        rate = pickSafariRate(data.safariRates, { ...s, date: addYears(s.date, -1) }, trip.nationality, addYears(trip.booking_date, -1));
+        if (rate) hikePct = hike.safaris_pct;
+      }
+    }
+    if (hikePct) hikeUsed.safaris = true;
     const billTo = stayOn(s.date)?.property_id ?? null;
     if (s.naturalist) priceNaturalist(s, rate, billTo, where);
     if (!rate) {
       const key = `safari|${s.park_id}|${s.zone}|${s.session}|${s.vehicle_type ?? "exclusive_jeep"}`;
-      const safariMissing: MissingPrice = { key, kind: "safari", label: `${where}`, unit: "per safari, all jeeps, incl. tax", date: s.date };
+      const safariMissing: MissingPrice = { key, kind: "safari", label: `${where}`, unit: "per safari, all jeeps, incl. tax", date: basis ? null : s.date };
       needPrice(safariMissing, `No rate for ${where} on ${s.date}.`);
       if (manual[key] !== undefined) {
         const amount = round(manual[key]);
-        lines.push({ kind: "safari", date: s.date, description: where, quantity: 1, unit_price: amount, amount, tax: 0, property_id: billTo, ref_id: s.park_id, manual: true, key });
+        lines.push({ kind: "safari", date: s.date, description: where, quantity: 1, unit_price: amount, amount, tax: 0, tax_pct: 0, property_id: billTo, ref_id: s.park_id, manual: true, key });
         continue;
       }
       lines.push({ kind: "safari", date: s.date, description: where, quantity: 0, unit_price: 0, amount: 0, tax: 0, property_id: billTo, ref_id: s.park_id, missing: true, key });
       continue;
     }
-    const weekend = rate.weekend_days.includes(weekday(s.date));
-    const unit = weekend && rate.weekend_rate != null ? rate.weekend_rate : rate.weekday_rate;
+    const weekend = isWeekend(rate.weekend_days, s.date);
+    const unit = withHike(weekend && rate.weekend_rate != null ? rate.weekend_rate : rate.weekday_rate, hikePct);
     const vehicles = s.vehicles ?? Math.max(1, Math.ceil(guests / Math.max(1, rate.max_pax)));
+    if (vehicles * rate.max_pax < guests && rate.pricing_unit !== "per_seat") warnings.push(`${where}: ${guests} guests need more than ${vehicles} jeep${vehicles === 1 ? "" : "s"} (${rate.max_pax} per jeep).`);
     // The naturalist is charged only when ticked (see priceNaturalist); the guide fee always.
     const fees = rate.guide_fee * vehicles;
     const base = rate.pricing_unit === "per_seat" ? unit * guests + fees : unit * vehicles + fees;
     const { amount, tax } = withTax(base, rate.tax_pct, false);
     const qty = rate.pricing_unit === "per_seat" ? guests : vehicles;
-    lines.push({ kind: "safari", date: s.date, description: where, quantity: qty, unit_price: unit, amount, tax, property_id: billTo, ref_id: s.park_id });
+    lines.push({ kind: "safari", date: s.date, description: where + (qty > 1 && rate.pricing_unit !== "per_seat" ? `, ${qty} jeeps` : "") + hikeLabel(hikePct), quantity: qty, unit_price: round(unit), amount, tax, tax_pct: rate.tax_pct, property_id: billTo, ref_id: s.park_id, ...(hikePct ? { hike: hikePct } : {}) });
   }
 
   // ---------------- transfers ----------------
@@ -255,7 +355,8 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     // Rates for this road: this direction first; a rate entered only the other way
     // round is used too (the same road). The chosen vehicle first; if it has no rate
     // here, the cheapest vehicle that fits, with a note.
-    const onRoute = data.transferRates.filter((r) => r.active && inRange(t.date, r.valid_from, r.valid_to));
+    // dates not fixed: any rate that has not ended
+    const onRoute = data.transferRates.filter((r) => r.active && (basis ? !r.valid_to || r.valid_to >= trip.booking_date : inRange(t.date, r.valid_from, r.valid_to)));
     const forward = onRoute.filter(
       (r) =>
         (r.from_location_id === t.from_location_id && r.to_location_id === t.to_location_id) ||
@@ -286,39 +387,84 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
       lines.push({ kind: "transfer", date: t.date, description: label, quantity: 0, unit_price: 0, amount: 0, tax: 0, property_id: billTo, ref_id: null, missing: true, key });
       continue;
     }
-    const { amount, tax } = withTax(priced.base, priced.r.tax_pct, false);
+    // Yearly hike: a rate without an end date (or last year's) used for a date in the hike period.
+    const hikePct =
+      hike && (basis ? basis.year === "next" : inRange(t.date, hike.from, hike.to)) && !(priced.r.valid_from && priced.r.valid_from >= hike.from) ? hike.transfers_pct : 0;
+    if (hikePct) hikeUsed.transfers = true;
+    const tBase = withHike(priced.base, hikePct);
+    const { amount, tax } = withTax(tBase, priced.r.tax_pct, false);
     const hours = priced.r.drive_hours ? ` (about ${priced.r.drive_hours} hrs)` : "";
     lines.push({
       kind: "transfer",
       date: t.date,
-      description: `${label} by ${priced.r.vehicle_type}${hours}`,
+      description: `${label} by ${priced.r.vehicle_type}${hours}${hikeLabel(hikePct)}`,
       quantity: priced.vehicles,
-      unit_price: priced.r.rate,
+      unit_price: round(withHike(priced.r.rate, hikePct)),
       amount,
       tax,
+      tax_pct: priced.r.tax_pct,
       property_id: billTo,
       ref_id: priced.r.id,
+      ...(hikePct ? { hike: hikePct } : {}),
     });
   }
 
   // ---------------- add-ons ----------------
+  // Children 5 and over count as guests for "each extra guest" charges.
+  const countable = trip.adults + trip.children.filter((a) => a >= 5).length;
   for (const a of trip.addons ?? []) {
     const addon = data.addons.find((x) => x.id === a.addon_id && x.active);
     if (!addon) {
       errors.push("An add-on in this trip no longer exists or is inactive.");
       continue;
     }
+    const minGuests = addon.min_guests ?? 0;
     const qty =
-      a.qty ?? (addon.pricing_unit === "per_person" ? guests : addon.pricing_unit === "per_room" ? Math.max(1, totalRooms) : 1);
-    const { amount, tax } = withTax(addon.rate * qty, addon.tax_pct, false);
-    lines.push({ kind: "addon", date: a.date ?? null, description: addon.name, quantity: qty, unit_price: addon.rate, amount, tax, property_id: addon.property_id ?? (a.date ? stayOn(a.date)?.property_id ?? null : null), ref_id: addon.id });
+      a.qty ??
+      (addon.pricing_unit === "per_person" ? Math.max(guests, minGuests) : addon.pricing_unit === "per_room" ? Math.max(1, totalRooms) : 1);
+    // Per group with some guests included (boat cruise: 2 guests, then Rs 1,500 each).
+    const extraGuests = addon.pricing_unit === "per_group" && addon.included_guests != null && addon.extra_guest_rate ? Math.max(0, countable - addon.included_guests) * qty : 0;
+    const base = addon.rate * qty + extraGuests * (addon.extra_guest_rate ?? 0);
+    const { amount, tax } = withTax(base, addon.tax_pct, false);
+    let description = addon.name;
+    if (extraGuests) description += ` (+${extraGuests} extra guest${extraGuests === 1 ? "" : "s"})`;
+    else if (addon.pricing_unit === "per_person" && a.qty == null && minGuests > guests) description += ` (minimum ${minGuests} guests)`;
+    lines.push({ kind: "addon", date: a.date ?? null, description, quantity: qty, unit_price: addon.rate, amount, tax, tax_pct: addon.tax_pct, property_id: addon.property_id ?? (a.date ? stayOn(a.date)?.property_id ?? null : null), ref_id: addon.id });
+    if (a.date && !basis && (addon.unavailable_weekdays ?? []).includes(weekday(a.date))) {
+      warnings.push(`${addon.name} on ${dayName(a.date)} ${readableDate(a.date)}: ${addon.availability_note || `not available on ${dayName(a.date)}s`}.`);
+    } else if (basis && addon.availability_note) {
+      warnings.push(`${addon.name}: ${addon.availability_note}.`);
+    }
   }
 
   // ---------------- items added by hand ----------------
   for (const c of trip.custom_items ?? []) {
     const amount = round(c.amount || 0);
     if (!amount) continue;
-    lines.push({ kind: "addon", ...(c.group === "flight" || c.group === "hotel" ? { group: c.group } : {}), date: c.date, description: c.title, quantity: 1, unit_price: amount, amount, tax: 0, property_id: stayOn(c.date)?.property_id ?? null, ref_id: null, manual: true });
+    lines.push({ kind: "addon", ...(c.group === "flight" || c.group === "hotel" ? { group: c.group } : {}), date: c.date, description: c.title, quantity: 1, unit_price: amount, amount, tax: 0, tax_pct: 0, property_id: stayOn(c.date)?.property_id ?? null, ref_id: null, manual: true });
+  }
+
+  // ---------------- prices corrected by hand (detailed price check) ----------------
+  // Each line gets a stable key; a price typed for that key replaces the line's
+  // amount (incl. GST, which is worked out again at the line's rate).
+  const seen = new Map<string, number>();
+  for (const l of lines) {
+    const base = `${l.kind}|${l.date ?? ""}|${l.ref_id ?? ""}|${l.group ?? ""}|${l.description}`;
+    const n = (seen.get(base) ?? 0) + 1;
+    seen.set(base, n);
+    l.lkey = n > 1 ? `${base}#${n}` : base;
+    const typed = trip.line_prices?.[l.lkey];
+    if (typed === undefined || l.missing) continue;
+    const amount = round(Math.max(0, typed));
+    const pct = l.tax_pct ?? 0;
+    l.tax = pct ? round(amount - amount / (1 + pct / 100)) : 0;
+    l.amount = amount;
+    l.unit_price = l.quantity ? round((amount - l.tax) / l.quantity) : amount - l.tax;
+    l.edited = true;
+  }
+  if (trip.line_prices && Object.keys(trip.line_prices).length) {
+    const stale = Object.keys(trip.line_prices).filter((k) => !lines.some((l) => l.lkey === k));
+    if (stale.length) warnings.push(`${stale.length} price${stale.length === 1 ? "" : "s"} corrected by hand no longer match a line (the plan changed) and ${stale.length === 1 ? "was" : "were"} not used.`);
   }
 
   // ---------------- offers ----------------
@@ -442,6 +588,20 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     if (!base.length) warnings.push(disc.scope === "lodges" ? "The discount applies to our own lodges, and this trip has none." : "There is nothing to discount yet.");
   }
 
+  // ---------------- consolidated GST ----------------
+  // One GST rate on the whole package (payment to a single account, e.g. with
+  // outside hotels): every service is taken without its own GST, and the
+  // package GST is added after the markup.
+  const consolidated = trip.gst?.mode === "consolidated";
+  const gstPct = consolidated ? Math.max(0, Math.min(28, trip.gst?.pct ?? 5)) : 0;
+  if (consolidated) {
+    for (const l of lines) {
+      if (!["room", "safari", "transfer", "addon", "discount"].includes(l.kind)) continue;
+      l.amount -= l.tax;
+      l.tax = 0;
+    }
+  }
+
   // ---------------- totals, markup, adjustment ----------------
   const sum = (k: PriceLine["kind"]) => lines.filter((l) => l.kind === k).reduce((t, l) => t + l.amount, 0);
   const room = sum("room");
@@ -455,18 +615,23 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
   const markup = round((subtotal * markupPct) / 100);
   if (markup) lines.push({ kind: "markup", date: null, description: `Markup ${markupPct}%`, quantity: 1, unit_price: markup, amount: markup, tax: 0, property_id: null, ref_id: null });
 
+  const packageTax = consolidated ? round(((subtotal + markup) * gstPct) / 100) : 0;
+  if (consolidated) {
+    lines.push({ kind: "tax", date: null, description: `GST ${gstPct}% on the package`, quantity: 1, unit_price: packageTax, amount: packageTax, tax: packageTax, tax_pct: gstPct, property_id: null, ref_id: null });
+  }
+
   const adjustment = round(trip.adjustment?.amount ?? 0);
   if (adjustment) {
     if (!trip.adjustment?.reason?.trim()) errors.push("A manual adjustment needs a reason.");
     lines.push({ kind: "adjustment", date: null, description: trip.adjustment?.reason?.trim() || "Manual adjustment", quantity: 1, unit_price: adjustment, amount: adjustment, tax: 0, property_id: null, ref_id: null });
   }
-  const grand = subtotal + markup + adjustment;
+  const grand = subtotal + markup + packageTax + adjustment;
   if (grand < 0) errors.push("The total is below zero. Check the discount and adjustment.");
 
   // ---------------- per lodge ----------------
   const byPid = new Map<string | null, PropertyTotals>();
   for (const l of lines) {
-    if (l.kind === "markup" || l.kind === "adjustment") continue;
+    if (l.kind === "markup" || l.kind === "adjustment" || l.kind === "tax") continue;
     const t = byPid.get(l.property_id) ?? { property_id: l.property_id, name: propName(l.property_id), room: 0, safari: 0, transfer: 0, addon: 0, discount: 0, total: 0 };
     t[l.kind as "room" | "safari" | "transfer" | "addon" | "discount"] += l.amount;
     t.total += l.amount;
@@ -482,17 +647,25 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
   const arrival = trip.stays.length ? trip.stays.map((s) => s.check_in).sort()[0] : null;
   const departure = trip.stays.length ? trip.stays.map((s) => addDays(s.check_in, s.nights)).sort().slice(-1)[0] : null;
   const currency = trip.currency ?? "INR";
+  // A rate typed on the quote is used as it is; otherwise the live / settings rate,
+  // less the cushion against it moving before the guest pays.
+  const typedFx = currency !== "INR" && trip.fx_rate && trip.fx_rate > 0 ? trip.fx_rate : null;
   const rawFx = currency === "INR" ? null : data.settings.fx?.[currency] ?? null;
-  // a cushion against the rate moving before the guest pays: a slightly lower rate
-  const fx = rawFx ? Math.round(rawFx * (1 - Math.max(0, Math.min(20, data.settings.fx_margin_pct ?? 0)) / 100) * 100) / 100 : null;
-  if (currency !== "INR" && !fx) errors.push(`No ${currency} exchange rate is available right now. Quote in INR, or set the rate in Sales settings.`);
+  const fx = typedFx ?? (rawFx ? Math.round(rawFx * (1 - Math.max(0, Math.min(20, data.settings.fx_margin_pct ?? 0)) / 100) * 100) / 100 : null);
+  if (currency !== "INR" && !fx) errors.push(`No ${currency} exchange rate is available right now. Type the rate of exchange on Plan & price, or quote in INR.`);
   const grandInCurrency = currency !== "INR" && fx ? Math.round((grand / fx) * 100) / 100 : grand;
 
-  const payments = paymentSchedule(grand, arrival, trip.booking_date, data.settings.payment_slabs?.length ? data.settings.payment_slabs : DEFAULT_PAYMENT_SLABS);
+  // ---------------- yearly hike used ----------------
+  if (hike && (hikeUsed.hotels || hikeUsed.safaris || hikeUsed.transfers)) {
+    const parts = [hikeUsed.hotels && `hotels +${hike.hotels_pct}%`, hikeUsed.safaris && `safaris +${hike.safaris_pct}%`, hikeUsed.transfers && `transfers +${hike.transfers_pct}%`].filter(Boolean);
+    warnings.push(`${hike.label} rates are not in master data yet, so last year's rates plus the yearly hike are used (${parts.join(", ")}).`);
+  }
+
+  const payments = paymentSchedule(grand, basis ? null : arrival, trip.booking_date, data.settings.payment_slabs?.length ? data.settings.payment_slabs : DEFAULT_PAYMENT_SLABS);
 
   return {
     lines,
-    totals: { room, safari, transfer, addon, discount, markup, adjustment, grand },
+    totals: { room, safari, transfer, addon, discount, markup, adjustment, tax: packageTax, grand },
     byProperty,
     guests,
     perPerson: perPersonOf(grand, guests, trip.adults, data.settings.per_person_basis),
@@ -505,6 +678,8 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     appliedOffers,
     missing,
     manualCount: lines.filter((l) => l.manual).length,
+    dateless: !!basis,
+    basis,
     errors,
     warnings,
   };
@@ -517,6 +692,22 @@ function perPersonOf(grand: number, guests: number, adults: number, basis?: stri
 
 // Instalments due on or before the booking date are merged into the deposit.
 export function paymentSchedule(grand: number, arrival: ISODate | null, bookingDate: ISODate, slabs: PaymentSlab[]): Instalment[] {
+  // Dates not fixed: each instalment as "x days before arrival", nothing merged.
+  if (!arrival) {
+    const list: Instalment[] = slabs.map((s) => ({
+      label: `${s.pct}% ${s.label.toLowerCase()}`,
+      pct: s.pct,
+      due: null,
+      amount: 0,
+      ...(s.days_before_arrival != null ? { note: `${s.days_before_arrival} days before arrival` } : {}),
+    }));
+    let given = 0;
+    list.forEach((p, i) => {
+      p.amount = i === list.length - 1 ? grand - given : round((grand * p.pct) / 100);
+      given += p.amount;
+    });
+    return list;
+  }
   const withDue = slabs.map((s) => ({
     ...s,
     due: s.days_before_arrival == null || !arrival ? null : addDays(arrival, -s.days_before_arrival),

@@ -14,6 +14,7 @@ export interface MemberRow {
   name: string;
   email: string;
   phone: string;
+  emergencyId?: string | null; // emergency contact on this member's guest itineraries
   role: string;
   status: "active" | "disabled";
   lastSignIn: string | null;
@@ -35,8 +36,8 @@ function suggestPassword() {
   return `${pick()}-${pick()}-${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
-type Form = { id: string | null; full_name: string; email: string; phone: string; role: string; status: "active" | "disabled"; password: string };
-const EMPTY: Form = { id: null, full_name: "", email: "", phone: "", role: "sales_member", status: "active", password: "" };
+type Form = { id: string | null; full_name: string; email: string; phone: string; role: string; status: "active" | "disabled"; password: string; emergencyId: string };
+const EMPTY: Form = { id: null, full_name: "", email: "", phone: "", role: "sales_member", status: "active", password: "", emergencyId: "" };
 
 export function MembersManager({ team, leaders, me }: { team: MemberRow[]; leaders: MemberRow[]; me: string }) {
   const router = useRouter();
@@ -58,7 +59,7 @@ export function MembersManager({ team, leaders, me }: { team: MemberRow[]; leade
   function openEdit(m: MemberRow) {
     setError(null);
     setShowPw(false);
-    setForm({ id: m.id, full_name: m.name, email: m.email, phone: m.phone, role: m.role, status: m.status, password: "" });
+    setForm({ id: m.id, full_name: m.name, email: m.email, phone: m.phone, role: m.role, status: m.status, password: "", emergencyId: m.emergencyId ?? "" });
   }
 
   function submit() {
@@ -73,6 +74,7 @@ export function MembersManager({ team, leaders, me }: { team: MemberRow[]; leade
               role: editingSelf ? undefined : form.role,
               status: editingSelf ? undefined : form.status,
               password: form.password || undefined,
+              emergency_id: form.emergencyId || null,
             })
           : await createSalesMember({ full_name: form.full_name, email: form.email, phone: form.phone, role: form.role, password: form.password });
         if (res.error) {
@@ -203,6 +205,25 @@ export function MembersManager({ team, leaders, me }: { team: MemberRow[]; leade
                 <span className={ui.label}>Mobile</span>
                 <PhoneField value={form.phone} country="IN" onChange={(phone) => setForm({ ...form, phone })} />
               </div>
+              {form.id && (
+                <label className="block">
+                  <span className={ui.label}>Emergency contact on their itineraries</span>
+                  <select className={`${ui.select} w-full !py-2`} value={form.emergencyId} onChange={(e) => setForm({ ...form, emergencyId: e.target.value })}>
+                    <option value="">Automatic: another active Sales member</option>
+                    {team
+                      .filter((t) => t.id !== form.id && t.status === "active")
+                      .map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                          {t.phone ? ` (${t.phone})` : ""}
+                        </option>
+                      ))}
+                  </select>
+                  <span className="mt-1 block text-xs text-sand-500">
+                    The guest PDF shows this member as the safari consultant (name, mobile, email) and the person chosen here as the emergency contact. Members keep their own mobile up to date under My account.
+                  </span>
+                </label>
+              )}
               <fieldset disabled={editingSelf}>
                 <span className={ui.label}>Role <span className="text-error">*</span></span>
                 <div className="grid gap-2 sm:grid-cols-2">

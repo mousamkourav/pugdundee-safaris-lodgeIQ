@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
-import { commonVehicles, defaultStop, lodgesInPark, mealPlansOf, roomsOf } from "@/lib/sales/plan/planner";
+import { DEFAULT_BASIS, commonVehicles, defaultStop, lodgesInPark, mealPlansOf, roomsFor, roomsOf } from "@/lib/sales/plan/planner";
 import type { BuilderContext, Plan, PlanStop } from "@/lib/sales/plan/types";
 import type { ChatFlags } from "@/lib/sales/plan/chat";
 import { Field } from "./field";
@@ -42,7 +42,10 @@ export function TripDetails({
   const places = ctx.locations.filter((l) => l.type !== "property");
   const vehicleTypes = commonVehicles(ctx);
   const emailError = plan.guest.email && !EMAIL_RE.test(plan.guest.email) ? "This email address does not look right." : null;
-  const dateError = plan.arrival_date < today ? "This date is in the past." : null;
+  const dateError = !plan.dateless && plan.arrival_date < today ? "This date is in the past." : null;
+  const basis = plan.rate_basis ?? DEFAULT_BASIS;
+  const hike = ctx.pricing.settings.hike;
+  const setBasis = (patch: Partial<typeof basis>) => setPlan((p) => ({ ...p, rate_basis: { ...(p.rate_basis ?? DEFAULT_BASIS), ...patch } }));
 
   function move(i: number, d: -1 | 1) {
     setPlan((p) => {
@@ -92,7 +95,9 @@ export function TripDetails({
                 min={1}
                 value={plan.guest.adults}
                 onChange={(e) => {
-                  setGuest({ adults: Math.max(1, Math.min(50, Number(e.target.value) || 1)) });
+                  const adults = Math.max(1, Math.min(50, Number(e.target.value) || 1));
+                  // more guests than the rooms take: add rooms (prices update straight away)
+                  setGuest({ adults, rooms: roomsFor(adults, plan.guest.rooms) });
                   markFlag("adultsSet");
                 }}
               />
@@ -156,17 +161,34 @@ export function TripDetails({
         </summary>
         <div className="space-y-3 border-t border-sand-200 p-4">
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Arrival date" required error={dateError}>
-            <input
-              className={ui.inputSm}
-              type="date"
-              value={plan.arrival_date}
-              onChange={(e) => {
-                if (!e.target.value) return;
-                setPlan((p) => ({ ...p, arrival_date: e.target.value }));
-                markFlag("dateSet");
-              }}
-            />
+          <Field label="Arrival date" required={!plan.dateless} error={dateError}>
+            {plan.dateless ? (
+              <p className="rounded-lg border border-dashed border-sand-300 bg-sand-50 px-3 py-2 text-sm text-sand-600">Not fixed yet</p>
+            ) : (
+              <input
+                className={ui.inputSm}
+                type="date"
+                value={plan.arrival_date}
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  setPlan((p) => ({ ...p, arrival_date: e.target.value }));
+                  markFlag("dateSet");
+                }}
+              />
+            )}
+            <label className="mt-1.5 flex items-center gap-2 text-xs text-sand-600">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={!!plan.dateless}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setPlan((p) => ({ ...p, dateless: on || undefined, ...(on && !p.rate_basis ? { rate_basis: DEFAULT_BASIS } : {}) }));
+                  markFlag("dateSet");
+                }}
+              />
+              Dates not fixed yet (price by season)
+            </label>
           </Field>
           {vehicleTypes.length > 0 ? (
             <Field label="Transfer vehicle">
@@ -199,6 +221,36 @@ export function TripDetails({
           </Field>
         </div>
 
+        {plan.dateless && (
+          <div className="space-y-2 rounded-lg border border-gold-200 bg-gold-50 p-3">
+            <p className="text-xs font-semibold text-olive-800">Rates to use until the dates are fixed</p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <label className="block text-xs text-sand-600">
+                Lodge season
+                <select className={`${ui.select} mt-1 w-full !py-1.5 text-xs`} value={basis.season} onChange={(e) => setBasis({ season: e.target.value as typeof basis.season })}>
+                  <option value="shoulder">Shoulder season</option>
+                  <option value="high">High season</option>
+                  <option value="peak">Peak season</option>
+                </select>
+              </label>
+              <label className="block text-xs text-sand-600">
+                Safari rates
+                <select className={`${ui.select} mt-1 w-full !py-1.5 text-xs`} value={basis.safari_days} onChange={(e) => setBasis({ safari_days: e.target.value as typeof basis.safari_days })}>
+                  <option value="weekday">Weekday rates</option>
+                  <option value="weekend">Weekend rates</option>
+                </select>
+              </label>
+              <label className="block text-xs text-sand-600">
+                Rates of
+                <select className={`${ui.select} mt-1 w-full !py-1.5 text-xs`} value={basis.year} onChange={(e) => setBasis({ year: e.target.value as typeof basis.year })}>
+                  <option value="current">This season</option>
+                  <option value="next" disabled={!hike}>{hike ? `${hike.label} (+ yearly hike)` : "Next season (set the hike in Sales settings)"}</option>
+                </select>
+              </label>
+            </div>
+            <p className="text-[11px] text-sand-500">The guest sees Day 1, Day 2... without dates. When the dates are confirmed, untick &ldquo;Dates not fixed yet&rdquo;, pick the date and save a new version: the same itinerary is repriced.</p>
+          </div>
+        )}
         <div className="space-y-2">
           <p className={ui.label}>Parks, in travel order</p>
           {plan.stops.length === 0 && <p className={ui.empty + " !p-4"}>No parks yet. Tell the assistant, or add one below.</p>}

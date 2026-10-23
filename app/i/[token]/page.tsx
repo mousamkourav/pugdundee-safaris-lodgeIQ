@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { loadClientView } from "@/lib/sales/client-view";
 import { DownloadPdfButton } from "@/components/sales/download-pdf";
+import { ShareButtons } from "@/components/sales/share-buttons";
 import { PhotoCarousel } from "@/components/sales/photo-carousel";
 import { Icon } from "@/components/icons";
 import { dayName } from "@/lib/sales/pricing/dates";
@@ -24,7 +25,9 @@ html[data-pdf] .pdf-hide{display:none!important}
 html[data-pdf] .pdf-only{display:grid!important}
 html[data-pdf] #itinerary{width:820px!important;max-width:none!important;border-radius:0!important;font-size:15px}
 html[data-pdf] [data-pdf-block="cover"]{min-height:0!important;height:auto!important;aspect-ratio:210/297}
-@media print{.pdf-hide{display:none!important}.pdf-only{display:grid!important}}`;
+@media print{.pdf-hide{display:none!important}.pdf-only{display:grid!important}}
+details.park>summary::-webkit-details-marker{display:none}
+details.park[open] .plus{transform:rotate(45deg)}`;
 
 const fileNameFor = (guest: string, queryNo: string) =>
   `Pugdundee Safaris - ${guest.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim() || "Itinerary"} - ${queryNo}.pdf`;
@@ -79,9 +82,10 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
   const route: { place: string; detail: string; nights: number; flightIn?: boolean }[] = [];
   if (before) route.push({ place: before.city, detail: before.hotel || "City stay", nights: before.nights });
   plan.stops.forEach((s, i) => {
+    const room = view.stays[i]?.room;
     route.push({
       place: shortPark(view.parkNames[s.park_id] ?? ""),
-      detail: view.lodgeNames[s.property_id] ?? "",
+      detail: [view.lodgeNames[s.property_id] ?? "", room].filter(Boolean).join(" \u00b7 "),
       nights: s.nights,
       flightIn: i === 0 && !!before && (plan.flights ?? []).length > 0,
     });
@@ -100,7 +104,8 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
   return (
     <div className="min-h-screen bg-sand-100 text-[17px] leading-relaxed text-sand-700 sm:py-8 sm:text-base print:bg-white print:py-0">
       <style>{PDF_CSS}</style>
-      <div className="mx-auto flex max-w-4xl justify-end px-4 py-3 sm:px-0 sm:pt-0 print:hidden">
+      <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-0 sm:pt-0 print:hidden">
+        <ShareButtons title={`${view.routeLine || view.title} safari - Pugdundee Safaris`} text={`Safari itinerary for ${view.guestName} from ${view.company.name}`} />
         <DownloadPdfButton fileName={fileNameFor(view.guestName, view.queryNo)} />
       </div>
 
@@ -122,7 +127,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
             {view.routeLine && <p className="mt-4 font-display text-xl italic text-[var(--color-gold-200,#EBD9A0)] sm:text-2xl">{view.routeLine}</p>}
             <div className="mt-6 h-px w-24 bg-[var(--color-gold-300,#DDC277)]" />
             <p className="mt-5 text-base text-white/90 sm:text-lg">
-              {long(view.arrival)} &ndash; {long(view.departure)}
+              {view.dateless ? "Travel dates to be confirmed" : <>{long(view.arrival)} &ndash; {long(view.departure)}</>}
               <span className="mx-2 text-white/50">|</span>
               {plan.days.length || view.nights + 1} days
               <span className="mx-2 text-white/50">|</span>
@@ -194,22 +199,30 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                     <div data-pdf-block="" className="grid gap-4 sm:grid-cols-[110px_1fr]">
                       <div className="flex items-baseline gap-3 sm:block">
                         <p className="font-display text-5xl font-semibold leading-none text-[var(--color-gold-500,#C9A227)]">{pad2(i + 1)}</p>
-                        <p className="text-xs uppercase tracking-[0.15em] text-sand-500 sm:mt-2">
-                          {dayName(d.date)} {short(d.date)}
-                        </p>
+                        {!view.dateless && (
+                          <p className="text-xs uppercase tracking-[0.15em] text-sand-500 sm:mt-2">
+                            {dayName(d.date)} {short(d.date)}
+                          </p>
+                        )}
                       </div>
                       <div>
                         <h3 className="font-display text-2xl leading-snug text-olive-800">{d.title}</h3>
                         <p className="mt-2 whitespace-pre-line">{d.text}</p>
-                        {d.safaris.length > 0 && (
+                        {(d.safaris.length > 0 || (d.transfer && view.driveHours[`${d.transfer.from_location_id}|${d.transfer.to_location_id}`])) && (
                           <div className="mt-3 flex flex-wrap gap-2">
                             {d.safaris.map((sf, k) => (
                               <span key={k} className="inline-flex items-center gap-1.5 rounded-full bg-olive-50 px-3 py-1 text-sm text-olive-800 ring-1 ring-olive-100">
                                 <Line name={sf.session === "morning" ? "sun" : "jeep"} className="h-4 w-4 text-olive-600" />
-                                {sf.session === "morning" ? "Morning" : "Evening"} safari &middot; {sf.zone} zone
-                                {sf.naturalist && <span className="ml-1 rounded-full bg-[var(--color-gold-100,#F6EDCC)] px-2 text-xs font-semibold text-[var(--color-gold-800,#6B5410)]">with naturalist</span>}
+                                {sf.session === "morning" ? "Morning" : sf.session === "full_day" ? "Full-day" : "Evening"} safari &middot; {sf.zone} zone
+                                {(sf.jeeps ?? 0) > 1 && <> &middot; {sf.jeeps} jeeps</>}
                               </span>
                             ))}
+                            {d.transfer && view.driveHours[`${d.transfer.from_location_id}|${d.transfer.to_location_id}`] && (
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-sand-50 px-3 py-1 text-sm text-sand-700 ring-1 ring-sand-200">
+                                <Line name="jeep" className="h-4 w-4 text-sand-500" />
+                                Approx. {view.driveHours[`${d.transfer.from_location_id}|${d.transfer.to_location_id}`]} hrs drive
+                              </span>
+                            )}
                           </div>
                         )}
                         {items.length > 0 && (
@@ -244,6 +257,17 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                         <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--color-gold-600,#A8851C)]">Where you stay</p>
                         <h3 className="mt-1 font-display text-3xl text-olive-800">{lodge.name}</h3>
                         {d.park_id && <p className="text-sm text-sand-500">{view.parkNames[d.park_id]}</p>}
+                        {(() => {
+                          const st = view.stays.find((x) => x.property_id === lodge.id);
+                          return st?.room ? (
+                            <p className="mt-2 inline-flex flex-wrap items-center gap-x-2 rounded-full bg-white px-3 py-1 text-sm text-olive-800 ring-1 ring-sand-200">
+                              <Line name="bed" className="h-4 w-4 text-olive-600" />
+                              {st.room}
+                              <span className="text-sand-400">&middot;</span>
+                              <span className="text-sand-600">{st.meal}</span>
+                            </p>
+                          ) : null;
+                        })()}
                         <PhotoCarousel photos={lodge.photos} label={lodge.name} />
                         {lodge.description && <p className="mt-4 whitespace-pre-line leading-relaxed">{lodge.description}</p>}
                         {lodge.website && (
@@ -267,7 +291,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
           {/* ---------------- price ---------------- */}
           {view.show.prices && (
             <section data-pdf-block="" className="-mx-5 bg-[var(--color-olive-900,#2B3318)] px-6 py-8 text-white sm:mx-0 sm:rounded-2xl sm:px-10 sm:py-10">
-              <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--color-gold-200,#EBD9A0)]">Your investment</p>
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--color-gold-200,#EBD9A0)]">Trip quotation</p>
               <div className="mt-4 grid gap-6 sm:grid-cols-2 sm:items-end">
                 <div>
                   <p className="font-display text-5xl font-semibold text-[var(--color-gold-200,#EBD9A0)]">{money(view.perPerson, view.currency)}</p>
@@ -281,7 +305,42 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                   <p className="text-sm text-white/60">Valid until {long(view.validUntil)}</p>
                 </div>
               </div>
-              {view.show.breakup && view.breakup.length > 0 && (
+              {view.dateless && <p className="mt-4 text-sm text-white/70">Travel dates are not fixed yet; the price is worked out on the season shown and is confirmed once the dates are known.</p>}
+              {view.show.breakup === "detailed" && view.detail.length > 0 && (
+                <div className="mt-6 overflow-x-auto">
+                  <table className="w-full min-w-[520px] text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase tracking-[0.12em] text-white/60">
+                        <th className="py-2 pr-3 font-medium">Service</th>
+                        <th className="py-2 pr-3 text-right font-medium">Before GST</th>
+                        <th className="py-2 pr-3 text-right font-medium">GST</th>
+                        <th className="py-2 text-right font-medium">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {view.detail.map((r, i) => (
+                        <tr key={i} className="border-t border-white/10 align-top">
+                          <td className="py-2 pr-3 text-white/85">
+                            {r.label}
+                            {r.date && !view.dateless && <span className="block text-xs text-white/50">{short(r.date)}</span>}
+                          </td>
+                          <td className="tabular py-2 pr-3 text-right">{money(r.net, view.currency)}</td>
+                          <td className="tabular py-2 pr-3 text-right text-white/75">
+                            {money(r.gst, view.currency)}
+                            {r.gstPct != null && r.gstPct > 0 && <span className="block text-xs text-white/50">{r.gstPct}%</span>}
+                          </td>
+                          <td className="tabular py-2 text-right">{money(r.amount, view.currency)}</td>
+                        </tr>
+                      ))}
+                      <tr className="border-t border-white/40 font-semibold text-[var(--color-gold-200,#EBD9A0)]">
+                        <td className="py-2.5" colSpan={3}>Total including GST</td>
+                        <td className="tabular py-2.5 text-right">{money(view.total, view.currency)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {view.show.breakup === "summary" && view.breakup.length > 0 && (
                 <table className="mt-6 w-full text-sm">
                   <tbody>
                     {view.breakup.map((r, i) => (
@@ -334,7 +393,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                 <div key={i} className="flex items-center justify-between gap-4 px-5 py-4">
                   <div>
                     <p className="font-medium text-olive-800">{p.label.charAt(0).toUpperCase() + p.label.slice(1)}</p>
-                    <p className="text-sm text-sand-500">{p.due ? `By ${long(p.due)}` : "To confirm the booking"}</p>
+                    <p className="text-sm text-sand-500">{p.due ? `By ${long(p.due)}` : p.note && view.dateless ? p.note.charAt(0).toUpperCase() + p.note.slice(1) : "To confirm the booking"}</p>
                   </div>
                   <p className="tabular font-display text-xl text-olive-800">{view.show.prices ? money(p.amountInCurrency, view.currency) : `${p.pct}%`}</p>
                 </div>
@@ -372,6 +431,45 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
           )}
         </div>
 
+        {/* ---------------- about the parks (opens on a click; always open in the PDF) ---------------- */}
+        {view.parks.some((p) => p.description || p.photos.length) && (
+          <section data-pdf-block="" className="space-y-3 px-5 pb-12 sm:px-12">
+            <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--color-gold-600,#A8851C)]">The wilderness</p>
+            <h2 className="font-display text-3xl text-olive-800">About the parks</h2>
+            <div className="divide-y divide-sand-200 rounded-2xl ring-1 ring-sand-200">
+              {view.parks
+                .filter((p) => p.description || p.photos.length)
+                .map((p) => (
+                  <div key={p.id}>
+                    <details className="park group pdf-hide">
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
+                        <span className="font-display text-xl text-olive-800">{p.name}</span>
+                        <span className="plus grid h-8 w-8 shrink-0 place-items-center rounded-full bg-olive-50 text-xl leading-none text-olive-700 ring-1 ring-olive-100 transition" aria-hidden="true">+</span>
+                      </summary>
+                      <div className="space-y-4 px-5 pb-6">
+                        {p.description && <p className="whitespace-pre-line leading-relaxed">{p.description}</p>}
+                        {p.seasonNotes && <p className="text-sm text-sand-500">{p.seasonNotes}</p>}
+                        {p.photos.length > 0 && <PhotoCarousel photos={p.photos} label={p.name} />}
+                      </div>
+                    </details>
+                    <div className="pdf-only gap-3 px-5 py-5">
+                      <h3 className="font-display text-xl text-olive-800">{p.name}</h3>
+                      {p.description && <p className="whitespace-pre-line leading-relaxed">{p.description}</p>}
+                      {p.photos.length > 0 && (
+                        <div className="grid grid-cols-3 gap-2">
+                          {p.photos.slice(0, 6).map((src, k) => (
+                            // eslint-disable-next-line @next/next/no-img-element -- public storage URL
+                            <img key={k} src={src} alt="" className="aspect-[4/3] w-full rounded-lg object-cover" />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </section>
+        )}
+
         {/* ---------------- footer ---------------- */}
         <footer data-pdf-block="" className="bg-[var(--color-olive-900,#2B3318)] px-6 py-10 text-white sm:px-12">
           <p className="font-display text-2xl text-[var(--color-gold-200,#EBD9A0)]">We look forward to welcoming you to the wild.</p>
@@ -380,16 +478,27 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
               <p className="font-semibold text-white">{view.company.name}</p>
               {(view.company.email || view.company.phone) && <p>{[view.company.email, view.company.phone].filter(Boolean).join(" \u00b7 ")}</p>}
             </div>
-            {view.consultant.name && (
-              <div className="sm:text-right">
-                <p className="text-white/60">Your safari consultant</p>
-                <p className="font-semibold text-white">
-                  {view.consultant.name}
-                  {view.consultant.phone ? ` \u00b7 ${view.consultant.phone}` : ""}
-                </p>
-              </div>
-            )}
           </div>
+          {(view.consultant.name || view.emergency) && (
+            <div className="mt-6 grid gap-4 border-t border-white/15 pt-6 text-sm sm:grid-cols-2">
+              {view.consultant.name && (
+                <div>
+                  <p className="text-xs uppercase tracking-[0.18em] text-white/50">Your safari consultant</p>
+                  <p className="mt-1 font-semibold text-white">{view.consultant.name}</p>
+                  {view.consultant.phone && <p className="text-white/80"><a href={`tel:${view.consultant.phone.replace(/\s+/g, "")}`}>{view.consultant.phone}</a></p>}
+                  {view.consultant.email && <p className="text-white/80"><a href={`mailto:${view.consultant.email}`}>{view.consultant.email}</a></p>}
+                </div>
+              )}
+              {view.emergency && (
+                <div className="sm:text-right">
+                  <p className="text-xs uppercase tracking-[0.18em] text-white/50">Emergency contact</p>
+                  <p className="mt-1 font-semibold text-white">{view.emergency.name}</p>
+                  {view.emergency.phone && <p className="text-white/80"><a href={`tel:${view.emergency.phone.replace(/\s+/g, "")}`}>{view.emergency.phone}</a></p>}
+                  {view.emergency.email && <p className="text-white/80"><a href={`mailto:${view.emergency.email}`}>{view.emergency.email}</a></p>}
+                </div>
+              )}
+            </div>
+          )}
           <p className="mt-6 text-xs uppercase tracking-[0.18em] text-white/40">
             Quote {view.queryNo} &middot; version {view.versionNo}
           </p>

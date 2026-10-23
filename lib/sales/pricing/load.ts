@@ -14,6 +14,7 @@ import type {
   PricingData,
   PricingSettings,
   Property,
+  RateHike,
   RoomCategory,
   RoomRate,
   SafariRate,
@@ -28,6 +29,17 @@ const str = (v: unknown) => (v === null || v === undefined ? "" : String(v));
 const strOrNull = (v: unknown) => (v === null || v === undefined || v === "" ? null : String(v));
 const date = (v: unknown) => (v ? String(v).slice(0, 10) : null);
 const arr = <T>(v: unknown, map: (x: unknown) => T): T[] => (Array.isArray(v) ? v.map(map) : []);
+
+// The yearly hike from Sales settings; only when it has dates and at least one %.
+function hikeOf(v: unknown): RateHike | null {
+  const h = (v ?? {}) as Row;
+  const from = date(h.from);
+  const to = date(h.to);
+  const pct = (x: unknown) => Math.max(-50, Math.min(100, num(x)));
+  const out = { label: str(h.label) || "next season", from: from!, to: to!, hotels_pct: pct(h.hotels_pct), safaris_pct: pct(h.safaris_pct), transfers_pct: pct(h.transfers_pct) };
+  if (!from || !to || to < from) return null;
+  return out.hotels_pct || out.safaris_pct || out.transfers_pct ? out : null;
+}
 
 export async function loadPricingData(): Promise<{ data: PricingData; error: string | null }> {
   const supabase = await createClient();
@@ -92,6 +104,7 @@ export async function loadPricingData(): Promise<{ data: PricingData; error: str
         tax_pct: num(r.tax_pct),
         rates_include_tax: r.rates_include_tax !== false,
         active: true,
+        notes: strOrNull(r.notes),
       })
     ),
     parks: rows(parks).map((r): Park => ({ id: str(r.id), name: str(r.name) })),
@@ -157,6 +170,12 @@ export async function loadPricingData(): Promise<{ data: PricingData; error: str
         rate: num(r.rate),
         tax_pct: num(r.tax_pct),
         active: true,
+        // columns added in sales_v2_itinerary_fixes.sql (absent before it is run)
+        min_guests: numOrNull(r.min_guests),
+        included_guests: numOrNull(r.included_guests),
+        extra_guest_rate: numOrNull(r.extra_guest_rate),
+        unavailable_weekdays: arr(r.unavailable_weekdays, (d) => num(d)),
+        availability_note: strOrNull(r.availability_note),
       })
     ),
     offers: rows(offers).map(
@@ -198,6 +217,7 @@ export async function loadPricingData(): Promise<{ data: PricingData; error: str
           }))
         : null,
       per_person_basis: s.per_person_basis === "adults" ? "adults" : "guests",
+      hike: hikeOf(s.rate_hike),
     } satisfies PricingSettings,
   };
 

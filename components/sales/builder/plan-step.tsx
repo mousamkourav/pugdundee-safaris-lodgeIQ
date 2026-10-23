@@ -5,8 +5,9 @@ import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { rupees, fmtDate } from "@/lib/sales/format";
 import { dayName } from "@/lib/sales/pricing/dates";
-import { describe } from "@/lib/sales/plan/planner";
-import { closureFor } from "@/lib/sales/pricing/engine";
+import { closedAt, describe, roomsFor } from "@/lib/sales/plan/planner";
+import { detailedBreakdown } from "@/lib/sales/pricing/breakdown";
+import { FLIGHT_BAGGAGE } from "@/lib/sales/plan/draft";
 import type { PriceResult } from "@/lib/sales/pricing/types";
 import type { BuilderContext, DaySafari, Plan, PlanDay, PlanItem } from "@/lib/sales/plan/types";
 
@@ -28,7 +29,9 @@ const AIRPORTS = ["Delhi", "Mumbai", "Bengaluru", "Kolkata", "Jabalpur", "Nagpur
 const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 export function flightSummary(f?: PlanItem["flight"]) {
   if (!f) return "";
-  return [f.airline && f.number ? `${f.airline} ${f.number}` : f.airline || f.number, f.time && `departs ${f.time}`, f.pnr && `PNR ${f.pnr}`].filter(Boolean).join(" \u00b7 ");
+  return [f.airline && f.number ? `${f.airline} ${f.number}` : f.airline || f.number, f.time && `departs ${f.time}`, f.pnr && `PNR ${f.pnr}`, f.fare_pp && `Rs ${f.fare_pp.toLocaleString("en-IN")} per person`]
+    .filter(Boolean)
+    .join(" \u00b7 ");
 }
 
 export const CURRENCIES = ["INR", "USD", "EUR", "GBP", "AUD"] as const;
@@ -52,7 +55,11 @@ export function PlanStep({
   const [overDay, setOverDay] = useState<number | null>(null);
   const [tab, setTab] = useState<"addons" | "custom">(ctx.pricing.addons.length ? "addons" : "custom");
   const [custom, setCustom] = useState<{ type: PlanItem["type"]; title: string; detail: string; price: string }>({ type: "activity", title: "", detail: "", price: "" });
-  const [flight, setFlight] = useState({ from: "", to: "", airline: "", number: "", time: "", pnr: "" });
+  const [flight, setFlight] = useState({ from: "", to: "", airline: "", number: "", time: "", pnr: "", fare: "", cabin: "Economy", baggage: FLIGHT_BAGGAGE });
+  const [childrenText, setChildrenText] = useState(plan.guest.children.join(", "));
+  const guests = plan.guest.adults + plan.guest.children.length;
+  const autoJeeps = Math.max(1, Math.ceil(guests / 6));
+  const closed = (park: string, zone: string, session: string, date: string) => !!closedAt(ctx, plan, park, zone, session, date);
   const [search, setSearch] = useState("");
 
   const lodgeName = (id: string | null) => ctx.properties.find((p) => p.id === id)?.name ?? "";
@@ -64,7 +71,7 @@ export function PlanStep({
   const addonGroups = (() => {
     const byName = new Map<string, typeof ctx.pricing.addons>();
     for (const a of ctx.pricing.addons) {
-      if (a.active === false || /naturalist/i.test(a.name)) continue;
+      if (a.active === false || /^accompanying naturalist/i.test(a.name.trim())) continue;
       const k = normName(a.name);
       byName.set(k, [...(byName.get(k) ?? []), a]);
     }
@@ -91,8 +98,9 @@ export function PlanStep({
 
   function setSafari(i: number, session: DaySafari["session"], zone: "" | DaySafari["zone"]) {
     const day = plan.days[i];
-    const safaris = day.safaris.filter((s) => s.session !== session);
-    if (zone) safaris.push({ session, zone });
+    const old = day.safaris.find((s) => s.session === session);
+    const safaris = day.safaris.filter((s) => s.session !== session && s.session !== "full_day");
+    if (zone) safaris.push({ session, zone, ...(old?.naturalist ? { naturalist: true } : {}), ...(old?.jeeps ? { jeeps: old.jeeps } : {}) });
     safaris.sort((a, b) => (a.session === b.session ? 0 : a.session === "morning" ? -1 : 1));
     let kind = day.kind;
     if (kind === "safari" || kind === "leisure") kind = safaris.length ? "safari" : "leisure";
@@ -100,6 +108,27 @@ export function PlanStep({
     const next: PlanDay = { ...day, safaris, kind };
     setDay(i, () => (day.text === autoText ? describe(ctx, next, plan.vehicle_type) : next));
   }
+
+  // Full-day safari: one safari for the whole day instead of morning and evening.
+  function setFullDay(i: number, zone: "" | DaySafari["zone"]) {
+    const day = plan.days[i];
+    const safaris: DaySafari[] = zone ? [{ session: "full_day", zone, ...(day.safaris[0]?.naturalist ? { naturalist: true } : {}) }] : [];
+    let kind = day.kind;
+    if (kind === "safari" || kind === "leisure") kind = safaris.length ? "safari" : "leisure";
+    const autoText = describe(ctx, day, plan.vehicle_type).text;
+    const next: PlanDay = { ...day, safaris, kind };
+    setDay(i, () => (day.text === autoText ? describe(ctx, next, plan.vehicle_type) : next));
+  }
+  // Jeeps on one safari; empty = enough for the group (1 jeep up to 6 guests).
+  const setJeeps = (i: number, session: DaySafari["session"], jeeps: number | null) =>
+    setDay(i, (d) => ({
+      ...d,
+      safaris: d.safaris.map((x) => {
+        if (x.session !== session) return x;
+        const next: DaySafari = { session: x.session, zone: x.zone, ...(x.naturalist ? { naturalist: true } : {}) };
+        return jeeps ? { ...next, jeeps } : next;
+      }),
+    }));
 
   // Naturalist on one safari of a day (one per safari: never more than the safaris).
   function setNaturalist(i: number, session: DaySafari["session"], on: boolean) {
@@ -149,8 +178,19 @@ export function PlanStep({
     const price = Number(custom.price);
     if (custom.type === "flight") {
       if (!flight.from.trim() || !flight.to.trim()) return null;
-      const f = { from: flight.from.trim(), to: flight.to.trim(), airline: flight.airline.trim(), number: flight.number.trim(), time: flight.time.trim(), pnr: flight.pnr.trim() };
-      return { type: "flight", title: `Flight ${f.from} to ${f.to}`, detail: custom.detail.trim(), price: Number.isFinite(price) && price > 0 ? Math.round(price) : null, addon_id: null, qty: null, flight: f };
+      const fare = Number(flight.fare);
+      const f = {
+        from: flight.from.trim(),
+        to: flight.to.trim(),
+        airline: flight.airline.trim(),
+        number: flight.number.trim(),
+        time: flight.time.trim(),
+        pnr: flight.pnr.trim(),
+        ...(Number.isFinite(fare) && fare > 0 ? { fare_pp: Math.round(fare) } : {}),
+        cabin: flight.cabin.trim() || "Economy",
+        baggage: flight.baggage.trim(),
+      };
+      return { type: "flight", title: `Flight ${f.from} to ${f.to}`, detail: custom.detail.trim() || `${f.cabin} class${f.baggage ? ` (${f.baggage})` : ""}`, price: null, addon_id: null, qty: null, flight: f };
     }
     const title = custom.title.trim();
     if (!title) return null;
@@ -160,8 +200,69 @@ export function PlanStep({
 
   const stillNeeded = (result?.missing ?? []).filter((m) => plan.manual_prices?.[m.key] === undefined);
 
+  const setGuest = (patch: Partial<Plan["guest"]>) => setPlan((p) => ({ ...p, guest: { ...p.guest, ...patch } }));
+  const detail = result ? detailedBreakdown(result, { spreadMarkup: false }).rows : [];
+  const editedCount = Object.keys(plan.line_prices ?? {}).length;
+  const setLinePrice = (key: string, v: number | null) =>
+    setPlan((p) => {
+      const lp = { ...(p.line_prices ?? {}) };
+      if (v === null) delete lp[key];
+      else lp[key] = Math.max(0, Math.round(v));
+      return { ...p, line_prices: lp };
+    });
+
   return (
     <div className="space-y-4">
+      {/* ---------- guests: change them here and the price follows ---------- */}
+      <section className="flex flex-wrap items-end gap-x-4 gap-y-2 rounded-xl border border-sand-200 bg-white px-3 py-2.5 text-sm" aria-label="Guests and rooms">
+        <span className="self-center font-semibold text-olive-800">Guests</span>
+        <label className="flex items-center gap-1.5 text-xs text-sand-600">
+          Adults
+          <input
+            type="number"
+            min={1}
+            max={50}
+            className="tabular w-14 rounded-md border border-sand-300 px-2 py-1 text-sm"
+            value={plan.guest.adults}
+            onChange={(e) => {
+              const adults = Math.max(1, Math.min(50, Number(e.target.value) || 1));
+              setGuest({ adults, rooms: roomsFor(adults, plan.guest.rooms) });
+            }}
+          />
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-sand-600">
+          Kids&apos; ages
+          <input
+            className="w-24 rounded-md border border-sand-300 px-2 py-1 text-sm"
+            placeholder="8, 12"
+            value={childrenText}
+            onChange={(e) => setChildrenText(e.target.value)}
+            onBlur={() => {
+              const ages = childrenText.split(",").map((x) => x.trim()).filter(Boolean).map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n < 18);
+              setGuest({ children: ages });
+              setChildrenText(ages.join(", "));
+            }}
+          />
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-sand-600">
+          Rooms
+          <input
+            type="number"
+            min={1}
+            max={30}
+            className="tabular w-14 rounded-md border border-sand-300 px-2 py-1 text-sm"
+            value={plan.guest.rooms}
+            onChange={(e) => setGuest({ rooms: Math.max(1, Math.min(30, Number(e.target.value) || 1)) })}
+          />
+        </label>
+        <span className="self-center text-[11px] text-sand-500">Prices update as you change these. Save a new version to share the new price.</span>
+        {plan.dateless && (
+          <span className="self-center rounded-full bg-gold-50 px-2 py-0.5 text-[11px] font-semibold text-olive-800 ring-1 ring-gold-200">
+            Dates not fixed: {plan.rate_basis?.season ?? "high"} season, {plan.rate_basis?.safari_days ?? "weekday"} safari rates
+          </span>
+        )}
+      </section>
+
       {/* ---------- prices master data does not have ---------- */}
       {result && result.missing.length > 0 && (
         <section className="rounded-xl border border-warning-border bg-warning-bg p-3 sm:p-4">
@@ -227,7 +328,7 @@ export function PlanStep({
                   <span className="flex items-baseline gap-2">
                     <span className={`text-sm text-olive-700 ${isTarget ? "font-bold" : "font-semibold"}`}>Day {i + 1}</span>
                     {isTarget && <span className="rounded-full bg-olive-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">Adding here</span>}
-                    <span className="text-xs uppercase tracking-wide text-sand-500">{dayName(d.date)} {fmtDate(d.date)}</span>
+                    {!plan.dateless && <span className="text-xs uppercase tracking-wide text-sand-500">{dayName(d.date)} {fmtDate(d.date)}</span>}
                   </span>
                   <span className="truncate text-xs text-sand-500">{d.property_id ? lodgeName(d.property_id) : d.kind === "city" ? "City stay" : "Departure"}</span>
                 </button>
@@ -245,48 +346,101 @@ export function PlanStep({
                       <span className="flex-1 truncate">{locName(d.transfer.from_location_id)} to {locName(d.transfer.to_location_id)}</span>
                     </li>
                   )}
-                  {d.park_id && (
-                    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5">
-                      <Icon name="route" className="h-4 w-4 shrink-0 text-sand-500" />
-                      {(["morning", "afternoon"] as const).map((session) => {
-                        const closedCore = !!closureFor(ctx.pricing, d.park_id!, "core", session, d.date);
-                        const closedBuffer = !!closureFor(ctx.pricing, d.park_id!, "buffer", session, d.date);
-                        const value = d.safaris.find((s) => s.session === session)?.zone ?? "";
-                        const onClosed = (value === "core" && closedCore) || (value === "buffer" && closedBuffer);
-                        const safari = d.safaris.find((s) => s.session === session);
-                        // Closed times are not offered at all (only shown if an older plan already has one).
-                        if (closedCore && closedBuffer && !value) {
-                          return (
-                            <span key={session} className="text-xs text-sand-400">
-                              {session === "morning" ? "Morning" : "Evening"}: park closed
-                            </span>
-                          );
-                        }
-                        return (
-                          <span key={session} className="flex items-center gap-1.5 text-xs text-sand-600">
-                            <label className="flex items-center gap-1.5">
-                              {session === "morning" ? "Morning" : "Evening"}
-                              <select
-                                className={`rounded-md border bg-white px-1.5 py-0.5 text-xs ${onClosed ? "border-error text-error" : "border-sand-300"}`}
-                                value={value}
-                                onChange={(e) => setSafari(i, session, e.target.value as "" | "core" | "buffer")}
-                              >
-                                <option value="">No safari</option>
-                                {(!closedCore || value === "core") && <option value="core">{closedCore ? "Core (closed)" : "Core"}</option>}
-                                {(!closedBuffer || value === "buffer") && <option value="buffer">{closedBuffer ? "Buffer (closed)" : "Buffer"}</option>}
-                              </select>
-                            </label>
-                            {safari && (
-                              <label className="flex items-center gap-1 rounded-md bg-sand-50 px-1.5 py-0.5" title="Accompanying naturalist on this safari">
-                                <input type="checkbox" className="h-3.5 w-3.5" checked={!!safari.naturalist} onChange={(e) => setNaturalist(i, session, e.target.checked)} />
-                                Naturalist
-                              </label>
-                            )}
+                  {d.park_id && (() => {
+                    const fullDay = d.safaris.find((x) => x.session === "full_day");
+                    const extras = (safari: DaySafari) => (
+                      <>
+                        <label className="flex items-center gap-1 rounded-md bg-sand-50 px-1.5 py-0.5" title="Accompanying naturalist on this safari">
+                          <input type="checkbox" className="h-3.5 w-3.5" checked={!!safari.naturalist} onChange={(e) => setNaturalist(i, safari.session, e.target.checked)} />
+                          Naturalist
+                        </label>
+                        <label className="flex items-center gap-1 rounded-md bg-sand-50 px-1.5 py-0.5" title="Jeeps on this safari. Empty = enough for the group (6 guests per jeep).">
+                          Jeeps
+                          <input
+                            type="number"
+                            min={1}
+                            max={10}
+                            placeholder={String(autoJeeps)}
+                            className="tabular w-10 rounded border border-sand-300 bg-white px-1 py-0 text-right text-xs"
+                            value={safari.jeeps ?? ""}
+                            onChange={(e) => setJeeps(i, safari.session, e.target.value === "" ? null : Math.max(1, Math.min(10, Math.round(Number(e.target.value)))))}
+                            aria-label="Jeeps on this safari"
+                          />
+                        </label>
+                      </>
+                    );
+                    return (
+                      <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5">
+                        <Icon name="route" className="h-4 w-4 shrink-0 text-sand-500" />
+                        <label className="flex items-center gap-1.5 text-xs text-sand-600" title="One safari for the whole day (core or buffer), instead of morning and evening">
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5"
+                            checked={!!fullDay}
+                            onChange={(e) => {
+                              if (!e.target.checked) return setFullDay(i, "");
+                              setFullDay(i, closed(d.park_id!, "core", "full_day", d.date) ? "buffer" : "core");
+                            }}
+                          />
+                          Full day
+                        </label>
+                        {fullDay ? (
+                          <span className="flex flex-wrap items-center gap-1.5 text-xs text-sand-600">
+                            {(() => {
+                              const closedCore = closed(d.park_id!, "core", "full_day", d.date);
+                              const closedBuffer = closed(d.park_id!, "buffer", "full_day", d.date);
+                              const onClosed = (fullDay.zone === "core" && closedCore) || (fullDay.zone === "buffer" && closedBuffer);
+                              return (
+                                <select
+                                  className={`rounded-md border bg-white px-1.5 py-0.5 text-xs ${onClosed ? "border-error text-error" : "border-sand-300"}`}
+                                  value={fullDay.zone}
+                                  onChange={(e) => setFullDay(i, e.target.value as DaySafari["zone"])}
+                                  aria-label="Full-day safari zone"
+                                >
+                                  <option value="core">{closedCore ? "Core (closed this day)" : "Core"}</option>
+                                  <option value="buffer">{closedBuffer ? "Buffer (closed this day)" : "Buffer"}</option>
+                                </select>
+                              );
+                            })()}
+                            {extras(fullDay)}
                           </span>
-                        );
-                      })}
-                    </li>
-                  )}
+                        ) : (
+                          (["morning", "afternoon"] as const).map((session) => {
+                            const closedCore = closed(d.park_id!, "core", session, d.date);
+                            const closedBuffer = closed(d.park_id!, "buffer", session, d.date);
+                            const value = d.safaris.find((s) => s.session === session)?.zone ?? "";
+                            const onClosed = (value === "core" && closedCore) || (value === "buffer" && closedBuffer);
+                            const safari = d.safaris.find((s) => s.session === session);
+                            // Closed times are not offered at all (only shown if an older plan already has one).
+                            if (closedCore && closedBuffer && !value) {
+                              return (
+                                <span key={session} className="text-xs text-sand-400">
+                                  {session === "morning" ? "Morning" : "Evening"}: park closed
+                                </span>
+                              );
+                            }
+                            return (
+                              <span key={session} className="flex flex-wrap items-center gap-1.5 text-xs text-sand-600">
+                                <label className="flex items-center gap-1.5">
+                                  {session === "morning" ? "Morning" : "Evening"}
+                                  <select
+                                    className={`rounded-md border bg-white px-1.5 py-0.5 text-xs ${onClosed ? "border-error text-error" : "border-sand-300"}`}
+                                    value={value}
+                                    onChange={(e) => setSafari(i, session, e.target.value as "" | "core" | "buffer")}
+                                  >
+                                    <option value="">No safari</option>
+                                    {(!closedCore || value === "core") && <option value="core">{closedCore ? "Core (closed)" : "Core"}</option>}
+                                    {(!closedBuffer || value === "buffer") && <option value="buffer">{closedBuffer ? "Buffer (closed)" : "Buffer"}</option>}
+                                  </select>
+                                </label>
+                                {safari && extras(safari)}
+                              </span>
+                            );
+                          })
+                        )}
+                      </li>
+                    );
+                  })()}
                   {(d.items ?? []).map((it) => (
                     <li
                       key={it.id}
@@ -311,6 +465,22 @@ export function PlanStep({
                       )}
                       {it.addon_id ? (
                         <span className="tabular shrink-0 text-xs text-sand-600">{linePrice(d.date, it.title) !== undefined ? rupees(linePrice(d.date, it.title)!) : "-"}</span>
+                      ) : it.type === "flight" && it.flight ? (
+                        <label className="flex shrink-0 items-center gap-1 text-[11px] text-sand-500" title="Fare per person (typed, not live). Total = fare x guests.">
+                          <input
+                            type="number"
+                            min={0}
+                            placeholder="Fare pp"
+                            className="tabular w-20 rounded border border-sand-200 px-1.5 py-0.5 text-right text-xs"
+                            value={it.flight.fare_pp ?? ""}
+                            onChange={(e) => {
+                              const v = e.target.value === "" ? null : Math.max(0, Math.round(Number(e.target.value)));
+                              updateItem(i, it.id, { price: null, flight: { ...it.flight!, fare_pp: v } });
+                            }}
+                            aria-label="Fare per person"
+                          />
+                          pp
+                        </label>
                       ) : (
                         <input
                           type="number"
@@ -414,21 +584,28 @@ export function PlanStep({
                     <input className={ui.inputSm} placeholder="Flight no." value={flight.number} onChange={(e) => setFlight((f) => ({ ...f, number: e.target.value }))} aria-label="Flight number" />
                     <input className={ui.inputSm} type="time" value={flight.time} onChange={(e) => setFlight((f) => ({ ...f, time: e.target.value }))} aria-label="Departure time" />
                     <input className={ui.inputSm} placeholder="PNR (once booked)" value={flight.pnr} onChange={(e) => setFlight((f) => ({ ...f, pnr: e.target.value }))} aria-label="PNR" />
-                    <p className="col-span-2 text-[11px] text-sand-500">Without a PNR the guest sees: subject to availability and fares at the time of booking.</p>
+                    <input className={`${ui.inputSm} tabular`} type="number" min={0} placeholder="Fare per person, Rs" value={flight.fare} onChange={(e) => setFlight((f) => ({ ...f, fare: e.target.value }))} aria-label="Fare per person" />
+                    <input className={ui.inputSm} placeholder="Class, e.g. Economy" value={flight.cabin} onChange={(e) => setFlight((f) => ({ ...f, cabin: e.target.value }))} aria-label="Class" />
+                    <input className={`${ui.inputSm} col-span-2`} placeholder="Baggage" value={flight.baggage} onChange={(e) => setFlight((f) => ({ ...f, baggage: e.target.value }))} aria-label="Baggage" />
+                    <p className="col-span-2 text-[11px] text-sand-500">
+                      The fare is typed, not live: total = fare x {guests} guest{guests === 1 ? "" : "s"}, and it follows the guest count. Without a PNR the guest sees: subject to availability and fares at the time of booking.
+                    </p>
                   </div>
                 ) : (
                   <input className={ui.inputSm} placeholder="Name, e.g. Village walk, Taj Hotel Jabalpur" value={custom.title} onChange={(e) => setCustom((c) => ({ ...c, title: e.target.value }))} aria-label="Item name" />
                 )}
                 <input className={ui.inputSm} placeholder="Details for the guest (optional)" value={custom.detail} onChange={(e) => setCustom((c) => ({ ...c, detail: e.target.value }))} aria-label="Item details" />
-                <input
-                  className={`${ui.inputSm} tabular`}
-                  type="number"
-                  min={0}
-                  placeholder="Price in Rs, incl. tax (empty = no charge)"
-                  value={custom.price}
-                  onChange={(e) => setCustom((c) => ({ ...c, price: e.target.value }))}
-                  aria-label="Item price"
-                />
+                {custom.type !== "flight" && (
+                  <input
+                    className={`${ui.inputSm} tabular`}
+                    type="number"
+                    min={0}
+                    placeholder="Price in Rs, incl. tax (empty = no charge)"
+                    value={custom.price}
+                    onChange={(e) => setCustom((c) => ({ ...c, price: e.target.value }))}
+                    aria-label="Item price"
+                  />
+                )}
                 {(() => {
                   const item = customItem();
                   return (
@@ -445,7 +622,7 @@ export function PlanStep({
                           if (!item) return;
                           addItem(targetDay, item);
                           setCustom((c) => ({ ...c, title: "", detail: "", price: "" }));
-                          setFlight({ from: "", to: "", airline: "", number: "", time: "", pnr: "" });
+                          setFlight({ from: "", to: "", airline: "", number: "", time: "", pnr: "", fare: "", cabin: "Economy", baggage: FLIGHT_BAGGAGE });
                         }}
                       >
                         <Icon name="plus" className="h-4 w-4" />
@@ -461,9 +638,9 @@ export function PlanStep({
           </div>
 
           {/* ---------- discount, offers, markup, currency ---------- */}
-          <details className={`${ui.card} group`} open={!!plan.discount || plan.offer_ids.length > 0}>
+          <details className={`${ui.card} group`} open={!!plan.discount || plan.offer_ids.length > 0 || plan.currency !== "INR" || plan.gst?.mode === "consolidated"}>
             <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm font-semibold text-olive-800">
-              <span className="flex-1">Discount and offers</span>
+              <span className="flex-1">Discount, offers, currency and GST</span>
               {(plan.discount?.pct ?? 0) > 0 && <span className="rounded-full bg-olive-50 px-2 py-0.5 text-[11px] font-semibold text-olive-700">{plan.discount!.pct}% off</span>}
               {plan.offer_ids.length > 0 && <span className="rounded-full bg-olive-50 px-2 py-0.5 text-[11px] font-semibold text-olive-700">offer</span>}
               <Icon name="chevronLeft" className="h-4 w-4 -rotate-90 text-sand-500 transition group-open:rotate-90" />
@@ -568,11 +745,29 @@ export function PlanStep({
                 </label>
               </div>
               {plan.currency !== "INR" && (
-                <p className="text-xs text-sand-500">
-                  {ctx.pricing.settings.fx?.[plan.currency]
-                    ? `1 ${plan.currency} = Rs ${ctx.pricing.settings.fx[plan.currency]!.toLocaleString("en-IN", { maximumFractionDigits: 2 })}${ctx.pricing.settings.fx_source ? ` (${ctx.pricing.settings.fx_source})` : ""}`
-                    : `No ${plan.currency} rate available right now; quote in INR or set it in Sales settings.`}
-                </p>
+                <div className="space-y-1 rounded-lg bg-sand-50 p-2">
+                  <label className="flex items-center gap-2 text-xs text-sand-600">
+                    <span className="whitespace-nowrap font-semibold text-olive-800">Rate of exchange</span>
+                    <span className="whitespace-nowrap">1 {plan.currency} = Rs</span>
+                    <input
+                      className="tabular w-24 rounded-md border border-sand-300 bg-white px-2 py-1 text-right text-sm"
+                      type="number"
+                      min={0}
+                      step="any"
+                      placeholder={ctx.pricing.settings.fx?.[plan.currency] ? String(ctx.pricing.settings.fx[plan.currency]) : "e.g. 85"}
+                      value={plan.fx_rate ?? ""}
+                      onChange={(e) => setPlan((p) => ({ ...p, fx_rate: e.target.value === "" || !(Number(e.target.value) > 0) ? null : Number(e.target.value) }))}
+                      aria-label={`Rupees per 1 ${plan.currency}`}
+                    />
+                  </label>
+                  <p className="text-[11px] text-sand-500">
+                    {plan.fx_rate
+                      ? `Your rate is used for this quote${result?.grandInCurrency ? `: ${plan.currency} ${result.grandInCurrency.toLocaleString("en-GB", { maximumFractionDigits: 2 })}` : ""}.`
+                      : ctx.pricing.settings.fx?.[plan.currency]
+                        ? `Empty = ${ctx.pricing.settings.fx[plan.currency]!.toLocaleString("en-IN", { maximumFractionDigits: 2 })} (${ctx.pricing.settings.fx_source ?? "Sales settings"}). Type your own rate to fix it for this quote.`
+                        : `No ${plan.currency} rate available right now: type the rate.`}
+                  </p>
+                </div>
               )}
               <div className="grid grid-cols-[6.5rem_1fr] gap-2">
                 <label className="block">
@@ -598,6 +793,47 @@ export function PlanStep({
                     placeholder="e.g. Rounding off"
                   />
                 </label>
+              </div>
+
+              {/* GST: per service (each lodge's GST) or one rate on the whole package */}
+              <div className="space-y-2 border-t border-sand-100 pt-2">
+                <p className={ui.label}>GST</p>
+                <div className="grid grid-cols-2 gap-1 rounded-lg bg-sand-100 p-1 text-xs" role="radiogroup" aria-label="GST">
+                  {(["itemised", "consolidated"] as const).map((m) => {
+                    const on = (plan.gst?.mode ?? "itemised") === m;
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        onClick={() => setPlan((p) => ({ ...p, gst: m === "consolidated" ? { mode: "consolidated", pct: p.gst?.pct ?? 5 } : null }))}
+                        className={`rounded-md px-2 py-1.5 font-medium ${on ? "bg-white text-olive-800 shadow-card" : "text-sand-600 hover:text-olive-700"}`}
+                      >
+                        {m === "itemised" ? "Per service" : "One rate on the package"}
+                      </button>
+                    );
+                  })}
+                </div>
+                {plan.gst?.mode === "consolidated" && (
+                  <label className="flex items-center gap-2 text-xs text-sand-600">
+                    GST on the whole package
+                    <input
+                      className="tabular w-16 rounded-md border border-sand-300 px-2 py-1 text-right text-sm"
+                      type="number"
+                      min={0}
+                      max={28}
+                      step="any"
+                      value={plan.gst.pct}
+                      onChange={(e) => setPlan((p) => ({ ...p, gst: { mode: "consolidated", pct: Math.max(0, Math.min(28, Number(e.target.value) || 0)) } }))}
+                      aria-label="Package GST percent"
+                    />
+                    %
+                  </label>
+                )}
+                <p className="text-[11px] text-sand-500">
+                  One rate on the package: for payment to a single account, e.g. with outside hotels. Every service is taken before GST and one GST line is added on the total.
+                </p>
               </div>
             </div>
           </details>
@@ -626,6 +862,92 @@ export function PlanStep({
           )}
         </aside>
       </div>
+
+      {/* ---------- every rate with its GST, to check the quote and correct a price ---------- */}
+      {result && detail.length > 0 && (
+        <details className={`${ui.card} group`} open={editedCount > 0}>
+          <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2 px-4 py-3 text-sm font-semibold text-olive-800">
+            <span className="flex-1">Detailed price check (internal)</span>
+            {editedCount > 0 && <span className="rounded-full bg-gold-50 px-2 py-0.5 text-[11px] font-semibold text-olive-800 ring-1 ring-gold-200">{editedCount} corrected by hand</span>}
+            <Icon name="chevronLeft" className="h-4 w-4 -rotate-90 text-sand-500 transition group-open:rotate-90" />
+          </summary>
+          <div className="border-t border-sand-200">
+            <p className="px-4 py-2 text-xs text-sand-500">
+              Every rate in this quote with its GST %. If a rate is not right, type the correct amount (incl. GST) in the last column; it is used for this quote only. Fix master data for future quotes.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] text-left text-xs">
+                <thead>
+                  <tr className="bg-sand-100 font-semibold uppercase tracking-wide text-sand-500">
+                    {!plan.dateless && <th className="px-3 py-2">Date</th>}
+                    <th className="px-3 py-2">Service</th>
+                    <th className="px-3 py-2 text-right">Qty</th>
+                    <th className="px-3 py-2 text-right">Before GST</th>
+                    <th className="px-3 py-2 text-right">GST %</th>
+                    <th className="px-3 py-2 text-right">GST</th>
+                    <th className="px-3 py-2 text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detail.map((r, k) => (
+                    <tr key={`${r.lkey ?? r.label}-${k}`} className={`border-t border-sand-100 ${r.edited ? "bg-gold-50" : ""}`}>
+                      {!plan.dateless && <td className="whitespace-nowrap px-3 py-1.5 text-sand-500">{r.date ? fmtDate(r.date) : "-"}</td>}
+                      <td className="px-3 py-1.5 text-olive-800">
+                        {r.label}
+                        {r.manual && <span className="ml-1 text-[10px] font-semibold uppercase text-sand-500">typed</span>}
+                      </td>
+                      <td className="tabular px-3 py-1.5 text-right">{r.quantity}</td>
+                      <td className="tabular px-3 py-1.5 text-right">{rupees(r.net)}</td>
+                      <td className="tabular px-3 py-1.5 text-right">{r.gstPct != null ? `${r.gstPct}%` : "-"}</td>
+                      <td className="tabular px-3 py-1.5 text-right">{rupees(r.gst)}</td>
+                      <td className="px-3 py-1.5 text-right">
+                        {r.lkey && !r.manual ? (
+                          <span className="inline-flex items-center gap-1">
+                            <input
+                              key={`${r.lkey}-${r.amount}`}
+                              type="number"
+                              min={0}
+                              className={`tabular w-24 rounded border px-1.5 py-0.5 text-right text-xs ${r.edited ? "border-gold-400 bg-white font-semibold" : "border-sand-200"}`}
+                              defaultValue={r.amount}
+                              onBlur={(e) => {
+                                const v = Number(e.target.value);
+                                if (e.target.value === "" || !Number.isFinite(v)) return setLinePrice(r.lkey!, null);
+                                if (Math.round(v) !== r.amount) setLinePrice(r.lkey!, v);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                              }}
+                              aria-label={`Amount for ${r.label}`}
+                            />
+                            {r.edited && (
+                              <button type="button" className="rounded p-0.5 text-sand-500 hover:text-error" onClick={() => setLinePrice(r.lkey!, null)} title="Back to the master-data rate" aria-label="Undo the correction">
+                                <Icon name="x" className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="tabular">{rupees(r.amount)}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="border-t border-sand-300 font-semibold text-olive-800">
+                    <td className="px-3 py-2" colSpan={plan.dateless ? 5 : 6}>Total</td>
+                    <td className="tabular px-3 py-2 text-right">{rupees(result.totals.grand)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            {editedCount > 0 && (
+              <div className="px-4 py-2">
+                <button type="button" className={`${ui.btnGhost} ${ui.btnSm}`} onClick={() => setPlan((p) => ({ ...p, line_prices: {} }))}>
+                  Undo all corrections
+                </button>
+              </div>
+            )}
+          </div>
+        </details>
+      )}
     </div>
   );
 }

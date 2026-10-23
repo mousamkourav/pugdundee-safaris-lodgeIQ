@@ -81,8 +81,9 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
     rooms: plan.guest.rooms,
     source: plan.guest.source || null,
     agent_name: plan.guest.agent_name || null,
-    arrival_date: result?.arrival ?? (plan.stops.length ? plan.arrival_date : null),
-    departure_date: result?.departure ?? null,
+    // dates not fixed: no travel dates on the query (the plan keeps a placeholder for the day order)
+    arrival_date: plan.dateless ? null : result?.arrival ?? (plan.stops.length ? plan.arrival_date : null),
+    departure_date: plan.dateless ? null : result?.departure ?? null,
     parks: parkNames,
   };
   const version = {

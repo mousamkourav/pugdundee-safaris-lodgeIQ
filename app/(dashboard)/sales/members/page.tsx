@@ -11,7 +11,7 @@ export default async function SalesMembersPage() {
 
   const admin = createAdminClient();
   const [{ data: profiles }, { data: usersPage }, { data: queries }] = await Promise.all([
-    admin.from("profiles").select("id, full_name, role, status, phone").in("role", ["sales_member", "sales_admin", "super_admin", "senior_manager"]),
+    admin.from("profiles").select("id, full_name, role, status, phone, extra").in("role", ["sales_member", "sales_admin", "super_admin", "senior_manager"]),
     admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
     admin.from("sales_queries").select("assigned_to, status"),
   ]);
@@ -28,13 +28,14 @@ export default async function SalesMembersPage() {
     counts.set(q.assigned_to, c);
   }
 
-  const rows: MemberRow[] = ((profiles ?? []) as { id: string; full_name: string | null; role: string; status: string | null; phone: string | null }[]).map((p) => {
+  const rows: MemberRow[] = ((profiles ?? []) as { id: string; full_name: string | null; role: string; status: string | null; phone: string | null; extra: Record<string, unknown> | null }[]).map((p) => {
     const a = authById.get(p.id);
     return {
       id: p.id,
       name: p.full_name || a?.email || "Unnamed",
       email: a?.email ?? "",
       phone: p.phone ?? "",
+      emergencyId: typeof p.extra?.sales_emergency_contact_id === "string" ? (p.extra.sales_emergency_contact_id as string) : null,
       role: p.role,
       status: p.status === "disabled" ? "disabled" : "active",
       lastSignIn: a?.last_sign_in_at ?? null,
