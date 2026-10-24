@@ -85,9 +85,7 @@ export function PlanStep({
     }
     const groups = [...byName.entries()].map(([key, entries]) => {
       const shared = entries.length > 1 || entries.some((e) => !e.property_id);
-      const foreign = plan.guest.nationality === "foreign";
-      const rates = entries.map((e) => (foreign && e.rate_foreign != null ? e.rate_foreign : e.rate));
-      return { key, name: entries[0].name, entries, shared, lodgeId: shared ? null : entries[0].property_id, min: Math.min(...rates), max: Math.max(...rates), unit: entries[0].pricing_unit };
+      return { key, name: entries[0].name, entries, shared, lodgeId: shared ? null : entries[0].property_id, unit: entries[0].pricing_unit };
     });
     return groups
       .filter((g) => g.shared || (g.lodgeId && parkLodges.has(g.lodgeId)))
@@ -105,7 +103,19 @@ export function PlanStep({
       g.entries[0]
     );
   };
-  const linePrice = (date: string, title: string) => result?.lines.find((l) => l.date === date && l.kind === "addon" && l.description === title)?.amount;
+  // What one unit of an add-on costs on a day, as the costing works it out:
+  // that day's lodge's own price, the foreign rate for foreign guests, the yearly hike.
+  const hike = ctx.pricing.settings.hike ?? null;
+  const unitPrice = (a: (typeof ctx.pricing.addons)[number], dayIndex: number) => {
+    const foreign = plan.guest.nationality === "foreign";
+    const base = foreign && a.rate_foreign != null ? a.rate_foreign : a.rate;
+    const date = plan.days[dayIndex]?.date;
+    const pct = hike?.addons_pct && (plan.rate_basis ? plan.rate_basis.year === "next" : !!date && date >= hike.from && date <= hike.to) ? hike.addons_pct : 0;
+    return { rate: Math.round(base * (1 + pct / 100)), hike: pct, tax: Number(a.tax_pct) || 0 };
+  };
+  // The costing line for an add-on on a day (by the add-on itself, not its name).
+  const addonLine = (date: string, addonId: string) => result?.lines.find((l) => l.date === date && l.kind === "addon" && l.ref_id === addonId);
+  const UNIT_TEXT: Record<string, string> = { per_person: "per person", per_group: "per group", per_vehicle: "per jeep", per_room: "per room" };
 
   // ---- day edits
   const setDay = (i: number, fn: (d: PlanDay) => PlanDay) => setPlan((p) => ({ ...p, days: p.days.map((d, j) => (j === i ? fn(d) : d)) }));
@@ -158,8 +168,15 @@ export function PlanStep({
   function moveItem(id: string, from: number, to: number) {
     if (from === to) return;
     setPlan((p) => {
-      const it = p.days[from]?.items.find((x) => x.id === id);
-      if (!it) return p;
+      const found = p.days[from]?.items.find((x) => x.id === id);
+      if (!found) return p;
+      // an add-on moved to a day at another lodge takes that lodge's price
+      let it = found;
+      if (found.addon_id) {
+        const name = ctx.pricing.addons.find((a) => a.id === found.addon_id)?.name;
+        const g = name ? addonGroups.find((x) => x.key === normName(name)) : undefined;
+        if (g) it = { ...found, addon_id: addonFor(g, to).id };
+      }
       return { ...p, days: p.days.map((d, j) => (j === from ? { ...d, items: d.items.filter((x) => x.id !== id) } : j === to ? { ...d, items: [...d.items, it] } : d)) };
     });
   }
@@ -457,7 +474,17 @@ export function PlanStep({
                         </span>
                       )}
                       {it.addon_id ? (
-                        <span className="tabular shrink-0 text-xs text-sand-600">{linePrice(d.date, it.title) !== undefined ? rupees(linePrice(d.date, it.title)!) : "-"}</span>
+                        (() => {
+                          const l = addonLine(d.date, it.addon_id);
+                          if (!l) return <span className="tabular shrink-0 text-xs text-sand-600">-</span>;
+                          const how = `${l.quantity} x ${rupees(l.unit_price)}${l.tax_pct ? ` + ${l.tax_pct}% GST` : ""} = ${rupees(l.amount)}`;
+                          return (
+                            <span className="tabular shrink-0 text-right text-xs leading-tight text-sand-600" title={how}>
+                              {rupees(l.amount)}
+                              <span className="block text-[10px] text-sand-400">{l.quantity} x {rupees(l.unit_price)}{l.tax_pct ? " + GST" : ""}</span>
+                            </span>
+                          );
+                        })()
                       ) : it.type === "flight" && it.flight ? (
                         <label className="flex shrink-0 items-center gap-1 text-[11px] text-sand-500" title="Fare per person (typed, not live). Total = fare x guests.">
                           <input
@@ -534,6 +561,7 @@ export function PlanStep({
                 ) : (
                   <ul className="max-h-[440px] space-y-1.5 overflow-y-auto">
                     {addonGroups.map((g, k) => {
+                      const u = unitPrice(addonFor(g, targetDay), targetDay);
                       const header = k === 0 || addonGroups[k - 1].shared !== g.shared || addonGroups[k - 1].lodgeId !== g.lodgeId;
                       return (
                         <li key={g.key}>
@@ -550,7 +578,8 @@ export function PlanStep({
                             <span className="min-w-0 flex-1">
                               <span className="block truncate text-sm font-medium text-olive-800">{g.name}</span>
                               <span className="block truncate text-[11px] text-sand-500">
-                                {g.min === g.max ? rupees(g.min) : `from ${rupees(g.min)}`} {g.unit.replace("_", " ")} + GST
+                                {rupees(u.rate)} {UNIT_TEXT[g.unit] ?? g.unit.replace("_", " ")} {u.tax ? `+ ${u.tax}% GST` : "(no GST)"}
+                                {u.hike ? ` (incl. ${u.hike}% hike)` : ""}
                               </span>
                             </span>
                             <button type="button" className={`${ui.btnSecondary} ${ui.btnSm} !min-h-7 shrink-0 !px-2`} onClick={() => addItem(targetDay, addonItem(addonFor(g, targetDay)))}>

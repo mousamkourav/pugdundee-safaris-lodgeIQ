@@ -429,6 +429,12 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
   // ---------------- add-ons ----------------
   // Children 5 and over count as guests for "each extra guest" charges.
   const countable = trip.adults + trip.children.filter((a) => a >= 5).length;
+  // Per jeep add-ons (safari breakfast, safari lunch): one for each jeep the group
+  // takes that day (the jeeps set on the safaris), else enough jeeps for the group.
+  const jeepsOn = (date: ISODate | null) => {
+    const set = trip.safaris.filter((s) => s.date === date && s.vehicles).map((s) => s.vehicles!);
+    return set.length ? Math.max(...set) : Math.max(1, Math.ceil(guests / 6));
+  };
   for (const a of trip.addons ?? []) {
     const addon = data.addons.find((x) => x.id === a.addon_id && x.active);
     if (!addon) {
@@ -445,7 +451,13 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     const minGuests = addon.min_guests ?? 0;
     const qty =
       a.qty ??
-      (addon.pricing_unit === "per_person" ? Math.max(guests, minGuests) : addon.pricing_unit === "per_room" ? Math.max(1, totalRooms) : 1);
+      (addon.pricing_unit === "per_person"
+        ? Math.max(guests, minGuests)
+        : addon.pricing_unit === "per_room"
+          ? Math.max(1, totalRooms)
+          : addon.pricing_unit === "per_vehicle"
+            ? jeepsOn(a.date ?? null)
+            : 1);
     // Per group with some guests included (boat cruise: 2 guests, then Rs 1,500 each).
     const extraGuests = !tier && addon.pricing_unit === "per_group" && addon.included_guests != null && extraRate ? Math.max(0, countable - addon.included_guests) * qty : 0;
     // yearly hike: add-ons have one price list, so dates in the hike period get the % (dates not fixed: "next season")

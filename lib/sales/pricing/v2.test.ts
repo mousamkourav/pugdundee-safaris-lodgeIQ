@@ -162,3 +162,15 @@ test("yearly hike on add-ons: dates in the hike period get the add-ons %", () =>
   const free = priceTrip({ ...base, rate_basis: { season: "high", safari_days: "weekday", year: "next" } }, withAddon);
   assert.equal(free.totals.addon, 2200);
 });
+
+test("per jeep add-ons: one for each jeep that day, else enough jeeps for the group", () => {
+  const withAddon: PricingData = { ...data, addons: [{ id: "BF", name: "Safari breakfast", property_id: null, pricing_unit: "per_vehicle", rate: 1000, tax_pct: 18, active: true }] };
+  const line = (t: TripInput) => priceTrip(t, withAddon).lines.find((l) => l.kind === "addon")!;
+  const two: TripInput = { ...trip, adults: 2, children: [], transfers: [], safaris: [], addons: [{ addon_id: "BF", date: "2027-01-18" }] };
+  assert.deepEqual([line(two).quantity, line(two).amount], [1, 1180]);
+  const eight: TripInput = { ...two, adults: 8, stays: two.stays.map((s) => ({ ...s, rooms: 4 })) };
+  assert.equal(line(eight).quantity, 2);
+  const s0 = trip.safaris[0];
+  const set: TripInput = { ...two, adults: 4, safaris: [{ ...s0, date: "2027-01-18", vehicles: 3 }] };
+  assert.equal(line(set).quantity, 3);
+});
