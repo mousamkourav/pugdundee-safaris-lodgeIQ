@@ -66,6 +66,8 @@ export const closedAt = (ctx: BuilderContext, plan: Pick<Plan, "dateless">, park
 // Morning + afternoon in the core zone; if the core is closed for a session,
 // use the buffer zone when it has rates, otherwise drop that session.
 export function autoSafaris(ctx: BuilderContext, parkId: string, date: ISODate, dateless = false): { safaris: DaySafari[]; notes: string[] } {
+  // a city (Delhi, Agra...) or any place without safari rates: no safaris are planned there
+  if (!ctx.pricing.safariRates.some((r) => r.park_id === parkId && r.active !== false)) return { safaris: [], notes: [] };
   const safaris: DaySafari[] = [];
   const notes: string[] = [];
   const closureFor = (_: unknown, park: string, zone: string, session: string, d: ISODate) => closedAt(ctx, { dateless }, park, zone, session, d);
