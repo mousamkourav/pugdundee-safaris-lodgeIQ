@@ -1,4 +1,5 @@
 import { liveFx } from "@/lib/sales/fx";
+import { compileTariff, type CalendarRange, type RateCategory, type TariffRow } from "@/lib/sales/pricing/tariff";
 // Loads master data from Supabase in the shape the pricing engine expects.
 // Server-side only (uses the signed-in user's client; sales users can read
 // all sales_* master tables through RLS).
@@ -48,7 +49,7 @@ export async function loadPricingData(): Promise<{ data: PricingData; error: str
     return active ? base.eq("active", true) : base;
   };
 
-  const [props, rooms, rates, parks, closures, safaris, locs, transfers, addons, offers, settings] = await Promise.all([
+  const [props, rooms, rates, parks, closures, safaris, locs, transfers, addons, offers, settings, tariff, calendar, categories] = await Promise.all([
     q("sales_properties"),
     q("sales_room_categories"),
     q("sales_room_rates"),
@@ -57,9 +58,13 @@ export async function loadPricingData(): Promise<{ data: PricingData; error: str
     q("sales_safari_rates"),
     q("sales_locations"),
     q("sales_transfer_rates"),
-    q("sales_addons"),
+    q("sales_addons", false), // merged rows too, so saved quotes still price
     q("sales_offers"),
     supabase.from("sales_settings").select("data").eq("id", 1).maybeSingle(),
+    // the Pugdundee tariff (sales_tariff_v1.sql); if absent, lodge rates only
+    q("sales_tariff"),
+    q("sales_tariff_calendar"),
+    q("sales_rate_categories"),
   ]);
 
   const firstError = [props, rooms, rates, parks, closures, safaris, locs, transfers, addons, offers, settings].find((r) => r.error)?.error;
@@ -83,7 +88,38 @@ export async function loadPricingData(): Promise<{ data: PricingData; error: str
         extra_bed: !!r.extra_bed,
       })
     ),
-    roomRates: rows(rates).map(
+    roomRates: [
+      // the Pugdundee tariff, as per-room rates (their note tells the season)
+      ...compileTariff(
+        tariff.error ? [] : rows(tariff).map(
+          (r): TariffRow => ({
+            id: str(r.id),
+            rate_category_id: str(r.rate_category_id),
+            nationality: (["indian", "foreign"].includes(str(r.nationality)) ? str(r.nationality) : "all") as TariffRow["nationality"],
+            season: (["shoulder", "high", "peak"].includes(str(r.season)) ? str(r.season) : "all") as TariffRow["season"],
+            valid_from: date(r.valid_from)!,
+            valid_to: date(r.valid_to)!,
+            meal_plan: str(r.meal_plan) || "AP",
+            rate_single: numOrNull(r.rate_single),
+            rate_double: num(r.rate_double),
+            weekend_rate_single: numOrNull(r.weekend_rate_single),
+            weekend_rate_double: numOrNull(r.weekend_rate_double),
+            weekend_days: arr(r.weekend_days, (d) => num(d)),
+            extra_adult_pct: num(r.extra_adult_pct, 40),
+            child_free_under: num(r.child_free_under, 5),
+            child_5_12_pct: num(r.child_5_12_pct, 25),
+            child_13_17_pct: num(r.child_13_17_pct, 40),
+            min_nights: num(r.min_nights, 2),
+            tax_pct: num(r.tax_pct, 18),
+            rates_include_tax: r.rates_include_tax === true,
+          })
+        ),
+        calendar.error ? [] : rows(calendar).map((r): CalendarRange => ({ calendar: str(r.calendar) || "pugdundee", season: str(r.season) as CalendarRange["season"], date_from: date(r.date_from)!, date_to: date(r.date_to)! })),
+        categories.error ? [] : rows(categories).map((r): RateCategory => ({ id: str(r.id), calendar: str(r.calendar) || "pugdundee" })),
+        rows(rooms).map((r) => ({ id: str(r.id), rate_category_id: strOrNull(r.rate_category_id) }))
+      ),
+      // lodge-specific exceptions (Master data > Lodge exceptions) win over the tariff
+      ...rows(rates).map(
       (r): RoomRate => ({
         id: str(r.id),
         room_category_id: str(r.room_category_id),
@@ -105,8 +141,11 @@ export async function loadPricingData(): Promise<{ data: PricingData; error: str
         rates_include_tax: r.rates_include_tax !== false,
         active: true,
         notes: strOrNull(r.notes),
+        nationality: (["indian", "foreign"].includes(str(r.nationality)) ? str(r.nationality) : "all") as RoomRate["nationality"],
+        priority: 10,
       })
     ),
+    ],
     parks: rows(parks).map((r): Park => ({ id: str(r.id), name: str(r.name) })),
     closures: rows(closures).map(
       (r): ParkClosure => ({
@@ -161,8 +200,13 @@ export async function loadPricingData(): Promise<{ data: PricingData; error: str
         active: true,
       })
     ),
-    addons: rows(addons).map(
-      (r): Addon => ({
+    addons: (() => {
+      const all = rows(addons);
+      const tiersOf = (v: unknown) =>
+        Array.isArray(v)
+          ? v.map((t) => ({ max_guests: num((t as Row).max_guests), rate: num((t as Row).rate) })).filter((t) => t.max_guests > 0).sort((a, b) => a.max_guests - b.max_guests)
+          : null;
+      const toAddon = (r: Row, alias = false): Addon => ({
         id: str(r.id),
         name: str(r.name),
         property_id: strOrNull(r.property_id),
@@ -176,8 +220,26 @@ export async function loadPricingData(): Promise<{ data: PricingData; error: str
         extra_guest_rate: numOrNull(r.extra_guest_rate),
         unavailable_weekdays: arr(r.unavailable_weekdays, (d) => num(d)),
         availability_note: strOrNull(r.availability_note),
-      })
-    ),
+        // columns added in sales_tariff_v1.sql
+        rate_foreign: numOrNull(r.rate_foreign),
+        extra_guest_rate_foreign: numOrNull(r.extra_guest_rate_foreign),
+        max_guests: numOrNull(r.max_guests),
+        tiers: tiersOf(r.tiers),
+        tiers_foreign: tiersOf(r.tiers_foreign),
+        offered_at: arr(r.offered_at, (x) => str(x)),
+        ...(alias ? { alias: true } : {}),
+      });
+      const live = all.filter((r) => r.active !== false);
+      // a merged row keeps its id (saved quotes use it) but prices like the row it joined
+      const aliases = all
+        .filter((r) => r.active === false && r.merged_into)
+        .map((r) => {
+          const target = live.find((x) => x.id === r.merged_into);
+          return target ? { ...toAddon(target, true), id: str(r.id) } : null;
+        })
+        .filter((x): x is Addon => !!x);
+      return [...live.map((r) => toAddon(r)), ...aliases];
+    })(),
     offers: rows(offers).map(
       (r): Offer => ({
         id: str(r.id),
@@ -209,6 +271,9 @@ export async function loadPricingData(): Promise<{ data: PricingData; error: str
       },
       fx_source: live ? `ECB rate of ${live.date}` : "rate saved in Sales settings",
       fx_margin_pct: numOrNull(s.fx_margin_pct),
+      safari_weekend_ranges: Array.isArray(s.safari_weekend_ranges)
+        ? (s.safari_weekend_ranges as Row[]).map((x) => ({ from: str(x.from), to: str(x.to) })).filter((x) => /^\d{2}-\d{2}$/.test(x.from) && /^\d{2}-\d{2}$/.test(x.to))
+        : null,
       payment_slabs: Array.isArray(s.payment_slabs)
         ? (s.payment_slabs as Row[]).map((p): PaymentSlab => ({
             label: str(p.label) || "Instalment",

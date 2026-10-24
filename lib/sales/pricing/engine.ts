@@ -65,10 +65,25 @@ export function occupancy(adults: number, rooms: number): number[] {
   return Array.from({ length: r }, (_, i) => Math.floor(adults / r) + (i < adults % r ? 1 : 0));
 }
 
-function pickRoomRate(rates: RoomRate[], roomId: string, meal: string, night: ISODate) {
+// Rates for this guest's nationality (the Pugdundee tariff has Indian and foreign rates).
+const natOf = (r: RoomRate) => r.nationality ?? "all";
+const forNationality = (r: RoomRate, nationality: string) => natOf(r) === "all" || natOf(r) === nationality;
+
+function pickRoomRate(rates: RoomRate[], roomId: string, meal: string, night: ISODate, nationality: string) {
   return rates
-    .filter((r) => r.active && r.room_category_id === roomId && r.meal_plan === meal && inRange(night, r.valid_from, r.valid_to))
-    .sort((a, b) => (a.valid_from < b.valid_from ? 1 : -1))[0]; // most recent start wins
+    .filter((r) => r.active && r.room_category_id === roomId && r.meal_plan === meal && inRange(night, r.valid_from, r.valid_to) && forNationality(r, nationality))
+    .sort(
+      (a, b) =>
+        (b.priority ?? 1) - (a.priority ?? 1) || // a lodge exception, then a long weekend, then the season
+        (natOf(a) === "all" ? 1 : 0) - (natOf(b) === "all" ? 1 : 0) || // this nationality's rate before an "all guests" one
+        (a.valid_from < b.valid_from ? 1 : -1) // most recent start wins
+    )[0];
+}
+
+// Weekend safari rates also apply on these dates every year (e.g. 23 Dec - 2 Jan).
+function inWeekendRange(date: ISODate, ranges: { from: string; to: string }[] | null | undefined) {
+  const md = date.slice(5);
+  return (ranges ?? []).some((r) => (r.from <= r.to ? md >= r.from && md <= r.to : md >= r.from || md <= r.to));
 }
 
 // ---------------- seasons (itineraries without fixed dates) ----------------
@@ -95,8 +110,8 @@ export function seasonOfRate(r: RoomRate, siblings: RoomRate[]): Season {
 // A room rate for a season (no date): this year's rates that have not ended,
 // the season asked for, else the nearest season. "next" = next year's rates if
 // master data has them, else this year's (the hike is added by the caller).
-function pickRoomRateBySeason(rates: RoomRate[], roomId: string, meal: string, basis: RateBasis, today: ISODate, hike: RateHike | null | undefined) {
-  const all = rates.filter((r) => r.active && r.room_category_id === roomId && r.meal_plan === meal);
+function pickRoomRateBySeason(rates: RoomRate[], roomId: string, meal: string, basis: RateBasis, today: ISODate, hike: RateHike | null | undefined, nationality: string) {
+  const all = rates.filter((r) => r.active && r.room_category_id === roomId && r.meal_plan === meal && forNationality(r, nationality));
   const live = all.filter((r) => r.valid_to >= today);
   const nextYear = basis.year === "next" && hike ? live.filter((r) => r.valid_from >= hike.from) : [];
   const pool = nextYear.length ? nextYear : live.filter((r) => !hike || basis.year !== "next" || r.valid_from < hike.from);
@@ -219,13 +234,13 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
       let rate: RoomRate | undefined;
       let hikePct = 0;
       if (basis) {
-        const found = pickRoomRateBySeason(data.roomRates, stay.room_category_id, stay.meal_plan, basis, trip.booking_date, hike);
+        const found = pickRoomRateBySeason(data.roomRates, stay.room_category_id, stay.meal_plan, basis, trip.booking_date, hike, trip.nationality);
         rate = found.rate;
         if (rate && basis.year === "next" && hike && !found.nextYearFound) hikePct = hike.hotels_pct;
       } else {
-        rate = pickRoomRate(data.roomRates, stay.room_category_id, stay.meal_plan, night);
+        rate = pickRoomRate(data.roomRates, stay.room_category_id, stay.meal_plan, night, trip.nationality);
         if (!rate && hike && inRange(night, hike.from, hike.to)) {
-          rate = pickRoomRate(data.roomRates, stay.room_category_id, stay.meal_plan, addYears(night, -1));
+          rate = pickRoomRate(data.roomRates, stay.room_category_id, stay.meal_plan, addYears(night, -1), trip.nationality);
           if (rate) hikePct = hike.hotels_pct;
         }
       }
@@ -333,7 +348,9 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
       lines.push({ kind: "safari", date: s.date, description: where, quantity: 0, unit_price: 0, amount: 0, tax: 0, property_id: billTo, ref_id: s.park_id, missing: true, key });
       continue;
     }
-    const weekend = isWeekend(rate.weekend_days, s.date);
+    // weekend safari rates also on the festive dates in settings (23 Dec - 2 Jan), when dates are fixed
+    const festive = !basis && rate.weekend_days.length > 0 && inWeekendRange(s.date, data.settings.safari_weekend_ranges);
+    const weekend = isWeekend(rate.weekend_days, s.date) || festive;
     const unit = withHike(weekend && rate.weekend_rate != null ? rate.weekend_rate : rate.weekday_rate, hikePct);
     const vehicles = s.vehicles ?? Math.max(1, Math.ceil(guests / Math.max(1, rate.max_pax)));
     if (vehicles * rate.max_pax < guests && rate.pricing_unit !== "per_seat") warnings.push(`${where}: ${guests} guests need more than ${vehicles} jeep${vehicles === 1 ? "" : "s"} (${rate.max_pax} per jeep).`);
@@ -418,18 +435,25 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
       errors.push("An add-on in this trip no longer exists or is inactive.");
       continue;
     }
+    const foreign = trip.nationality === "foreign";
+    const unitRate = foreign && addon.rate_foreign != null ? addon.rate_foreign : addon.rate;
+    const extraRate = foreign && addon.extra_guest_rate_foreign != null ? addon.extra_guest_rate_foreign : addon.extra_guest_rate;
+    // per group, priced by group size (boat safari: 2 / 4 / 6 guests)
+    const tiers = addon.pricing_unit === "per_group" ? (foreign ? addon.tiers_foreign ?? addon.tiers : addon.tiers) ?? null : null;
+    const tier = tiers?.length ? tiers.find((t) => countable <= t.max_guests) ?? tiers[tiers.length - 1] : null;
+    if (addon.max_guests && countable > addon.max_guests) warnings.push(`${addon.name} takes up to ${addon.max_guests} guests; this group has ${countable}.`);
     const minGuests = addon.min_guests ?? 0;
     const qty =
       a.qty ??
       (addon.pricing_unit === "per_person" ? Math.max(guests, minGuests) : addon.pricing_unit === "per_room" ? Math.max(1, totalRooms) : 1);
     // Per group with some guests included (boat cruise: 2 guests, then Rs 1,500 each).
-    const extraGuests = addon.pricing_unit === "per_group" && addon.included_guests != null && addon.extra_guest_rate ? Math.max(0, countable - addon.included_guests) * qty : 0;
-    const base = addon.rate * qty + extraGuests * (addon.extra_guest_rate ?? 0);
+    const extraGuests = !tier && addon.pricing_unit === "per_group" && addon.included_guests != null && extraRate ? Math.max(0, countable - addon.included_guests) * qty : 0;
+    const base = (tier ? tier.rate : unitRate) * qty + extraGuests * (extraRate ?? 0);
     const { amount, tax } = withTax(base, addon.tax_pct, false);
     let description = addon.name;
     if (extraGuests) description += ` (+${extraGuests} extra guest${extraGuests === 1 ? "" : "s"})`;
     else if (addon.pricing_unit === "per_person" && a.qty == null && minGuests > guests) description += ` (minimum ${minGuests} guests)`;
-    lines.push({ kind: "addon", date: a.date ?? null, description, quantity: qty, unit_price: addon.rate, amount, tax, tax_pct: addon.tax_pct, property_id: addon.property_id ?? (a.date ? stayOn(a.date)?.property_id ?? null : null), ref_id: addon.id });
+    lines.push({ kind: "addon", date: a.date ?? null, description, quantity: qty, unit_price: tier ? tier.rate : unitRate, amount, tax, tax_pct: addon.tax_pct, property_id: addon.property_id ?? (a.date ? stayOn(a.date)?.property_id ?? null : null), ref_id: addon.id });
     if (a.date && !basis && (addon.unavailable_weekdays ?? []).includes(weekday(a.date))) {
       warnings.push(`${addon.name} on ${dayName(a.date)} ${readableDate(a.date)}: ${addon.availability_note || `not available on ${dayName(a.date)}s`}.`);
     } else if (basis && addon.availability_note) {

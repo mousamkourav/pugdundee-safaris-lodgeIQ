@@ -48,6 +48,8 @@ export interface RoomRate {
   rates_include_tax: boolean;
   active: boolean;
   notes?: string | null; // "Shoulder.", "High.", "Peak - Diwali..." (tells the season)
+  nationality?: "all" | "indian" | "foreign"; // from the Pugdundee tariff; lodge exceptions are "all" unless set
+  priority?: number; // a long weekend (3) beats its season (2), which beats a year-round rate (1); exceptions 10
 }
 
 export interface Park {
@@ -124,6 +126,13 @@ export interface Addon {
   extra_guest_rate?: number | null; // ...and each further guest (adults and children 5+) pays this
   unavailable_weekdays?: number[]; // 0 = Sunday; a warning if added on one of these days
   availability_note?: string | null; // e.g. "Closed on Wednesday evenings"
+  rate_foreign?: number | null; // price for foreign nationals, when different
+  extra_guest_rate_foreign?: number | null;
+  max_guests?: number | null;
+  tiers?: { max_guests: number; rate: number }[] | null; // per group, priced by group size
+  tiers_foreign?: { max_guests: number; rate: number }[] | null;
+  offered_at?: string[]; // a Pugdundee-wide experience: the lodges that offer it (empty = all)
+  alias?: boolean; // an older row merged into another: kept so saved quotes still price, never listed
 }
 
 // A yearly increase applied to last year's rates for dates the master data
@@ -168,6 +177,7 @@ export interface PricingSettings {
   fx?: Partial<Record<"USD" | "EUR" | "GBP" | "AUD", number | null>> | null; // rupees per 1 unit
   fx_source?: string | null; // e.g. "ECB rate of 21 Oct 2026"
   fx_margin_pct?: number | null; // cushion against rate moves, taken off the rate
+  safari_weekend_ranges?: { from: string; to: string }[] | null; // "MM-DD": weekend safari rates on these dates too
   payment_slabs?: PaymentSlab[] | null;
   per_person_basis?: "guests" | "adults" | null; // default "guests"
   hike?: RateHike | null;

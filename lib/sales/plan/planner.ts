@@ -124,11 +124,16 @@ export function buildDays(plan: Plan, ctx: BuilderContext): PlanDay[] {
 export function findAddon(ctx: BuilderContext, propertyId: string, keyword: string, nationality?: "indian" | "foreign") {
   const words = keyword.toLowerCase().replace(/-/g, " ").split(/\s+/);
   const norm = (s: string) => ` ${s.toLowerCase().replace(/[^a-z0-9]+/g, " ")} `;
-  const matches = ctx.pricing.addons.filter((a) => a.active !== false && words.every((w) => norm(a.name).includes(` ${w}`)));
+  const matches = ctx.pricing.addons.filter((a) => a.active !== false && !a.alias && words.every((w) => norm(a.name).includes(` ${w}`)));
   // Indian / foreign versions (boat safari at Denwa): the guest's nationality first, then the cheapest.
   const natScore = (name: string) => (!nationality || !/\((indian|foreign)/i.test(name) ? 1 : new RegExp(`\\(${nationality}`, "i").test(name) ? 0 : 2);
   const pick = (xs: typeof matches) => xs.sort((a, b) => natScore(a.name) - natScore(b.name) || a.rate - b.rate)[0];
-  return pick(matches.filter((a) => a.property_id === propertyId)) ?? pick(matches.filter((a) => !a.property_id)) ?? null;
+  return (
+    pick(matches.filter((a) => a.property_id === propertyId)) ??
+    // a Pugdundee-wide experience, if this lodge offers it (or it is offered everywhere)
+    pick(matches.filter((a) => !a.property_id && (!a.offered_at?.length || a.offered_at.includes(propertyId)))) ??
+    null
+  );
 }
 
 // A lodge's own experiences (only at that lodge): not meals, transfers, supplements,
@@ -137,7 +142,7 @@ const NOT_SPECIAL = /breakfast|lunch|dinner with|packed meal|meal|supplement|tra
 export function lodgeSpecials(ctx: BuilderContext, propertyId: string, nationality?: "indian" | "foreign") {
   const base = (n: string) => n.toLowerCase().replace(/\((indian|foreign)[^)]*\)/g, "").replace(/[^a-z0-9]+/g, " ").trim();
   const shared = new Set(ctx.pricing.addons.filter((a) => a.property_id && a.property_id !== propertyId).map((a) => base(a.name)));
-  const own = ctx.pricing.addons.filter((a) => a.active !== false && a.property_id === propertyId && !NOT_SPECIAL.test(a.name) && !shared.has(base(a.name)));
+  const own = ctx.pricing.addons.filter((a) => a.active !== false && !a.alias && a.property_id === propertyId && !NOT_SPECIAL.test(a.name) && !shared.has(base(a.name)));
   const byBase = new Map<string, (typeof own)[number]>();
   for (const a of own) {
     const k = base(a.name);

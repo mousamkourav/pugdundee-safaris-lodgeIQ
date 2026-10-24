@@ -33,8 +33,84 @@ const notes: FieldDef = { name: "notes", label: "Notes", type: "textarea", wide:
 const taxPct: FieldDef = { name: "tax_pct", label: "Tax %", type: "number", empty: 0 };
 const validFrom: FieldDef = { name: "valid_from", label: "Valid from", type: "date", required: true };
 const validTo: FieldDef = { name: "valid_to", label: "Valid to", type: "date", required: true };
+const RATE_CATEGORY: RefSpec = { table: "sales_rate_categories", select: "id, name", order: "sort", label: ["name"] };
+const NATIONALITY = opts([["indian", "Indian nationals"], ["foreign", "Foreign nationals"], ["all", "All guests"]]);
+const TARIFF_SEASON = opts([["all", "All year (one rate)"], ["shoulder", "Shoulder"], ["high", "High"], ["peak", "Peak (incl. long weekends)"]]);
 
 export const ENTITIES: EntityDef[] = [
+  // ---------------------------- Pugdundee tariff ----------------------------
+  {
+    key: "tariff",
+    table: "sales_tariff",
+    title: "Room tariff",
+    singular: "tariff rate",
+    group: "Pugdundee tariff",
+    icon: "receipt",
+    description: "One rate for every lodge's rooms of a category (Cottage, Tree House...), by nationality and season. Change it here once; every lodge follows.",
+    fields: [
+      { name: "rate_category_id", label: "Category", type: "ref", ref: RATE_CATEGORY, required: true },
+      { name: "nationality", label: "Guests", type: "select", required: true, initial: "foreign", options: NATIONALITY },
+      { name: "season", label: "Season", type: "select", required: true, initial: "all", options: TARIFF_SEASON, help: "Seasons follow the Season calendar. Peak includes the long weekends." },
+      validFrom,
+      validTo,
+      { name: "rate_double", label: "Double, per room per night", type: "money", required: true },
+      { name: "rate_single", label: "Single, per room per night", type: "money" },
+      { name: "weekend_rate_double", label: "Weekend double (optional)", type: "money", help: "Only for rates that differ at weekends, e.g. Ken River." },
+      { name: "weekend_rate_single", label: "Weekend single (optional)", type: "money" },
+      { name: "meal_plan", label: "Meal plan", type: "select", required: true, options: MEAL, initial: "AP" },
+      { name: "extra_adult_pct", label: "Extra adult, % of double", type: "number", empty: 40, initial: 40 },
+      { name: "child_free_under", label: "Children stay free under (age)", type: "int", empty: 5, initial: 5 },
+      { name: "child_5_12_pct", label: "Children 5-12, % of double", type: "number", empty: 25, initial: 25 },
+      { name: "child_13_17_pct", label: "Children 13-17, % of double", type: "number", empty: 40, initial: 40 },
+      { name: "min_nights", label: "Minimum nights", type: "int", empty: 2, initial: 2 },
+      { name: "tax_pct", label: "GST %", type: "number", empty: 18, initial: 18 },
+      { name: "rates_include_tax", label: "Rates include GST", type: "bool" },
+      { name: "notes", label: "Notes", type: "textarea", wide: true },
+      active,
+    ],
+    list: ["rate_category_id", "nationality", "season", "valid_from", "valid_to", "rate_double", "rate_single", "active"],
+    filters: ["rate_category_id", "nationality", "season"],
+    order: [{ column: "valid_from", ascending: true }],
+  },
+  {
+    key: "tariff-calendar",
+    table: "sales_tariff_calendar",
+    title: "Season calendar",
+    singular: "season dates",
+    group: "Pugdundee tariff",
+    icon: "calendar",
+    description: "Which dates are Shoulder, High and Peak. Long weekends (Dussehra, Diwali, Holi, Christmas-New Year) are Peak and win over the season around them.",
+    fields: [
+      { name: "calendar", label: "Calendar", type: "select", required: true, initial: "pugdundee", options: opts([["pugdundee", "Pugdundee lodges"], ["krl", "Ken River Lodge (long weekends)"]]) },
+      { name: "season", label: "Season", type: "select", required: true, initial: "peak", options: opts([["shoulder", "Shoulder"], ["high", "High"], ["peak", "Peak / long weekend"]]) },
+      { name: "date_from", label: "From", type: "date", required: true },
+      { name: "date_to", label: "To", type: "date", required: true },
+      { name: "label", label: "Label", type: "text", placeholder: "e.g. Diwali long weekend" },
+      active,
+    ],
+    list: ["calendar", "season", "date_from", "date_to", "label", "active"],
+    filters: ["calendar", "season"],
+    order: [{ column: "date_from", ascending: true }],
+  },
+  {
+    key: "rate-categories",
+    table: "sales_rate_categories",
+    title: "Tariff categories",
+    singular: "category",
+    group: "Pugdundee tariff",
+    icon: "list",
+    description: "The room categories the tariff is set by. Each lodge's room type points to one (Master data > Room categories).",
+    fields: [
+      { name: "name", label: "Name", type: "text", required: true, placeholder: "e.g. Tree House" },
+      { name: "code", label: "Code", type: "text", required: true, placeholder: "e.g. treehouse" },
+      { name: "calendar", label: "Season calendar", type: "select", required: true, initial: "pugdundee", options: opts([["pugdundee", "Pugdundee lodges"], ["krl", "Ken River Lodge"]]) },
+      sort,
+      active,
+    ],
+    list: ["name", "calendar", "sort", "active"],
+    order: [{ column: "sort", ascending: true }],
+  },
+
   // ------------------------------ Places ------------------------------
   {
     key: "parks",
@@ -149,6 +225,7 @@ export const ENTITIES: EntityDef[] = [
     fields: [
       { name: "property_id", label: "Lodge / hotel", type: "ref", ref: PROPERTY, required: true },
       { name: "name", label: "Room name", type: "text", required: true, placeholder: "e.g. AC Cottage" },
+      { name: "rate_category_id", label: "Tariff category", type: "ref", ref: RATE_CATEGORY, help: "The Pugdundee tariff this room is priced on (Cottage, Tree House...)." },
       { name: "description", label: "Description", type: "textarea", wide: true },
       { name: "max_adults", label: "Max adults", type: "int", empty: 2, initial: 2 },
       { name: "max_children", label: "Max children", type: "int", empty: 1, initial: 1 },
@@ -159,7 +236,7 @@ export const ENTITIES: EntityDef[] = [
       sort,
       active,
     ],
-    list: ["property_id", "name", "max_adults", "max_children", "room_count", "active"],
+    list: ["property_id", "name", "rate_category_id", "max_adults", "max_children", "active"],
     filters: ["property_id"],
     order: [{ column: "sort", ascending: true }, { column: "name", ascending: true }],
     deleteWarning: "Deleting a room category also deletes its rates.",
@@ -185,16 +262,17 @@ export const ENTITIES: EntityDef[] = [
   {
     key: "room-rates",
     table: "sales_room_rates",
-    title: "Room rates",
-    singular: "room rate",
+    title: "Lodge exceptions (room rates)",
+    singular: "lodge exception",
     group: "Stay",
     icon: "receipt",
-    description: "Per room per night, by date range and meal plan.",
+    description: "Only for a rate that differs from the Pugdundee tariff at one lodge. It wins over the tariff on its dates. Normally empty.",
     fields: [
       { name: "room_category_id", label: "Room", type: "ref", ref: ROOM, required: true },
       { name: "season_id", label: "Season label", type: "ref", ref: SEASON, help: "Optional; the dates below are what the pricing uses." },
       validFrom,
       validTo,
+      { name: "nationality", label: "Guests", type: "select", required: true, initial: "all", options: NATIONALITY },
       { name: "meal_plan", label: "Meal plan", type: "select", required: true, options: MEAL, initial: "AP" },
       { name: "rate_double", label: "Double occupancy rate", type: "money", required: true, help: "Per room per night." },
       { name: "rate_single", label: "Single occupancy rate", type: "money" },
@@ -308,16 +386,19 @@ export const ENTITIES: EntityDef[] = [
       { name: "property_id", label: "Lodge / hotel", type: "ref", ref: PROPERTY, help: "Optional." },
       { name: "park_id", label: "Park", type: "ref", ref: PARK, help: "Optional." },
       { name: "pricing_unit", label: "Priced", type: "select", required: true, initial: "per_person", options: opts([["per_person", "Per person"], ["per_group", "Per group"], ["per_vehicle", "Per vehicle"], ["per_room", "Per room"]]) },
-      { name: "rate", label: "Rate", type: "money", required: true },
+      { name: "rate", label: "Rate (Indian nationals, or everyone)", type: "money", required: true },
+      { name: "rate_foreign", label: "Rate for foreign nationals", type: "money", help: "Leave empty when it is the same." },
       taxPct,
       { name: "min_guests", label: "Minimum guests charged", type: "int", help: "Per person only: charged for at least this many, e.g. 2 for a walking safari (min 2 guests)." },
       { name: "included_guests", label: "Guests included in the rate", type: "int", help: "Per group only: e.g. 2 for a boat cruise priced for 2 guests." },
       { name: "extra_guest_rate", label: "Each extra guest", type: "money", help: "Per group only: charged for each guest over the included ones (adults and children 5 and over)." },
+      { name: "extra_guest_rate_foreign", label: "Each extra guest (foreign)", type: "money", help: "Leave empty when it is the same." },
+      { name: "max_guests", label: "Maximum guests", type: "int", help: "A warning if the group is larger, e.g. 8 for the Tawa cruise." },
       { name: "unavailable_weekdays", label: "Not available on", type: "weekdays", help: "A warning is shown if it is added on one of these days." },
       { name: "availability_note", label: "Availability note", type: "text", placeholder: "e.g. Closed on Wednesday evenings", help: "Shown with the warning." },
       active,
     ],
-    list: ["name", "property_id", "park_id", "pricing_unit", "rate", "active"],
+    list: ["name", "property_id", "pricing_unit", "rate", "rate_foreign", "active"],
     order: [{ column: "name", ascending: true }],
   },
 
@@ -454,7 +535,7 @@ export const ENTITIES: EntityDef[] = [
   },
 ];
 
-export const ENTITY_GROUPS = ["Places", "Stay", "Safaris & travel", "Commercial", "Content", "AI assistant"];
+export const ENTITY_GROUPS = ["Pugdundee tariff", "Places", "Stay", "Safaris & travel", "Commercial", "Content", "AI assistant"];
 
 export function getEntity(key: string) {
   return ENTITIES.find((e) => e.key === key) ?? null;

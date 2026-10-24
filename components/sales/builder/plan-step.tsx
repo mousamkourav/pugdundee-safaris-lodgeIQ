@@ -71,13 +71,16 @@ export function PlanStep({
   const addonGroups = (() => {
     const byName = new Map<string, typeof ctx.pricing.addons>();
     for (const a of ctx.pricing.addons) {
-      if (a.active === false || /^accompanying naturalist/i.test(a.name.trim())) continue;
+      if (a.active === false || a.alias || /^accompanying naturalist/i.test(a.name.trim())) continue;
+      // a Pugdundee-wide experience offered only at some lodges: hidden if none of them is in this trip
+      if (!a.property_id && a.offered_at?.length && !a.offered_at.some((id) => parkLodges.has(id))) continue;
       const k = normName(a.name);
       byName.set(k, [...(byName.get(k) ?? []), a]);
     }
     const groups = [...byName.entries()].map(([key, entries]) => {
       const shared = entries.length > 1 || entries.some((e) => !e.property_id);
-      const rates = entries.map((e) => e.rate);
+      const foreign = plan.guest.nationality === "foreign";
+      const rates = entries.map((e) => (foreign && e.rate_foreign != null ? e.rate_foreign : e.rate));
       return { key, name: entries[0].name, entries, shared, lodgeId: shared ? null : entries[0].property_id, min: Math.min(...rates), max: Math.max(...rates), unit: entries[0].pricing_unit };
     });
     return groups
@@ -89,7 +92,12 @@ export function PlanStep({
   // The add-on for a given day: that day's lodge's own, else the general one, else any.
   const addonFor = (g: AddonGroup, dayIndex: number) => {
     const lodge = plan.days[dayIndex]?.property_id ?? null;
-    return g.entries.find((e) => e.property_id === lodge) ?? g.entries.find((e) => !e.property_id) ?? g.entries[0];
+    return (
+      g.entries.find((e) => e.property_id === lodge) ??
+      g.entries.find((e) => !e.property_id && (!e.offered_at?.length || (lodge && e.offered_at.includes(lodge)))) ??
+      g.entries.find((e) => !e.property_id) ??
+      g.entries[0]
+    );
   };
   const linePrice = (date: string, title: string) => result?.lines.find((l) => l.date === date && l.kind === "addon" && l.description === title)?.amount;
 
@@ -546,7 +554,7 @@ export function PlanStep({
                         <li key={g.key}>
                           {header && (
                             <p className="mb-1 mt-2 text-[10px] font-bold uppercase tracking-wide text-sand-500 first:mt-0">
-                              {g.shared ? "Pugdundee experiences (all lodges)" : `Only at ${lodgeName(g.lodgeId)}`}
+                              {g.shared ? "Pugdundee experiences" : `Only at ${lodgeName(g.lodgeId)}`}
                             </p>
                           )}
                           <div
