@@ -165,7 +165,7 @@ export function FinalDraft({
                         {d.items.map((it) => (
                           <li key={it.id}>
                             <span className="font-medium text-olive-800">{it.title}</span>
-                            {it.type === "flight" && <span className="text-sand-600"> - {flightSummary(it.flight) || "subject to availability and fares at the time of booking"}</span>}
+                            {it.type === "flight" && flightSummary(it.flight) && <span className="text-sand-600"> - {flightSummary(it.flight)}</span>}
                             {it.detail && <span className="text-sand-600"> - {it.detail}</span>}
                           </li>
                         ))}

@@ -26,11 +26,11 @@ export const SETTINGS_FIELDS: (FieldDef & { path: string[] })[] = [
   {
     name: "direct_guest_contacts",
     path: ["guest_page", "direct_contacts"],
-    label: "Direct guests: contacts on the itinerary",
+    label: "Emergency contact on the itinerary",
     type: "textarea",
     wide: true,
     initial: DIRECT_CONTACTS_DEFAULT.join("\n"),
-    help: "One email or phone number per line. Indian (domestic) guests see these at the bottom of their itinerary instead of an emergency contact.",
+    help: "One email or phone number per line; phone numbers next to each other share a line. Shown under Emergency contact at the bottom of every guest itinerary and PDF.",
   },
   { name: "whatsapp_number", path: ["guest_page", "whatsapp_number"], label: "WhatsApp number (guest page button)", type: "text", initial: WHATSAPP_DEFAULT.number, help: "With country code, digits only, e.g. 919810402034." },
   { name: "whatsapp_text", path: ["guest_page", "whatsapp_text"], label: "WhatsApp message, filled in for the guest", type: "text", wide: true, initial: WHATSAPP_DEFAULT.text },

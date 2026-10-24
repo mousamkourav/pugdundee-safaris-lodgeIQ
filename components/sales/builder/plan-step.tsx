@@ -453,7 +453,7 @@ export function PlanStep({
                       />
                       {it.type === "flight" && (
                         <span className="hidden max-w-[40%] truncate text-[11px] text-sand-500 sm:inline" title={flightSummary(it.flight)}>
-                          {flightSummary(it.flight) || "Subject to availability"}
+                          {flightSummary(it.flight)}
                         </span>
                       )}
                       {it.addon_id ? (
@@ -621,7 +621,7 @@ export function PlanStep({
                     <input className={ui.inputSm} placeholder="Class, e.g. Economy" value={flight.cabin} onChange={(e) => setFlight((f) => ({ ...f, cabin: e.target.value }))} aria-label="Class" />
                     <input className={`${ui.inputSm} col-span-2`} placeholder="Baggage" value={flight.baggage} onChange={(e) => setFlight((f) => ({ ...f, baggage: e.target.value }))} aria-label="Baggage" />
                     <p className="col-span-2 text-[11px] text-sand-500">
-                      The fare is typed, not live: total = fare x {guests} guest{guests === 1 ? "" : "s"}, and it follows the guest count. Without a PNR the guest sees: subject to availability and fares at the time of booking.
+                      The fare is typed, not live: total = fare x {guests} guest{guests === 1 ? "" : "s"}, and it follows the guest count. The guest sees the flight on its own, just before this day.
                     </p>
                   </div>
                 ) : (

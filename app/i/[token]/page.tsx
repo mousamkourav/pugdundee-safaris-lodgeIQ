@@ -65,6 +65,18 @@ function Line({ name, className = "h-4 w-4" }: { name: keyof typeof PATHS; class
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
+// Contacts one per line, but phone numbers next to each other share a line:
+// "+91-11-40146400, +91-11-40132103".
+function contactLines(contacts: string[]): string[][] {
+  const out: string[][] = [];
+  for (const c of contacts) {
+    const last = out[out.length - 1];
+    if (!/@/.test(c) && last && !/@/.test(last[0])) last.push(c);
+    else out.push([c]);
+  }
+  return out;
+}
+
 // Pugdundee Safaris on the web (footer icons).
 const SOCIAL = [
   { label: "Pugdundee Safaris website", href: "https://www.pugdundeesafaris.com/", path: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm6.9 6h-3a15.7 15.7 0 0 0-1.4-3.6A8 8 0 0 1 18.9 8zM12 4c.8 1.2 1.5 2.5 1.9 4h-3.8c.4-1.5 1.1-2.8 1.9-4zM4.3 14a8 8 0 0 1 0-4h3.4a16.5 16.5 0 0 0 0 4H4.3zm.8 2h3a15.7 15.7 0 0 0 1.4 3.6A8 8 0 0 1 5.1 16zm3-8h-3a8 8 0 0 1 4.4-3.6C8.9 5.5 8.4 6.7 8.1 8zM12 20c-.8-1.2-1.5-2.5-1.9-4h3.8c-.4 1.5-1.1 2.8-1.9 4zm2.3-6H9.7a14.7 14.7 0 0 1 0-4h4.6a14.7 14.7 0 0 1 0 4zm.2 5.6c.6-1.1 1.1-2.3 1.4-3.6h3a8 8 0 0 1-4.4 3.6zm1.8-5.6a16.5 16.5 0 0 0 0-4h3.4a8 8 0 0 1 0 4h-3.4z" },
@@ -203,9 +215,34 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
             <ol className="mt-8 space-y-10">
               {plan.days.map((d, i) => {
                 const lodge = d.property_id && firstDayAt.get(d.property_id) === i ? view.lodges.find((l) => l.id === d.property_id) : null;
-                const items = (d.items ?? []).filter((it) => it.type !== "note" || it.title);
+                const items = (d.items ?? []).filter((it) => it.type !== "flight" && (it.type !== "note" || it.title));
+                // flights travel between the day before and this day: shown on their own, before the day
+                const flights = (d.items ?? []).filter((it) => it.type === "flight" && it.flight);
                 return (
                   <li key={i} className="space-y-6">
+                    {flights.map((it) => (
+                      <div key={it.id} data-pdf-block="" className="flex items-start gap-4 rounded-2xl border border-dashed border-[var(--color-gold-400,#D2AD4C)] bg-[var(--color-gold-50,#FBF7E9)] px-4 py-3 sm:ml-[110px] sm:px-5">
+                        <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-olive-700 ring-1 ring-[var(--color-gold-300,#DDC277)]">
+                          <Line name="plane" className="h-5 w-5" />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block font-display text-lg leading-snug text-olive-800">
+                            Flight {it.flight!.from} to {it.flight!.to}
+                          </span>
+                          <span className="block text-sm text-sand-600">
+                            {[
+                              it.flight!.airline && it.flight!.number ? `${it.flight!.airline} ${it.flight!.number}` : it.flight!.airline || it.flight!.number,
+                              it.flight!.time && `departs ${it.flight!.time}`,
+                              it.flight!.arrive && `arrives ${it.flight!.arrive}`,
+                              it.flight!.pnr && `PNR ${it.flight!.pnr}`,
+                            ]
+                              .filter(Boolean)
+                              .join(" \u00b7 ")}
+                          </span>
+                          {it.detail && <span className="block text-sm text-sand-600">{it.detail}</span>}
+                        </span>
+                      </div>
+                    ))}
                     <div data-pdf-block="" className="grid gap-4 sm:grid-cols-[110px_1fr]">
                       <div className="flex items-baseline gap-3 sm:block">
                         <p className="font-display text-5xl font-semibold leading-none text-[var(--color-gold-500,#C9A227)]">{pad2(i + 1)}</p>
@@ -244,15 +281,6 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                                 </span>
                                 <span className="min-w-0">
                                   <span className="font-medium text-olive-800">{it.title}</span>
-                                  {it.type === "flight" && it.flight && (
-                                    <span className="text-sand-600">
-                                      {[it.flight.airline && it.flight.number ? `${it.flight.airline} ${it.flight.number}` : it.flight.airline || it.flight.number, it.flight.time && `departs ${it.flight.time}`, it.flight.pnr && `PNR ${it.flight.pnr}`]
-                                        .filter(Boolean)
-                                        .map((x) => ` \u00b7 ${x}`)
-                                        .join("")}
-                                      {!it.flight.pnr && <span className="block text-sm italic text-sand-500">Subject to availability and fares at the time of booking.</span>}
-                                    </span>
-                                  )}
                                   {it.detail && <span className="block text-sm text-sand-600">{it.detail}</span>}
                                 </span>
                               </li>
@@ -526,27 +554,30 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
             </div>
           )}
 
-          {/* 2. foreign guests: the emergency contact; Indian (domestic) guests: our direct contacts */}
-          {view.domestic ? (
-            view.directContacts.length > 0 && (
-              <div className="mt-6 border-t border-white/15 pt-6 text-sm">
-                <p className="text-xs uppercase tracking-[0.18em] text-white/50">Direct guests</p>
-                <ul className="mt-2 grid gap-1 text-white/85 sm:grid-cols-2">
-                  {view.directContacts.map((c) => (
-                    <li key={c}>{/@/.test(c) ? <a href={`mailto:${c}`}>{c}</a> : <a href={`tel:${c.replace(/[^\d+]/g, "")}`}>{c}</a>}</li>
-                  ))}
-                </ul>
-              </div>
-            )
-          ) : (
-            view.emergency && (
-              <div className="mt-6 border-t border-white/15 pt-6 text-sm">
-                <p className="text-xs uppercase tracking-[0.18em] text-white/50">Emergency contact</p>
-                <p className="mt-1 font-semibold text-white">{view.emergency.name}</p>
-                {view.emergency.phone && <p className="text-white/80"><a href={`tel:${view.emergency.phone.replace(/\s+/g, "")}`}>{view.emergency.phone}</a></p>}
-                {view.emergency.email && <p className="text-white/80"><a href={`mailto:${view.emergency.email}`}>{view.emergency.email}</a></p>}
-              </div>
-            )
+          {/* 2. emergency contact: our contacts for every guest (foreign guests also see a teammate, when one is set) */}
+          {(view.directContacts.length > 0 || (!view.domestic && view.emergency)) && (
+            <div className="mt-6 border-t border-white/15 pt-6 text-sm">
+              <p className="text-xs uppercase tracking-[0.18em] text-white/50">Emergency contact</p>
+              {!view.domestic && view.emergency && (
+                <div className="mt-1">
+                  <p className="font-semibold text-white">{view.emergency.name}</p>
+                  {view.emergency.phone && <p className="text-white/80"><a href={`tel:${view.emergency.phone.replace(/\s+/g, "")}`}>{view.emergency.phone}</a></p>}
+                  {view.emergency.email && <p className="text-white/80"><a href={`mailto:${view.emergency.email}`}>{view.emergency.email}</a></p>}
+                </div>
+              )}
+              <ul className="mt-2 space-y-1 text-white/85">
+                {contactLines(view.directContacts).map((line, k) => (
+                  <li key={k}>
+                    {line.map((c, j) => (
+                      <span key={c}>
+                        {j > 0 && ", "}
+                        {/@/.test(c) ? <a href={`mailto:${c}`}>{c}</a> : <a href={`tel:${c.replace(/[^\d+]/g, "")}`}>{c}</a>}
+                      </span>
+                    ))}
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
 
           {/* follow us */}
