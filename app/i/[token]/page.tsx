@@ -65,6 +65,15 @@ function Line({ name, className = "h-4 w-4" }: { name: keyof typeof PATHS; class
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
+// Pugdundee Safaris on the web (footer icons).
+const SOCIAL = [
+  { label: "Pugdundee Safaris website", href: "https://www.pugdundeesafaris.com/", path: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm6.9 6h-3a15.7 15.7 0 0 0-1.4-3.6A8 8 0 0 1 18.9 8zM12 4c.8 1.2 1.5 2.5 1.9 4h-3.8c.4-1.5 1.1-2.8 1.9-4zM4.3 14a8 8 0 0 1 0-4h3.4a16.5 16.5 0 0 0 0 4H4.3zm.8 2h3a15.7 15.7 0 0 0 1.4 3.6A8 8 0 0 1 5.1 16zm3-8h-3a8 8 0 0 1 4.4-3.6C8.9 5.5 8.4 6.7 8.1 8zM12 20c-.8-1.2-1.5-2.5-1.9-4h3.8c-.4 1.5-1.1 2.8-1.9 4zm2.3-6H9.7a14.7 14.7 0 0 1 0-4h4.6a14.7 14.7 0 0 1 0 4zm.2 5.6c.6-1.1 1.1-2.3 1.4-3.6h3a8 8 0 0 1-4.4 3.6zm1.8-5.6a16.5 16.5 0 0 0 0-4h3.4a8 8 0 0 1 0 4h-3.4z" },
+  { label: "Facebook", href: "https://www.facebook.com/Pugdundeesafari/", path: "M14 8h3V4h-3c-2.8 0-4.5 1.8-4.5 4.6V11H7v4h2.5v9h4v-9h3l.5-4h-3.5V8.8c0-.5.3-.8.5-.8z" },
+  { label: "Instagram", href: "https://www.instagram.com/pugdundeesafaris/", path: "M12 7.3a4.7 4.7 0 1 0 0 9.4 4.7 4.7 0 0 0 0-9.4zm0 7.7a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm6-7.9a1.1 1.1 0 1 1-2.2 0 1.1 1.1 0 0 1 2.2 0zM16.5 2h-9A5.5 5.5 0 0 0 2 7.5v9A5.5 5.5 0 0 0 7.5 22h9a5.5 5.5 0 0 0 5.5-5.5v-9A5.5 5.5 0 0 0 16.5 2zm3.7 14.5a3.7 3.7 0 0 1-3.7 3.7h-9a3.7 3.7 0 0 1-3.7-3.7v-9a3.7 3.7 0 0 1 3.7-3.7h9a3.7 3.7 0 0 1 3.7 3.7v9z" },
+  { label: "YouTube", href: "https://www.youtube.com/user/Pugdundeesafaris", path: "M21.6 7.2a2.5 2.5 0 0 0-1.8-1.8C18.2 5 12 5 12 5s-6.2 0-7.8.4A2.5 2.5 0 0 0 2.4 7.2 26 26 0 0 0 2 12a26 26 0 0 0 .4 4.8 2.5 2.5 0 0 0 1.8 1.8C5.8 19 12 19 12 19s6.2 0 7.8-.4a2.5 2.5 0 0 0 1.8-1.8A26 26 0 0 0 22 12a26 26 0 0 0-.4-4.8zM10 15V9l5.2 3L10 15z" },
+  { label: "LinkedIn", href: "https://www.linkedin.com/company/pugdundee-safaris", path: "M4.98 3.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM3 9.5h4V21H3V9.5zm6.5 0h3.8v1.6h.1c.5-1 1.8-2 3.8-2 4 0 4.8 2.6 4.8 6V21h-4v-5.2c0-1.2 0-2.8-1.7-2.8s-2 1.3-2 2.7V21h-4V9.5z" },
+];
+
 export default async function ClientItineraryPage({ params }: { params: Promise<{ token: string }> }) {
   const view = await loadClientView((await params).token);
   if (!view) notFound();
@@ -386,9 +395,9 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
           </section>
 
           {/* ---------------- payments ---------------- */}
-          <section data-pdf-block="">
+          <section data-pdf-block="" className="border-t border-sand-200 pt-10">
             <h3 className="font-display text-2xl text-olive-800">Payment schedule</h3>
-            <div className="mt-4 divide-y divide-sand-200 rounded-2xl ring-1 ring-sand-200">
+            <div className="mt-5 divide-y divide-sand-200 rounded-2xl ring-1 ring-sand-200">
               {view.payments.map((p, i) => (
                 <div key={i} className="flex items-center justify-between gap-4 px-5 py-4">
                   <div>
@@ -403,9 +412,9 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
           </section>
 
           {view.sections.cancellation.length > 0 && (
-            <section data-pdf-block="">
+            <section data-pdf-block="" className="border-t border-sand-200 pt-10">
               <h3 className="font-display text-2xl text-olive-800">Cancellation policy</h3>
-              <ul className="mt-4 space-y-2 text-sm text-sand-600">
+              <ul className="mt-5 space-y-3 text-[15px] leading-relaxed text-sand-600">
                 {view.sections.cancellation.map((t, i) => (
                   <li key={i} className="flex gap-3">
                     <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-gold-500,#C9A227)]" aria-hidden="true" />
@@ -417,10 +426,13 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
           )}
 
           {view.sections.notes.length > 0 && (
-            <section data-pdf-block="">
+            <section data-pdf-block="" className="border-t border-sand-200 pt-10">
               <h3 className="font-display text-2xl text-olive-800">Good to know</h3>
-              <ul className="mt-4 grid gap-x-8 gap-y-2 text-sm text-sand-600 sm:grid-cols-2">
-                {view.sections.notes.map((t, i) => (
+              <ul className="mt-5 space-y-3 text-[15px] leading-relaxed text-sand-600">
+                {/* the mobile-phone rule first, then the rest as written */}
+                {[...view.sections.notes]
+                  .sort((a, b) => Number(!/\b(mobile|phone)/i.test(a)) - Number(!/\b(mobile|phone)/i.test(b)))
+                  .map((t, i) => (
                   <li key={i} className="flex gap-3">
                     <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-gold-500,#C9A227)]" aria-hidden="true" />
                     {t}
@@ -473,32 +485,52 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
         {/* ---------------- footer ---------------- */}
         <footer data-pdf-block="" className="bg-[var(--color-olive-900,#2B3318)] px-6 py-10 text-white sm:px-12">
           <p className="font-display text-2xl text-[var(--color-gold-200,#EBD9A0)]">We look forward to welcoming you to the wild.</p>
-          <div className="mt-6 grid gap-4 text-sm text-white/80 sm:grid-cols-2">
-            <div>
-              <p className="font-semibold text-white">{view.company.name}</p>
-              {(view.company.email || view.company.phone) && <p>{[view.company.email, view.company.phone].filter(Boolean).join(" \u00b7 ")}</p>}
-            </div>
-          </div>
-          {(view.consultant.name || view.emergency) && (
-            <div className="mt-6 grid gap-4 border-t border-white/15 pt-6 text-sm sm:grid-cols-2">
-              {view.consultant.name && (
-                <div>
-                  <p className="text-xs uppercase tracking-[0.18em] text-white/50">Your safari consultant</p>
-                  <p className="mt-1 font-semibold text-white">{view.consultant.name}</p>
-                  {view.consultant.phone && <p className="text-white/80"><a href={`tel:${view.consultant.phone.replace(/\s+/g, "")}`}>{view.consultant.phone}</a></p>}
-                  {view.consultant.email && <p className="text-white/80"><a href={`mailto:${view.consultant.email}`}>{view.consultant.email}</a></p>}
-                </div>
-              )}
-              {view.emergency && (
-                <div className="sm:text-right">
-                  <p className="text-xs uppercase tracking-[0.18em] text-white/50">Emergency contact</p>
-                  <p className="mt-1 font-semibold text-white">{view.emergency.name}</p>
-                  {view.emergency.phone && <p className="text-white/80"><a href={`tel:${view.emergency.phone.replace(/\s+/g, "")}`}>{view.emergency.phone}</a></p>}
-                  {view.emergency.email && <p className="text-white/80"><a href={`mailto:${view.emergency.email}`}>{view.emergency.email}</a></p>}
-                </div>
-              )}
+
+          {/* 1. your safari consultant */}
+          {view.consultant.name && (
+            <div className="mt-6 text-sm">
+              <p className="text-xs uppercase tracking-[0.18em] text-white/50">Your safari consultant</p>
+              <p className="mt-1 text-base font-semibold text-white">{view.consultant.name}</p>
+              {view.consultant.phone && <p className="text-white/80"><a href={`tel:${view.consultant.phone.replace(/\s+/g, "")}`}>{view.consultant.phone}</a></p>}
+              {view.consultant.email && <p className="text-white/80"><a href={`mailto:${view.consultant.email}`}>{view.consultant.email}</a></p>}
             </div>
           )}
+
+          {/* 2. the company */}
+          <div className="mt-6 border-t border-white/15 pt-6 text-sm text-white/80">
+            <p className="font-semibold text-white">{view.company.name}</p>
+            {(view.company.email || view.company.phone) && <p>{[view.company.email, view.company.phone].filter(Boolean).join(" \u00b7 ")}</p>}
+          </div>
+
+          {/* 3. emergency contact, at the bottom */}
+          {view.emergency && (
+            <div className="mt-6 border-t border-white/15 pt-6 text-sm">
+              <p className="text-xs uppercase tracking-[0.18em] text-white/50">Emergency contact</p>
+              <p className="mt-1 font-semibold text-white">{view.emergency.name}</p>
+              {view.emergency.phone && <p className="text-white/80"><a href={`tel:${view.emergency.phone.replace(/\s+/g, "")}`}>{view.emergency.phone}</a></p>}
+              {view.emergency.email && <p className="text-white/80"><a href={`mailto:${view.emergency.email}`}>{view.emergency.email}</a></p>}
+            </div>
+          )}
+
+          {/* follow us */}
+          <div className="mt-8 flex flex-wrap items-center gap-3">
+            {SOCIAL.map((s) => (
+              <a
+                key={s.label}
+                href={s.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={s.label}
+                title={s.label}
+                className="grid h-10 w-10 place-items-center rounded-full bg-white/10 text-white transition hover:bg-white/20"
+              >
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
+                  <path d={s.path} />
+                </svg>
+              </a>
+            ))}
+          </div>
+
           <p className="mt-6 text-xs uppercase tracking-[0.18em] text-white/40">
             Quote {view.queryNo} &middot; version {view.versionNo}
           </p>

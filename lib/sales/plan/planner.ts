@@ -468,7 +468,15 @@ export function describe(ctx: BuilderContext, day: PlanDay, vehicle: string | nu
   let travel = text;
   const early = day.safaris.filter((x) => x.session !== "afternoon");
   const late = day.safaris.filter((x) => x.session === "afternoon");
-  if (early.length) travel = `${early.map((x) => travelDaySafari(x, park)).join(" ")} ${travel}`;
+  if (early.length) {
+    // a morning safari on the day of check-out: safari, then breakfast and check-out, then the drive
+    const safariText = early.map((x) => travelDaySafari(x, park)).join(" ");
+    const rest = travel.replace(/^\s*after breakfast,\s*/i, "");
+    travel =
+      rest !== travel
+        ? `${safariText} Back at the lodge for breakfast and check-out, then ${rest.charAt(0).toLowerCase()}${rest.slice(1)}`
+        : `${safariText} ${travel}`;
+  }
   if (late.length) {
     const evening = late.map((x) => travelDaySafari(x, park)).join(" ");
     travel = /evening at leisure\.?/i.test(travel) ? travel.replace(/evening at leisure\.?/i, evening) : `${travel} ${evening}`;

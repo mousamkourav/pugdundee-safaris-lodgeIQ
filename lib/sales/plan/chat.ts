@@ -23,10 +23,11 @@ export interface ChatFlags {
   departureAsked?: boolean;
   nightsUnknown: string[]; // park ids added without a number of nights
   roomDecided?: string[]; // park ids where Cottage / Tree House is settled
+  lodgeDecided?: string[]; // park ids where the lodge is settled (Bandhavgarh: Kings Lodge or Tree House Hideaway)
   roomFor?: string | null; // the park the last Cottage / Tree House question was about
   hotelAsked?: string[]; // city stays ("before:Delhi") whose hotel has been asked
   hotelFor?: string | null;
-  pending: "parks" | "nights" | "date" | "adults" | "arrival" | "departure" | "room" | "hotel" | "name" | null;
+  pending: "parks" | "nights" | "date" | "adults" | "arrival" | "departure" | "lodge" | "room" | "hotel" | "name" | null;
 }
 
 export interface QuickReply {
@@ -71,6 +72,7 @@ export function initialFlags(plan: Plan): ChatFlags {
     departureAsked: editing,
     nightsUnknown: [],
     roomDecided: editing ? plan.stops.map((s) => s.park_id) : [],
+    lodgeDecided: editing ? plan.stops.map((s) => s.park_id) : [],
     roomFor: null,
     pending: editing ? null : "parks",
   };
@@ -119,7 +121,7 @@ export function chatTurn(
   }
 
   const next: Plan = JSON.parse(JSON.stringify(plan));
-  const f: ChatFlags = { ...flags, nightsUnknown: [...flags.nightsUnknown], roomDecided: [...(flags.roomDecided ?? [])], hotelAsked: [...(flags.hotelAsked ?? [])] };
+  const f: ChatFlags = { ...flags, nightsUnknown: [...flags.nightsUnknown], roomDecided: [...(flags.roomDecided ?? [])], lodgeDecided: [...(flags.lodgeDecided ?? [])], hotelAsked: [...(flags.hotelAsked ?? [])] };
   const chips: string[] = [];
   const warnings: string[] = [];
   const parkName = (id: string) => ctx.pricing.parks.find((p) => p.id === id)?.name ?? "the park";
@@ -318,6 +320,7 @@ export function chatTurn(
         next.stops[i] = { ...next.stops[i], property_id: lodge.id, room_category_id: room?.id ?? "", meal_plan: room ? mealPlansOf(ctx, room.id)[0] ?? "AP" : "AP" };
       }
     }
+    if (p.lodge) f.lodgeDecided = [...new Set([...(f.lodgeDecided ?? []), park.id])];
     // what the guest asked for here: safaris, naturalists, experiences, room type
     const wish: Partial<PlanStop> = {};
     if (p.safaris != null) wish.want_safaris = p.safaris;
@@ -576,6 +579,20 @@ export function nextQuestion(
         ...placesOf(ctx).filter((l) => l.id !== plan.arrival_location_id).slice(0, 4).map((l) => ({ label: l.name, text: `leaving from ${l.name}` })),
         { label: "On their own", text: "leaving on their own" },
       ],
+      warnings: [],
+      ready: false,
+    };
+  }
+  // Which lodge, where a park has more than one of ours (Bandhavgarh: Kings Lodge or Tree House Hideaway).
+  const lodgeStop = plan.stops.find((s) => !(f.lodgeDecided ?? []).includes(s.park_id) && lodgesInPark(ctx, s.park_id).length > 1);
+  if (lodgeStop) {
+    const park = ctx.pricing.parks.find((p) => p.id === lodgeStop.park_id)?.name ?? "this park";
+    const lodges = lodgesInPark(ctx, lodgeStop.park_id);
+    const names = lodges.map((l) => l.name);
+    return {
+      text: `Which lodge in ${park}: ${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}?`,
+      pending: "lodge",
+      quick: lodges.map((l) => ({ label: l.name, text: l.name })),
       warnings: [],
       ready: false,
     };

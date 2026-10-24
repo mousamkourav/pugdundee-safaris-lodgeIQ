@@ -206,3 +206,15 @@ test("asks the hotel for city nights; 'same' copies the other stay", () => {
   r = say("same");
   assert.deepEqual(plan.city_stays!.map((c) => [c.hotel, c.price]), [["The Imperial", 18000], ["The Imperial", 18000]].slice(0, plan.city_stays!.length));
 });
+
+test("asks which lodge where a park has two of ours; a named lodge needs no question", () => {
+  const two = { ...ctx, properties: [...ctx.properties, { id: "PT2", name: "Pench Jungle Camp", park_id: "PENCH", kind: "own_lodge", fallback_priority: 2, sort: 1 }], rooms: [...ctx.rooms, { id: "PT2_AC", property_id: "PT2", name: "AC Cottage", sort: 0 }], locations: [...ctx.locations, { id: "L_PT2", name: "Pench Jungle Camp", type: "property", property_id: "PT2" }] };
+  const plan = emptyPlan(TODAY);
+  let r = chatTurn(plan, initialFlags(plan), "2 adults, Indian, 16 Jan 2027, Nagpur in and out, Pench 3 nights", two, TODAY);
+  assert.match(r.reply.text, /Which lodge in Pench[^:]*: Pench Tree Lodge or Pench Jungle Camp\?/);
+  r = chatTurn(r.plan, r.flags, "Pench Jungle Camp", two, TODAY);
+  assert.equal(r.plan.stops[0].property_id, "PT2");
+  assert.doesNotMatch(r.reply.text, /Which lodge/);
+  const named = chatTurn(plan, initialFlags(plan), "2 adults, Indian, 16 Jan 2027, Nagpur in and out, 3 nights at Pench Tree Lodge", two, TODAY);
+  assert.doesNotMatch(named.reply.text, /Which lodge/);
+});
