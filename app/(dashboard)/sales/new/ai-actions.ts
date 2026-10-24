@@ -16,7 +16,11 @@ import { aiToParsed, buildPrompt, similarExamples, type Example, type GlossaryRo
 // from our own engine. Any failure (no key, limit reached, timeout, odd answer)
 // returns an error and the built-in reader's result is used instead.
 
-const TIMEOUT_MS = 12_000;
+// One model gets up to 15 s; all tries together stay under 25 s, well inside the
+// 60 s the page allows (maxDuration in page.tsx). Past Vercel's limit the browser
+// would reload the page and lose the conversation.
+const TIMEOUT_MS = 15_000;
+const TOTAL_MS = 25_000;
 // Your chosen model first (GEMINI_MODEL in Vercel), then Google's always-current
 // Flash model, then a fixed one: a model being retired never breaks the assistant.
 const MODELS = [...new Set([process.env.GEMINI_MODEL, "gemini-flash-latest", "gemini-2.5-flash"].filter((m): m is string => !!m))];
@@ -34,21 +38,32 @@ export async function aiEnabled(): Promise<boolean> {
 
 async function callGemini(prompt: string): Promise<{ json?: unknown; error?: string; model?: string }> {
   const key = process.env.GEMINI_API_KEY!;
-  for (const model of MODELS) {
+  const started = Date.now();
+  // Reading a trip needs no long "thinking": switched off it answers in a few seconds
+  // instead of 10-30. A model that does not allow that is asked again without it.
+  const tries = MODELS.flatMap((model) => [{ model, fast: true }, { model, fast: false }]);
+  for (let t = 0; t < tries.length; t++) {
+    const { model, fast } = tries[t];
+    const left = TOTAL_MS - (Date.now() - started);
+    if (left < 3_000) return { error: "The AI took too long; the built-in reader was used." };
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), Math.min(TIMEOUT_MS, left));
     try {
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": key },
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: "application/json", temperature: 0 },
+          generationConfig: { responseMimeType: "application/json", temperature: 0, ...(fast ? { thinkingConfig: { thinkingBudget: 0 } } : {}) },
         }),
         signal: controller.signal,
         cache: "no-store",
       });
-      if (res.status === 404) continue; // model not available: try the next one
+      if (res.status === 400 && fast) continue; // "thinking" cannot be switched off on this model: ask again normally
+      if (res.status === 404) {
+        if (fast) t++; // model not available: skip its second try too
+        continue;
+      }
       if (res.status === 429) return { error: "The AI's free limit is reached for this minute; the built-in reader was used." };
       if (!res.ok) return { error: `The AI service answered ${res.status}; the built-in reader was used.` };
       const body = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };

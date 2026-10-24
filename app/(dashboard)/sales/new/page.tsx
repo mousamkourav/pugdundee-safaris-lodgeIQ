@@ -10,6 +10,10 @@ import { sanitizePlan } from "@/lib/sales/plan/sanitize";
 import type { Plan } from "@/lib/sales/plan/types";
 import { aiEnabled } from "./ai-actions";
 
+// The trip assistant's AI reading runs as a server action on this page: allow it up to
+// 60 s (Vercel's default can be 10 s, and a slow AI answer then reloaded the page).
+export const maxDuration = 60;
+
 export default async function NewItineraryPage({
   searchParams,
 }: {
