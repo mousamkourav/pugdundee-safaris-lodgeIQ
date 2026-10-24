@@ -14,6 +14,7 @@ import { mergePrimary } from "./ai";
 import { ROOM_MATCH, aliasesOf, extractTrip, lodgeNamedIn, locationAliases, matchByName, mergeParsed, roomWishIn, type ParsedTrip, type RoomWish } from "./parse-text";
 import { buildDays, defaultStop, defaultVehicle, emptyPlan, lodgesInPark, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems } from "./planner";
 import type { BuilderContext, Plan, PlanStop } from "./types";
+import { cityHotelNamed, cityHotels, safariOnly, sameCity } from "./cities";
 
 export interface ChatFlags {
   dateSet: boolean;
@@ -101,11 +102,14 @@ export function chatTurn(
   plan: Plan,
   flags: ChatFlags,
   message: string,
-  ctx: BuilderContext,
+  full: BuilderContext,
   today: ISODate,
   aiParsed?: ParsedTrip,
   opts: { aiPrimary?: boolean } = {}
 ): ChatResult {
+  // Stops are planned from safari parks and lodges only; cities (Delhi, Khajuraho) and
+  // city hotels (Roseate House) are city stays.
+  const ctx = safariOnly(full);
   const msg = message.trim();
   const low = msg.toLowerCase();
 
@@ -400,7 +404,10 @@ export function chatTurn(
       const priceM = msg.replace(/,/g, "").match(/(\d+(?:\.\d+)?)\s*(k|thousand|lakh|lac)?\b/i);
       let price: number | null = null;
       if (priceM) price = Math.round(Number(priceM[1]) * (/^k|thousand/i.test(priceM[2] ?? "") ? 1000 : /lakh|lac/i.test(priceM[2] ?? "") ? 100000 : 1));
-      const name = tbc ? "" : msg.replace(/(?:rs\.?|inr|\u20b9)?\s*[\d,]+(?:\.\d+)?\s*(?:k|thousand|lakh|lac)?\b.*$/i, "").replace(/\b(per night|a night|night|hotel is|hotel)\b/gi, "").replace(/[,;:-]+\s*$/, "").trim();
+      // a hotel from Master data (Roseate House): its name as saved there
+      const known = tbc ? undefined : cityHotelNamed(msg, full, stay.city);
+      const typed = tbc ? "" : msg.replace(/(?:rs\.?|inr|\u20b9)?\s*[\d,]+(?:\.\d+)?\s*(?:k|thousand|lakh|lac)?\b.*$/i, "").replace(/\b(per night|a night|night|hotel is|hotel)\b/gi, "").replace(/[,;:-]+\s*$/, "").trim();
+      const name = known?.name ?? typed;
       if (!same) {
         next.city_stays = (next.city_stays ?? []).map((c) => (c === stay ? { ...c, ...(name ? { hotel: name } : {}), ...(price && price >= 500 ? { price } : {}) } : c));
         f.hotelAsked = [...new Set([...(f.hotelAsked ?? []), f.hotelFor])];
@@ -430,6 +437,16 @@ export function chatTurn(
     const keep = (next.city_stays ?? []).filter((c) => !parsed.cityStays!.some((x) => x.when === c.when));
     next.city_stays = [...keep, ...parsed.cityStays];
     for (const c of parsed.cityStays) chips.push(`${c.nights} night${c.nights === 1 ? "" : "s"} in ${c.city} ${c.when === "before" ? "before the safari" : "at the end"}`);
+  }
+  // a city hotel from Master data named in the message: "1 night in Delhi at Roseate House"
+  if (f.pending !== "hotel") {
+    next.city_stays = (next.city_stays ?? []).map((c) => {
+      if (c.hotel) return c;
+      const h = cityHotelNamed(msg, full, c.city);
+      if (!h) return c;
+      chips.push(`${c.city}: ${h.name}`);
+      return { ...c, hotel: h.name };
+    });
   }
 
   // ---- corrections to the order: "wrong direction", "Pench first", "Kanha then Pench"
@@ -515,7 +532,7 @@ export function chatTurn(
     next.days = next.stops.length && !routeProblems(next, ctx).length ? buildDays(next, ctx) : [];
   }
 
-  const step = nextQuestion(next, f, ctx, today);
+  const step = nextQuestion(next, f, full, today);
   f.pending = step.pending;
   f.roomFor = step.roomFor ?? null;
   f.hotelFor = step.hotelFor ?? null;
@@ -541,9 +558,10 @@ export function chatTurn(
 export function nextQuestion(
   plan: Plan,
   f: ChatFlags,
-  ctx: BuilderContext,
+  full: BuilderContext,
   today: ISODate
 ): { text: string; pending: ChatFlags["pending"]; quick?: QuickReply[]; warnings: string[]; ready: boolean; roomFor?: string; hotelFor?: string } {
+  const ctx = safariOnly(full);
   const parks = ctx.pricing.parks.filter((p) => lodgesInPark(ctx, p.id).length);
   if (!plan.stops.length) {
     return {
@@ -637,6 +655,11 @@ export function nextQuestion(
       hotelFor: `${hotelStay.when}:${hotelStay.city}`,
       quick: [
         ...(other ? [{ label: `Same: ${other.hotel}`, text: `${other.hotel}${other.price ? `, ${other.price}` : ""}` }] : []),
+        // the hotels in this city from Master data
+        ...cityHotels(full)
+          .filter((h) => sameCity(h.city, hotelStay.city) && h.name !== other?.hotel)
+          .slice(0, 3)
+          .map((h) => ({ label: h.name, text: h.name })),
         { label: "To be confirmed", text: "to be confirmed" },
       ],
       warnings: [],

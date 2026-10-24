@@ -1,6 +1,7 @@
 // Finds gaps in master data that would stop the pricing engine from quoting.
 import type { ISODate, PricingData } from "./types";
 import { addDays } from "./dates";
+import { cityParkIds, isCityHotel } from "../plan/cities";
 
 export interface HealthIssue {
   level: "error" | "warning";
@@ -12,7 +13,11 @@ export function checkData(d: PricingData, today: ISODate): HealthIssue[] {
   const out: HealthIssue[] = [];
   const horizon = addDays(today, 365);
 
+  // Cities (Delhi, Agra, Khajuraho) and their hotels have no safaris and no rate cards:
+  // a city night is typed with a price on the itinerary. Nothing to check there.
+  const cities = cityParkIds({ properties: d.properties, pricing: d });
   for (const p of d.properties) {
+    if (isCityHotel(p, cities)) continue;
     const rooms = d.rooms.filter((r) => r.property_id === p.id);
     if (!rooms.length) {
       out.push({ level: "error", message: `${p.name}: no room categories.`, href: `/sales/admin/rooms?f_property_id=${p.id}` });
@@ -35,6 +40,7 @@ export function checkData(d: PricingData, today: ISODate): HealthIssue[] {
   }
 
   for (const park of d.parks) {
+    if (cities.has(park.id)) continue;
     const lodges = d.properties.filter((p) => p.park_id === park.id);
     const rates = d.safariRates.filter((s) => s.park_id === park.id);
     if (!lodges.length) out.push({ level: "warning", message: `${park.name}: no lodge is linked to this park.`, href: "/sales/admin/properties" });

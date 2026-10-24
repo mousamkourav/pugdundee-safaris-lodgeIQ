@@ -1,5 +1,6 @@
 "use client";
 
+import { safariOnly } from "@/lib/sales/plan/cities";
 import { useEffect, useState } from "react";
 import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
@@ -326,7 +327,7 @@ export function TripDetails({
             aria-label="Add a park"
           >
             <option value="">+ Add a park</option>
-            {ctx.pricing.parks.filter((p) => lodgesInPark(ctx, p.id).length).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {safariOnly(ctx).pricing.parks.filter((p) => lodgesInPark(safariOnly(ctx), p.id).length).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
 

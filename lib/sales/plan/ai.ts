@@ -10,6 +10,7 @@
 
 import { EXTRA_WORDS, aliasesOf, locationAliases, matchByName, scrubForAI, type ParsedTrip, type RoomWish } from "./parse-text";
 import type { BuilderContext, Plan } from "./types";
+import { cityHotels, safariOnly } from "./cities";
 
 export const EXTRA_KEYWORDS = [...new Set(EXTRA_WORDS.map(([, k]) => k)), "special"];
 const ROOMS: RoomWish[] = ["cottage", "tree", "suite", "deluxe"];
@@ -24,7 +25,8 @@ export interface GlossaryRow {
 }
 
 // ---------------------------------------------------------------- prompt
-export function catalogText(ctx: BuilderContext): string {
+export function catalogText(full: BuilderContext): string {
+  const ctx = safariOnly(full);
   const lines: string[] = [];
   for (const park of ctx.pricing.parks) {
     const lodges = ctx.properties.filter((l) => l.park_id === park.id);
@@ -36,7 +38,8 @@ export function catalogText(ctx: BuilderContext): string {
     lines.push(`- ${park.name}: ${ls.join("; ")}`);
   }
   const places = ctx.locations.filter((l) => l.type !== "property").map((l) => l.name);
-  return [`PARKS AND LODGES:`, ...lines, `ARRIVAL / DEPARTURE PLACES: ${places.join("; ")}`].join("\n");
+  const hotels = cityHotels(full).map((h) => `${h.name} (${h.city})`);
+  return [`PARKS AND LODGES:`, ...lines, ...(hotels.length ? [`CITY HOTELS (only for city_stays "hotel", never a stop): ${hotels.join("; ")}`] : []), `ARRIVAL / DEPARTURE PLACES: ${places.join("; ")}`].join("\n");
 }
 
 export function planSummary(plan: Plan, ctx: BuilderContext): string {
@@ -112,7 +115,8 @@ const str = (v: unknown, max = 120) => (typeof v === "string" && v.trim() ? v.tr
 const arr = (v: unknown) => (Array.isArray(v) ? v : []);
 const obj = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
 
-export function aiToParsed(raw: unknown, ctx: BuilderContext): ParsedTrip {
+export function aiToParsed(raw: unknown, full: BuilderContext): ParsedTrip {
+  const ctx = safariOnly(full); // a city or a city hotel is never a safari stop
   const o = obj(raw);
   const parkOf = (name: unknown) => {
     const n = str(name);

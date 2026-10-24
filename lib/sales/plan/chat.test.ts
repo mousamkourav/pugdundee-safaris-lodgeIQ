@@ -235,3 +235,43 @@ test("the AI choosing a lodge the message did not name: the lodge question is st
   assert.equal(named.plan.stops[0].property_id, "PT2");
   assert.doesNotMatch(named.reply.text, /Which lodge/);
 });
+
+test("a city hotel in Master data is a city stay, never a safari stop", async () => {
+  // Delhi and Khajuraho kept under Parks (no safari rates), with Roseate House / Radisson in them
+  const withCities: BuilderContext = {
+    ...ctx,
+    pricing: { ...ctx.pricing, parks: [...ctx.pricing.parks, { id: "DEL", name: "Delhi" }, { id: "KHJ", name: "Khajuraho" }] },
+    properties: [
+      ...ctx.properties,
+      { id: "ROS", name: "Roseate House", park_id: "DEL", kind: "partner_lodge", fallback_priority: 1, sort: 0 },
+      { id: "RAD", name: "Radisson Hotel Jass Khajuraho", park_id: "KHJ", kind: "city_hotel", fallback_priority: 1, sort: 0 },
+    ],
+    locations: [...ctx.locations, { id: "L_ROS", name: "Roseate House", type: "property", property_id: "ROS" }],
+  };
+  let plan = emptyPlan(TODAY);
+  let flags = initialFlags(plan);
+  const say = (m: string) => {
+    const r = chatTurn(plan, flags, m, withCities, TODAY);
+    plan = r.plan;
+    flags = r.flags;
+    return r;
+  };
+  let r = say("2 adults, Indian, stay one night in delhi then fly to nagpur and reach Tadoba on 16 Jan 2027, Tadoba 4 nights then Pench 3 nights, leave from nagpur");
+  assert.deepEqual(plan.stops.map((s) => s.property_id), ["WEL", "PTL"]);
+  assert.match(r.reply.text, /Which hotel in Delhi/);
+  assert.ok(r.reply.quick!.some((q) => q.label === "Roseate House"));
+  r = say("Roseate House, 18000");
+  assert.deepEqual(plan.stops.map((s) => s.property_id), ["WEL", "PTL"]); // still no Roseate stop
+  assert.deepEqual(plan.city_stays!.map((c) => [c.city, c.hotel, c.price]), [["Delhi", "Roseate House", 18000]]);
+  assert.doesNotMatch(r.reply.text, /Which hotel in Delhi/);
+  // named in the first message
+  plan = emptyPlan(TODAY);
+  flags = initialFlags(plan);
+  r = say("2 adults, Indian, 1 night in Delhi at the Roseate, then fly to nagpur and reach Tadoba on 16 Jan 2027, Tadoba 4 nights, leave from nagpur");
+  assert.equal(plan.city_stays![0].hotel, "Roseate House");
+  assert.deepEqual(plan.stops.map((s) => s.property_id), ["WEL"]);
+  // the Data check leaves cities and city hotels alone
+  const { checkData } = await import("@/lib/sales/pricing/health");
+  const issues = checkData({ ...withCities.pricing, properties: withCities.properties }, TODAY).map((i) => i.message).join("\n");
+  assert.doesNotMatch(issues, /Delhi|Khajuraho|Roseate|Radisson/);
+});
