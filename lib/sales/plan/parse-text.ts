@@ -172,6 +172,12 @@ export function lodgeAliases(name: string, parkAliases: string[]): string[] {
   return [...out].filter((a) => a.length >= 4);
 }
 
+// Does the text name this lodge ("kings", "Kings Lodge", "treehouse hideaway")?
+export function lodgeNamedIn(text: string, lodgeName: string, ctx: BuilderContext): boolean {
+  const parkAliases = ctx.pricing.parks.flatMap((p) => aliasesOf(p.name));
+  return lodgeAliases(lodgeName, parkAliases).some((a) => new RegExp(`\\b${escapeRe(a)}\\b`, "i").test(text));
+}
+
 // Optimal string alignment distance (a swap of two letters counts as one edit).
 function editDistance(a: string, b: string) {
   const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);

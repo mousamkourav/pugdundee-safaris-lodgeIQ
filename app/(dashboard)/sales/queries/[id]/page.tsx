@@ -9,6 +9,7 @@ import { StatusActions } from "@/components/sales/status-actions";
 import { ShareLink } from "@/components/sales/share-link";
 import { detailedBreakdown, priceBreakdown } from "@/lib/sales/pricing/breakdown";
 import { DraftActions } from "@/components/sales/draft-actions";
+import { DeleteQueryButton } from "@/components/sales/delete-query";
 import { todayIST } from "@/lib/sales/plan/load-context";
 import { getMemberNames } from "@/lib/sales/members";
 import { loadFlightBookings } from "@/lib/sales/flight-bookings";
@@ -59,7 +60,7 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
   const admin = isSalesAdmin(profile?.role);
   const supabase = await createClient();
 
-  const { data: qData } = await supabase.from("sales_queries").select("*").eq("id", id).maybeSingle();
+  const { data: qData } = await supabase.from("sales_queries").select("*").eq("id", id).is("deleted_at", null).maybeSingle();
   if (!qData) notFound();
   const q = qData as unknown as QueryFull;
 
@@ -134,6 +135,11 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
             {q.assigned_to && <> &middot; Assigned to <b className="text-olive-800">{names[q.assigned_to] ?? "member"}</b></>}
           </p>
         </div>
+        {admin && (
+          <div className="order-last lg:order-none">
+            <DeleteQueryButton queryId={q.id} queryNo={q.query_no} guestName={q.guest_name} />
+          </div>
+        )}
         {isDraft ? (
           canAct && <DraftActions queryId={q.id} />
         ) : (
@@ -306,27 +312,43 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
           )}
 
           <section className={`${ui.card} overflow-hidden`}>
-            <div className="border-b border-sand-200 p-5"><h2 className="text-lg">Versions</h2></div>
-            <table className="w-full text-left text-sm">
+            <div className="border-b border-sand-200 p-5">
+              <h2 className="text-lg">Versions</h2>
+              <p className="mt-1 text-xs text-sand-500">Every saved version, latest first. Each keeps its own client link, so a guest who has an older link still sees that version.</p>
+            </div>
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[520px] text-left text-sm">
               <thead>
                 <tr className="bg-sand-100 text-xs font-semibold uppercase tracking-wide text-sand-500">
                   <th className="px-4 py-3">Version</th>
-                  <th className="px-4 py-3">Created</th>
+                  <th className="px-4 py-3">Saved</th>
                   <th className="px-4 py-3">By</th>
                   <th className="px-4 py-3 text-right">Total</th>
+                  <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody>
                 {versions.map((v, i) => (
                   <tr key={v.id} className="border-t border-sand-200">
                     <td className="px-4 py-3 font-semibold text-olive-800">v{v.version_no}{i === 0 && <span className="ml-2 text-xs font-medium text-success">current</span>}</td>
-                    <td className="px-4 py-3">{fmtDate(v.created_at)}</td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {fmtDate(v.created_at)}
+                      <span className="ml-1 text-xs text-sand-500">{new Date(v.created_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}</span>
+                    </td>
                     <td className="px-4 py-3">{(v.created_by && names[v.created_by]) || "-"}</td>
                     <td className="tabular px-4 py-3 text-right">{rupees(v.total_amount)}</td>
+                    <td className="px-4 py-3 text-right">
+                      {!isDraft && (
+                        <a href={`/i/${v.share_slug ?? v.share_token}`} target="_blank" rel="noopener noreferrer" className={`${ui.btnGhost} ${ui.btnSm} whitespace-nowrap`}>
+                          Client page
+                        </a>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
           </section>
         </div>
 

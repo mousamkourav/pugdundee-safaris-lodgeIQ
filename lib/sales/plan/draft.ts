@@ -31,17 +31,47 @@ const lines = (s: string) =>
     .map((x) => x.replace(/^[-*\u2022]\s*/, "").trim())
     .filter(Boolean);
 
-// The same line from several parks or lodges ("The park is closed on Wednesday
-// afternoons...") is shown once.
-const unique = (xs: string[]) => {
-  const seen = new Set<string>();
-  return xs.filter((x) => {
-    const k = x.toLowerCase().replace(/\s+/g, " ").replace(/[.\s]+$/, "");
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
-};
+
+// ---------------------------------------------------------------- near-copies and order
+
+const STOP = new Set(["a", "an", "the", "and", "or", "of", "in", "on", "at", "as", "per", "with", "for", "to", "by", "is", "are", "be", "all", "any", "if", "our", "your", "we", "you", "it", "its", "this", "that", "etc", "shown"]);
+const stem = (w: string) => (w.length > 3 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w);
+const wordsOf = (s: string) => [...new Set(s.toLowerCase().replace(/[^a-z0-9]+/g, " ").split(" ").filter((w) => w.length > 1 && !STOP.has(w)).map(stem))];
+// Names, days and numbers: a line is only a copy of another if it has the same ones
+// ("Tadoba ... Tuesdays" is not a copy of "Bandhavgarh ... Wednesday").
+const keysOf = (s: string) =>
+  wordsOf(
+    s
+      .split(/\s+/)
+      .slice(1)
+      .filter((w) => /^[A-Z0-9]/.test(w))
+      .join(" ")
+  );
+
+// Drops repeated lines and near-copies: a line whose words are (almost) all in a line
+// already kept, with the same names and numbers. The first one stays.
+export function dedupeLines(xs: string[]): string[] {
+  const kept: { text: string; words: string[] }[] = [];
+  for (const x of xs) {
+    const text = x.trim();
+    if (!text) continue;
+    const words = wordsOf(text);
+    const keys = keysOf(text);
+    const copy = kept.some((k) => {
+      const inK = words.filter((w) => k.words.includes(w)).length;
+      return (words.length ? inK / words.length >= 0.8 : text.toLowerCase() === k.text.toLowerCase()) && keys.every((w) => k.words.includes(w));
+    });
+    if (!copy) kept.push({ text, words });
+  }
+  return kept.map((k) => k.text);
+}
+
+// The mobile-phone rule, however it is worded ("Mobile phones are strictly not allowed",
+// "Cell phones are prohibited", "No phones in the park").
+export const isPhoneRule = (s: string) =>
+  /\b(mobile|cell(ular)?|smart)\s*-?\s*phones?\b/i.test(s) || /\bphones?\b[^.]*\b(not allowed|not permitted|prohibited|banned)\b/i.test(s) || /\bno\s+(mobile|phones?)\b/i.test(s);
+// ...always the first point of the list it is in
+export const phoneRuleFirst = (xs: string[]) => [...xs].sort((a, b) => Number(!isPhoneRule(a)) - Number(!isPhoneRule(b)));
 
 const MEALS_LINE: Record<string, string> = {
   AP: "All meals (breakfast, lunch and dinner)",
@@ -95,18 +125,23 @@ function standardLists(plan: Plan, lodgeNames: Record<string, string>) {
     for (const c of cities) inc.push(`Meals at ${c.hotel || "the hotel"} in ${c.city} as per the hotel's meal plan`);
   }
 
+  // lines that depend on this itinerary (also added to the Master data lists)
+  const itineraryInc: string[] = [];
+  const itineraryExc: string[] = [];
   const safaris = plan.days.flatMap((d) => d.safaris);
   if (safaris.length) inc.push("Jeep safaris as shown, with permit fee, jeep, park guide, packed breakfast on morning safaris and refreshments on evening safaris");
-  if (safaris.some((x) => x.naturalist)) inc.push("Accompanying lodge naturalist on the safaris shown");
-  else if (safaris.length) exc.push("Accompanying lodge naturalist on safaris");
+  if (safaris.some((x) => x.naturalist)) itineraryInc.push("Accompanying lodge naturalist on the safaris shown");
+  else if (safaris.length) itineraryExc.push("Accompanying lodge naturalist on safaris");
   if (plan.days.some((d) => d.transfer)) inc.push("Road transfers shown in the itinerary");
 
   const flights = flightsLine(plan);
-  if (flights) inc.push(flights);
-  else exc.push("Flights and train tickets");
+  if (flights) itineraryInc.push(flights);
+  else itineraryExc.push("Flights and train tickets");
 
   const items = plan.days.flatMap((d) => d.items ?? []);
-  if (items.some((it) => it.type === "addon" || (it.type === "activity" && it.price))) inc.push("Experiences and activities shown in the itinerary");
+  if (items.some((it) => it.type === "addon" || (it.type === "activity" && it.price))) itineraryInc.push("Experiences and activities shown in the itinerary");
+  inc.push(...itineraryInc);
+  exc.push(...itineraryExc);
   inc.push("Currently applicable taxes");
 
   exc.push(
@@ -114,7 +149,7 @@ function standardLists(plan: Plan, lodgeNames: Record<string, string>) {
     "Tips & gratuities (entirely as per your discretion \u2013 we do not levy service charge in our bills)",
     "Anything not listed in includes section"
   );
-  return { inc, exc };
+  return { inc, exc, itineraryInc, itineraryExc };
 }
 
 // "Good to know" lines about park closures, for the parks in this itinerary only,
@@ -236,11 +271,15 @@ export function defaultDraft(plan: Plan, inp: DraftInputs): DraftSections {
     return [main, ...specific].filter((b): b is ContentBlock => !!b).map((b) => b.body);
   };
 
-  // Standard lines from the itinerary itself, then any extra lines kept in Master data > Content.
+  // Includes / does not include: the lists in Master data > Content when there are any,
+  // plus only the lines that depend on this itinerary (flights, naturalists, experiences);
+  // without them, the standard lists written from the itinerary. Never a line twice.
   const standard = standardLists(plan, inp.lodgeNames);
-  const inclusions = unique([...standard.inc, ...textsFor("inclusions").flatMap(lines)]);
-  const exclusions = unique([...standard.exc, ...textsFor("exclusions").flatMap(lines)]);
-  const cancellation = unique(textsFor("cancellation_terms").flatMap(lines));
+  const masterInc = textsFor("inclusions").flatMap(lines);
+  const masterExc = textsFor("exclusions").flatMap(lines);
+  const inclusions = phoneRuleFirst(dedupeLines(masterInc.length ? [...masterInc, ...standard.itineraryInc] : standard.inc));
+  const exclusions = phoneRuleFirst(dedupeLines(masterExc.length ? [...masterExc, ...standard.itineraryExc] : standard.exc));
+  const cancellation = phoneRuleFirst(dedupeLines(textsFor("cancellation_terms").flatMap(lines)));
 
   return {
     title: parks.length ? headlineFor(parkIds.join("|")) : "Your safari",
@@ -268,7 +307,7 @@ export function defaultDraft(plan: Plan, inp: DraftInputs): DraftSections {
       const specific = inp.blocks.filter(
         (b) => b.kind === "important_notes" && ((b.park_id && parkIds.includes(b.park_id)) || (b.property_id && lodgeIds.includes(b.property_id)))
       );
-      return unique([...closureNotes(plan, inp), ...specific.flatMap((b) => lines(b.body)), ...(main ? lines(main.body) : [])]);
+      return phoneRuleFirst(dedupeLines([...closureNotes(plan, inp), ...specific.flatMap((b) => lines(b.body)), ...(main ? lines(main.body) : [])]));
     })(),
     paymentTerms: textsFor("payment_terms").join("\n"),
     cancellation: cancellation.length
@@ -294,8 +333,8 @@ export function withEdits(def: DraftSections, draft?: PlanDraft): DraftSections 
     title: draft.title?.trim() || def.title,
     routeLine: draft.subtitle?.trim() || def.routeLine,
     about: draft.about !== undefined ? draft.about : def.about,
-    inclusions: draft.inclusions ?? def.inclusions,
-    exclusions: draft.exclusions ?? def.exclusions,
-    notes: draft.notes ?? def.notes,
+    inclusions: draft.inclusions ? phoneRuleFirst(dedupeLines(draft.inclusions)) : def.inclusions,
+    exclusions: draft.exclusions ? phoneRuleFirst(dedupeLines(draft.exclusions)) : def.exclusions,
+    notes: draft.notes ? phoneRuleFirst(dedupeLines(draft.notes)) : def.notes,
   };
 }

@@ -131,8 +131,9 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
             <p className="hidden text-xs uppercase tracking-[0.2em] text-white/70 sm:block">Wildlife lodges &amp; experiences</p>
           </div>
           <div className="relative px-6 pb-10 sm:px-12 sm:pb-14">
-            <p className="text-sm uppercase tracking-[0.25em] text-[var(--color-gold-200,#EBD9A0)]">A private safari for {view.guestName}</p>
-            <h1 className="mt-3 max-w-3xl font-display text-[2.6rem] font-semibold leading-[1.05] !text-white sm:text-6xl">{view.title}</h1>
+            <p className="text-xs uppercase tracking-[0.3em] text-[var(--color-gold-200,#EBD9A0)]">A private safari prepared for</p>
+            <p className="mt-1 font-display text-3xl font-semibold leading-tight !text-white sm:text-[2.6rem]">{view.guestName}</p>
+            <h1 className="mt-5 max-w-3xl font-display text-[2.6rem] font-semibold leading-[1.05] !text-white sm:text-6xl">{view.title}</h1>
             {view.routeLine && <p className="mt-4 font-display text-xl italic text-[var(--color-gold-200,#EBD9A0)] sm:text-2xl">{view.routeLine}</p>}
             <div className="mt-6 h-px w-24 bg-[var(--color-gold-300,#DDC277)]" />
             <p className="mt-5 text-base text-white/90 sm:text-lg">
@@ -499,10 +500,8 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
             <section data-pdf-block="" className="border-t border-sand-200 pt-10">
               <h3 className="font-display text-2xl text-olive-800">Good to know</h3>
               <ul className="mt-5 space-y-3 text-[15px] leading-relaxed text-sand-600">
-                {/* the mobile-phone rule first, then the rest as written */}
-                {[...view.sections.notes]
-                  .sort((a, b) => Number(!/\b(mobile|phone)/i.test(a)) - Number(!/\b(mobile|phone)/i.test(b)))
-                  .map((t, i) => (
+                {/* the mobile-phone rule is already first (lib/sales/plan/draft.ts) */}
+                {view.sections.notes.map((t, i) => (
                   <li key={i} className="flex gap-3">
                     <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-gold-500,#C9A227)]" aria-hidden="true" />
                     {t}
@@ -527,20 +526,27 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
             </div>
           )}
 
-          {/* 2. the company */}
-          <div className="mt-6 border-t border-white/15 pt-6 text-sm text-white/80">
-            <p className="font-semibold text-white">{view.company.name}</p>
-            {(view.company.email || view.company.phone) && <p>{[view.company.email, view.company.phone].filter(Boolean).join(" \u00b7 ")}</p>}
-          </div>
-
-          {/* 3. emergency contact, at the bottom */}
-          {view.emergency && (
-            <div className="mt-6 border-t border-white/15 pt-6 text-sm">
-              <p className="text-xs uppercase tracking-[0.18em] text-white/50">Emergency contact</p>
-              <p className="mt-1 font-semibold text-white">{view.emergency.name}</p>
-              {view.emergency.phone && <p className="text-white/80"><a href={`tel:${view.emergency.phone.replace(/\s+/g, "")}`}>{view.emergency.phone}</a></p>}
-              {view.emergency.email && <p className="text-white/80"><a href={`mailto:${view.emergency.email}`}>{view.emergency.email}</a></p>}
-            </div>
+          {/* 2. foreign guests: the emergency contact; Indian (domestic) guests: our direct contacts */}
+          {view.domestic ? (
+            view.directContacts.length > 0 && (
+              <div className="mt-6 border-t border-white/15 pt-6 text-sm">
+                <p className="text-xs uppercase tracking-[0.18em] text-white/50">Direct guests</p>
+                <ul className="mt-2 grid gap-1 text-white/85 sm:grid-cols-2">
+                  {view.directContacts.map((c) => (
+                    <li key={c}>{/@/.test(c) ? <a href={`mailto:${c}`}>{c}</a> : <a href={`tel:${c.replace(/[^\d+]/g, "")}`}>{c}</a>}</li>
+                  ))}
+                </ul>
+              </div>
+            )
+          ) : (
+            view.emergency && (
+              <div className="mt-6 border-t border-white/15 pt-6 text-sm">
+                <p className="text-xs uppercase tracking-[0.18em] text-white/50">Emergency contact</p>
+                <p className="mt-1 font-semibold text-white">{view.emergency.name}</p>
+                {view.emergency.phone && <p className="text-white/80"><a href={`tel:${view.emergency.phone.replace(/\s+/g, "")}`}>{view.emergency.phone}</a></p>}
+                {view.emergency.email && <p className="text-white/80"><a href={`mailto:${view.emergency.email}`}>{view.emergency.email}</a></p>}
+              </div>
+            )
           )}
 
           {/* follow us */}
@@ -567,6 +573,20 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
           </p>
         </footer>
       </article>
+
+      {/* WhatsApp: always at hand while scrolling; not in print or the PDF */}
+      <a
+        href={view.whatsapp}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Chat with us on WhatsApp"
+        title="Chat with us on WhatsApp"
+        className="pdf-hide fixed bottom-5 right-5 z-50 grid h-14 w-14 place-items-center rounded-full bg-[#25D366] text-white shadow-[0_6px_20px_rgba(0,0,0,0.25)] transition hover:scale-105 print:hidden sm:bottom-8 sm:right-8"
+      >
+        <svg viewBox="0 0 24 24" className="h-8 w-8" fill="currentColor" aria-hidden="true">
+          <path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.7-1.4.1-.2 0-.3 0-.5l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.8 11.8 0 0 0 4.5 4c1.7.7 2.3.8 3.2.7.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.5-.3z" />
+        </svg>
+      </a>
     </div>
   );
 }

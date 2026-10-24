@@ -11,7 +11,7 @@ import { countryName, findPhone } from "@/lib/sales/countries";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 import type { ISODate } from "@/lib/sales/pricing/types";
 import { mergePrimary } from "./ai";
-import { ROOM_MATCH, aliasesOf, extractTrip, locationAliases, matchByName, mergeParsed, roomWishIn, type ParsedTrip, type RoomWish } from "./parse-text";
+import { ROOM_MATCH, aliasesOf, extractTrip, lodgeNamedIn, locationAliases, matchByName, mergeParsed, roomWishIn, type ParsedTrip, type RoomWish } from "./parse-text";
 import { buildDays, defaultStop, defaultVehicle, emptyPlan, lodgesInPark, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems } from "./planner";
 import type { BuilderContext, Plan, PlanStop } from "./types";
 
@@ -182,7 +182,18 @@ export function chatTurn(
   let parsed = extractTrip(msg, ctx, today);
   // With the AI assistant on, its reading comes first and the built-in reader fills gaps;
   // otherwise the AI only fills what the built-in reader missed.
+  const ruleParsed = parsed;
   if (aiParsed) parsed = opts.aiPrimary ? mergePrimary(aiParsed, parsed) : mergeParsed(parsed, aiParsed);
+  // A lodge counts only when the message names it. The AI sometimes picks one by itself
+  // (Kings Lodge for "Bandhavgarh 3 nights"); then the guest is asked which lodge instead.
+  if (aiParsed) {
+    parsed = {
+      ...parsed,
+      parks: parsed.parks.map((p) =>
+        p.lodge && !ruleParsed.parks.some((r) => r.lodge === p.lodge) && !lodgeNamedIn(msg, p.lodge, ctx) ? { ...p, lodge: undefined } : p
+      ),
+    };
+  }
 
   // ---- from the AI: a whole new route, parks to take out
   if (parsed.replaceRoute && parsed.parks.length && next.stops.length) {

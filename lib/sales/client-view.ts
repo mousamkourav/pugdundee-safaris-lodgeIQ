@@ -5,6 +5,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { addDays } from "@/lib/sales/pricing/dates";
 import { MEDIA_BUCKET } from "@/lib/sales/master/types";
+import { DIRECT_CONTACTS_DEFAULT, WHATSAPP_DEFAULT, whatsappHref } from "@/lib/sales/master/settings";
 import type { Plan } from "@/lib/sales/plan/types";
 import { defaultDraft, withEdits } from "@/lib/sales/plan/draft";
 import { detailedBreakdown, priceBreakdown } from "@/lib/sales/pricing/breakdown";
@@ -62,6 +63,10 @@ export interface ClientView {
   company: { name: string; email: string; phone: string };
   consultant: Contact;
   emergency: Contact | null;
+  // Indian (domestic) guests see the company's direct contacts instead of an emergency contact
+  domestic: boolean;
+  directContacts: string[];
+  whatsapp: string; // the floating WhatsApp button's link
 }
 
 
@@ -84,7 +89,7 @@ async function loadClientViewUncached(link: string): Promise<ClientView | null> 
   const plan = version.plan;
   const pricing = version.pricing;
 
-  const { data: q } = await db.from("sales_queries").select("query_no, guest_name, assigned_to, status").eq("id", version.query_id).maybeSingle();
+  const { data: q } = await db.from("sales_queries").select("query_no, guest_name, assigned_to, status").eq("id", version.query_id).is("deleted_at", null).maybeSingle();
   if (!q) return null;
   const query = q as { query_no: string; guest_name: string; assigned_to: string | null; status: string };
   if (query.status === "draft") return null; // drafts are not ready for guests
@@ -181,6 +186,7 @@ async function loadClientViewUncached(link: string): Promise<ClientView | null> 
   const blockRows = rows(blocks) as { kind: string; body: string; park_id: string | null; property_id: string | null; is_default: boolean }[];
   const s = ((settings.data as { data?: Row } | null)?.data ?? {}) as Row;
   const company = (s.company ?? {}) as Row;
+  const guestPage = (s.guest_page ?? {}) as Row;
   const nights = plan.stops.reduce((t, x) => t + x.nights, 0);
   const slabs = (Array.isArray(s.cancellation_slabs) ? s.cancellation_slabs : []) as { min_days?: number; max_days?: number | null; pct?: number }[];
 
@@ -247,6 +253,16 @@ async function loadClientViewUncached(link: string): Promise<ClientView | null> 
       cancellation: sections.cancellation,
     },
     company: { name: String(company.name || "Pugdundee Safaris"), email: String(company.email || ""), phone: String(company.phone || "") },
+    domestic: plan.guest.nationality === "indian",
+    directContacts: (() => {
+      const listed = String(guestPage.direct_contacts ?? "")
+        .split(/\r?\n|,/)
+        .map((x) => x.trim())
+        .filter(Boolean)
+        .slice(0, 12);
+      return listed.length ? listed : DIRECT_CONTACTS_DEFAULT;
+    })(),
+    whatsapp: whatsappHref(guestPage.whatsapp_number ?? WHATSAPP_DEFAULT.number, guestPage.whatsapp_text ?? WHATSAPP_DEFAULT.text, guestPage.whatsapp_link ?? WHATSAPP_DEFAULT.link),
     consultant: contacts.consultant,
     emergency: contacts.emergency,
   };

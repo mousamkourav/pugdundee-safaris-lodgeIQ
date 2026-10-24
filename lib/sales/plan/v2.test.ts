@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDays, defaultStop, describe, emptyPlan, planToTrip, roomsFor } from "./planner";
-import { closureNotes, defaultDraft, flightsLine } from "./draft";
+import { closureNotes, defaultDraft, flightsLine, withEdits } from "./draft";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 import { data } from "@/lib/sales/pricing/sheet-fixture";
 import type { BuilderContext, Plan } from "./types";
@@ -206,4 +206,64 @@ test("good to know: closures for the parks in the itinerary, by name, festivals 
   assert.ok(n2.includes("Bandhavgarh National Park remains closed for the full day on Holi (22 Mar 2027)."), n2.join(" | "));
   const tadoba = { ...p, stops: [{ ...p.stops[0], park_id: "TAD" }] } as Plan;
   assert.deepEqual(closureNotes(tadoba, inputs), ["Core zones of Tadoba National Park remain closed for the full day on Tuesdays but buffer safaris remain operational."]);
+});
+
+// ---------------- Master data lists, near-copies, the mobile-phone rule ----------------
+import { dedupeLines, isPhoneRule, phoneRuleFirst } from "./draft";
+
+const MASTER_INC = [
+  "Stay in well-appointed rooms with attached facilities as per the room categories shown.",
+  "All meals: breakfast, lunch, and dinner at the lodges. City hotels, if any, are on a bed-and-breakfast basis.",
+  "Tea and coffee service.",
+  "Jeep safaris/activities as per itinerary with permit fee, jeep, park guide and naturalists.",
+  "Picnic breakfasts on morning safaris and refreshments on evening safaris.",
+  "Road transfers shown in the itinerary.",
+  "Currently applicable taxes.",
+].join("\n");
+
+const noNearCopies = (xs: string[]) => {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  assert.equal(new Set(xs.map(norm)).size, xs.length, "a line appears twice: " + xs.join(" | "));
+  assert.deepEqual(dedupeLines(xs), xs, "a near-copy is left: " + xs.join(" | "));
+};
+
+test("inclusions: the Master data list, plus only what depends on the itinerary, never twice", () => {
+  const p = twoLodges();
+  const blocks = [{ kind: "inclusions", body: MASTER_INC, park_id: null, property_id: null, is_default: true }];
+  const d = defaultDraft(p, { ...inputs, blocks });
+  assert.equal(d.inclusions[0], "Stay in well-appointed rooms with attached facilities as per the room categories shown.");
+  assert.equal(d.inclusions.length, 7); // no default lines on top of the Master data ones
+  assert.ok(!d.inclusions.includes("Stay in well-appointed rooms with attached facilities"));
+  assert.ok(!d.inclusions.includes("Road transfers shown in the itinerary"));
+  noNearCopies(d.inclusions);
+  noNearCopies(d.exclusions);
+  noNearCopies(d.notes);
+  // a flight is added to the Master data list
+  p.days[0].items = [{ id: "f", type: "flight", title: "Flight", detail: "", price: null, addon_id: null, qty: null, flight: { from: "Delhi", to: "Jabalpur", airline: "", number: "", time: "", pnr: "", fare_pp: 6000 } }];
+  const f = defaultDraft(p, { ...inputs, blocks });
+  assert.equal(f.inclusions.length, 8);
+  assert.ok(f.inclusions[7].startsWith("Domestic flights Delhi-Jabalpur"));
+  assert.ok(!f.exclusions.includes("Flights and train tickets"));
+});
+
+test("near-copies go, different parks and days stay", () => {
+  assert.deepEqual(dedupeLines(["Road transfers shown in the itinerary.", "Road transfers shown in the itinerary", "road transfers as per itinerary"]), ["Road transfers shown in the itinerary."]);
+  assert.deepEqual(dedupeLines(["All meals: breakfast, lunch and dinner at the lodges.", "All meals: breakfast, lunch and dinner"]), ["All meals: breakfast, lunch and dinner at the lodges."]);
+  const closures = [
+    "Core zones of Tadoba National Park remain closed for the full day on Tuesdays but buffer safaris remain operational.",
+    "Core zones of Satpura National Park remain closed for the full day on Tuesdays but buffer safaris remain operational.",
+    "Core zones of Tadoba National Park remain closed for the full day on Wednesdays but buffer safaris remain operational.",
+  ];
+  assert.deepEqual(dedupeLines(closures), closures);
+});
+
+test("the mobile-phone rule is the first point, however it is worded", () => {
+  for (const s of ["Mobile phones are strictly not allowed in all the national parks.", "Cell phones are prohibited inside the park.", "No phones in the jeep.", "Phones are not allowed on safari."]) assert.ok(isPhoneRule(s), s);
+  for (const s of ["Any expense of personal nature (soft or hard beverages, laundry, phone calls etc)", "Please share your phone number."]) assert.ok(!isPhoneRule(s), s);
+  assert.deepEqual(phoneRuleFirst(["Check-in is at 13:30.", "Safari zones cannot be guaranteed.", "Mobile phones are not allowed inside the parks."]), ["Mobile phones are not allowed inside the parks.", "Check-in is at 13:30.", "Safari zones cannot be guaranteed."]);
+  const p = twoLodges();
+  const blocks = [{ kind: "important_notes", body: "Check-in is at 13:30.\nMobile phones are not allowed inside the parks.", park_id: null, property_id: null, is_default: true }];
+  assert.ok(isPhoneRule(defaultDraft(p, { ...inputs, blocks }).notes[0]));
+  // also after the notes were edited on the Final draft step
+  assert.ok(isPhoneRule(withEdits(defaultDraft(p, inputs), { notes: ["Check-in is at 13:30.", "No mobile phones on safari."] }).notes[0]));
 });

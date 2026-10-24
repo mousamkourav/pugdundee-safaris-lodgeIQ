@@ -218,3 +218,20 @@ test("asks which lodge where a park has two of ours; a named lodge needs no ques
   const named = chatTurn(plan, initialFlags(plan), "2 adults, Indian, 16 Jan 2027, Nagpur in and out, 3 nights at Pench Tree Lodge", two, TODAY);
   assert.doesNotMatch(named.reply.text, /Which lodge/);
 });
+
+test("the AI choosing a lodge the message did not name: the lodge question is still asked", async () => {
+  const { aiToParsed } = await import("./ai");
+  const two = { ...ctx, properties: [...ctx.properties, { id: "PT2", name: "Pench Jungle Camp", park_id: "PENCH", kind: "own_lodge", fallback_priority: 2, sort: 1 }], rooms: [...ctx.rooms, { id: "PT2_AC", property_id: "PT2", name: "AC Cottage", sort: 0 }], locations: [...ctx.locations, { id: "L_PT2", name: "Pench Jungle Camp", type: "property", property_id: "PT2" }] };
+  const plan = emptyPlan(TODAY);
+  const msg = "2 adults, Indian, 16 Jan 2027, Nagpur in and out, Pench 3 nights";
+  // Gemini answers with a lodge on its own
+  const ai = aiToParsed({ adults: 2, nationality: "indian", arrival_date: "2027-01-16", arrival_place: "Nagpur Airport", departure_place: "Nagpur Airport", stops: [{ park: "Pench", lodge: "Pench Jungle Camp", nights: 3 }] }, two);
+  assert.equal(ai.parks[0].lodge, "Pench Jungle Camp");
+  const r = chatTurn(plan, initialFlags(plan), msg, two, TODAY, ai, { aiPrimary: true });
+  assert.match(r.reply.text, /Which lodge in Pench/);
+  assert.ok(!(r.flags.lodgeDecided ?? []).includes("PENCH"));
+  // when the message does name it, the AI's lodge is used and nothing is asked
+  const named = chatTurn(plan, initialFlags(plan), msg.replace("Pench 3 nights", "3 nights at Pench Jungle Camp"), two, TODAY, ai, { aiPrimary: true });
+  assert.equal(named.plan.stops[0].property_id, "PT2");
+  assert.doesNotMatch(named.reply.text, /Which lodge/);
+});

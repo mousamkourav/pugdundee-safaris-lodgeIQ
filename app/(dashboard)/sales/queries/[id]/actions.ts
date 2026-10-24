@@ -178,3 +178,30 @@ export async function saveFlightBooking(
     return { ok: true };
   });
 }
+
+// ---------------------------------------------------------------- deleting a query
+
+// Soft delete: the query is hidden from every list and its client links stop working,
+// but its versions and history are kept. Sales admins and the super roles only.
+export async function deleteQuery(queryId: string, reason: string): Promise<Result> {
+  return safe("deleteQuery", async () => {
+    const cu = await getCurrentUser();
+    if (!cu?.user || !isSalesAdmin(cu.profile?.role)) return { error: "Only Sales admins can delete a query." };
+    const supabase = await createClient();
+    const { data: q } = await supabase.from("sales_queries").select("id, query_no, guest_name, status, total_amount").eq("id", queryId).is("deleted_at", null).maybeSingle();
+    if (!q) return { error: "Query not found, or already deleted." };
+    const { createAdminClient } = await import("@/lib/supabase/admin");
+    const db = createAdminClient();
+    const when = new Date().toISOString();
+    const { error } = await db.from("sales_queries").update({ deleted_at: when, deleted_by: cu.user.id }).eq("id", queryId);
+    if (error) return { error: /deleted_at|schema cache/i.test(error.message) ? "Run sales_v4_queries.sql in Supabase first." : error.message };
+    // who, when and why (the audit log is for the record; a failure here does not undo the delete)
+    const row = q as { query_no: string; guest_name: string; status: string; total_amount: number | null };
+    await db
+      .from("audit_log")
+      .insert({ actor: cu.user.id, action: "sales_query_deleted", table_name: "sales_queries", record_id: queryId, diff: { query_no: row.query_no, guest_name: row.guest_name, status: row.status, total: row.total_amount, reason: clean(reason, 300) || null, deleted_at: when } })
+      .then(() => undefined, () => undefined);
+    revalidatePath("/sales", "layout");
+    return { ok: true };
+  });
+}

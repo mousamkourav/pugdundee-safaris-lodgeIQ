@@ -52,7 +52,7 @@ export default async function SalesDashboard({
   const supabase = await createClient();
 
   // Period rows (RLS already limits members to their own queries).
-  let periodQ = supabase.from("sales_queries").select(QUERY_LIST_COLUMNS);
+  let periodQ = supabase.from("sales_queries").select(QUERY_LIST_COLUMNS).is("deleted_at", null);
   if (range === "month") periodQ = periodQ.gte("created_at", startOfMonthIST());
   if (!admin) periodQ = periodQ.eq("assigned_to", user.id);
   const { data: periodData, error } = await periodQ.limit(5000);
@@ -60,7 +60,7 @@ export default async function SalesDashboard({
   const t = summarise(period);
 
   // Follow-up list: every open query regardless of period, oldest first.
-  let openQ = supabase.from("sales_queries").select(QUERY_LIST_COLUMNS).in("status", ["open", "quoted"]);
+  let openQ = supabase.from("sales_queries").select(QUERY_LIST_COLUMNS).is("deleted_at", null).in("status", ["open", "quoted"]);
   if (!admin) openQ = openQ.eq("assigned_to", user.id);
   const { data: openData } = await openQ.order("created_at", { ascending: true }).limit(10);
   const openRows = (openData ?? []) as unknown as QueryRow[];

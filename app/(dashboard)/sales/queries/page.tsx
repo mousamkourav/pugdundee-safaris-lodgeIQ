@@ -3,6 +3,7 @@ import { requireUser, isSalesAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ui } from "@/components/ui";
 import { QueriesTable } from "@/components/sales/queries-table";
+import { FilterSelect } from "@/components/filter-select";
 import { getMemberNames } from "@/lib/sales/members";
 import { QUERY_LIST_COLUMNS, QUERY_STATUSES, STATUS_LABEL, isQueryStatus, type QueryRow } from "@/lib/sales/status";
 
@@ -19,7 +20,7 @@ export default async function QueriesPage({
   const search = (sp.q ?? "").trim();
 
   const supabase = await createClient();
-  let query = supabase.from("sales_queries").select(QUERY_LIST_COLUMNS);
+  let query = supabase.from("sales_queries").select(QUERY_LIST_COLUMNS).is("deleted_at", null);
   if (!admin) query = query.eq("assigned_to", user.id);
   if (member) query = query.eq("assigned_to", member);
   if (status) query = query.eq("status", status);
@@ -31,9 +32,13 @@ export default async function QueriesPage({
   const { data, error } = await query.order("created_at", { ascending: false }).limit(200);
   const rows = (data ?? []) as unknown as QueryRow[];
 
-  const names = admin
-    ? (await getMemberNames(rows.map((r) => r.assigned_to).filter((x): x is string => !!x).concat(member ? [member] : []))).names
-    : {};
+  const memberInfo = admin ? await getMemberNames(rows.map((r) => r.assigned_to).filter((x): x is string => !!x).concat(member ? [member] : [])) : null;
+  const names = memberInfo?.names ?? {};
+  // the Sales team, for the Member filter (active members first)
+  const memberOptions = (memberInfo?.members ?? [])
+    .slice()
+    .sort((a, b) => Number(a.status === "disabled") - Number(b.status === "disabled") || (a.full_name ?? "").localeCompare(b.full_name ?? ""))
+    .map((m) => ({ value: m.id, label: `${m.full_name || "Unnamed"}${m.status === "disabled" ? " (inactive)" : ""}` }));
 
   // Keep member + search when switching tabs.
   const href = (s: string | null) => {
@@ -59,12 +64,15 @@ export default async function QueriesPage({
             {member ? `Queries - ${names[member] ?? "member"}` : admin ? "All queries" : "My queries"}
           </h1>
         </div>
+        <div className="flex w-full flex-col gap-2 sm:flex-row md:w-auto">
+        {admin && memberOptions.length > 0 && <FilterSelect param="member" value={member} options={memberOptions} allLabel="All members" ariaLabel="Member" />}
         <form action="/sales/queries" className="flex w-full gap-2 md:w-auto">
           {status && <input type="hidden" name="status" value={status} />}
           {member && <input type="hidden" name="member" value={member} />}
           <input name="q" defaultValue={search} placeholder="Guest name or query no." className={`${ui.inputSm} md:w-64`} />
           <button className={`${ui.btnSecondary} ${ui.btnSm}`}>Search</button>
         </form>
+        </div>
       </div>
 
       <div className="no-scrollbar flex gap-6 overflow-x-auto border-b border-sand-200 text-sm">

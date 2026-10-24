@@ -45,7 +45,11 @@ export function DownloadPdfButton({ fileName, rootId = "itinerary" }: { fileName
         const bleed = el.dataset.pdfBlock === "cover"; // the cover runs edge to edge
         const x = bleed ? 0 : MARGIN;
         const w = bleed ? A4.w : A4.w - 2 * MARGIN;
-        const canvas = await toCanvas(el, { pixelRatio: 2, backgroundColor: "#ffffff", cacheBust: false, imagePlaceholder: "data:image/gif;base64,R0lGODlhAQABAAAAACw=" });
+        // html-to-image paints backgroundColor over the captured element itself, so a dark
+        // panel (price card, footer) must keep its own colour; white only where it has none.
+        const own = getComputedStyle(el).backgroundColor;
+        const background = !own || own === "transparent" || /rgba\([^)]*,\s*0\)$/.test(own) ? "#ffffff" : own;
+        const canvas = await toCanvas(el, { pixelRatio: 2, backgroundColor: background, cacheBust: false, imagePlaceholder: "data:image/gif;base64,R0lGODlhAQABAAAAACw=" });
         const h = (canvas.height * w) / canvas.width;
         const usable = A4.h - 2 * MARGIN;
 

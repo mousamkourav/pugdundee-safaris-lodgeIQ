@@ -13,7 +13,7 @@ export default async function SalesMembersPage() {
   const [{ data: profiles }, { data: usersPage }, { data: queries }] = await Promise.all([
     admin.from("profiles").select("id, full_name, role, status, phone, extra").in("role", ["sales_member", "sales_admin", "super_admin", "senior_manager"]),
     admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
-    admin.from("sales_queries").select("assigned_to, status"),
+    admin.from("sales_queries").select("assigned_to, status").is("deleted_at", null),
   ]);
 
   const authById = new Map((usersPage?.users ?? []).map((u) => [u.id, u]));

@@ -385,75 +385,52 @@ export function PlanStep({
                         </label>
                       </>
                     );
+                    // One line per safari, in order: full day, morning, evening. A full-day
+                    // safari replaces the morning and evening ones (and the other way round).
+                    const ROWS = [
+                      { session: "full_day" as const, label: "Full day safari" },
+                      { session: "morning" as const, label: "Morning safari" },
+                      { session: "afternoon" as const, label: "Evening safari" },
+                    ];
                     return (
-                      <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5">
-                        <Icon name="route" className="h-4 w-4 shrink-0 text-sand-500" />
-                        <label className="flex items-center gap-1.5 text-xs text-sand-600" title="One safari for the whole day (core or buffer), instead of morning and evening">
-                          <input
-                            type="checkbox"
-                            className="h-3.5 w-3.5"
-                            checked={!!fullDay}
-                            onChange={(e) => {
-                              if (!e.target.checked) return setFullDay(i, "");
-                              setFullDay(i, closed(d.park_id!, "core", "full_day", d.date) ? "buffer" : "core");
-                            }}
-                          />
-                          Full day
-                        </label>
-                        {fullDay ? (
-                          <span className="flex flex-wrap items-center gap-1.5 text-xs text-sand-600">
-                            {(() => {
-                              const closedCore = closed(d.park_id!, "core", "full_day", d.date);
-                              const closedBuffer = closed(d.park_id!, "buffer", "full_day", d.date);
-                              const onClosed = (fullDay.zone === "core" && closedCore) || (fullDay.zone === "buffer" && closedBuffer);
-                              return (
-                                <select
-                                  className={`rounded-md border bg-white px-1.5 py-0.5 text-xs ${onClosed ? "border-error text-error" : "border-sand-300"}`}
-                                  value={fullDay.zone}
-                                  onChange={(e) => setFullDay(i, e.target.value as DaySafari["zone"])}
-                                  aria-label="Full-day safari zone"
-                                >
-                                  <option value="core">{closedCore ? "Core (closed this day)" : "Core"}</option>
-                                  <option value="buffer">{closedBuffer ? "Buffer (closed this day)" : "Buffer"}</option>
-                                </select>
-                              );
-                            })()}
-                            {extras(fullDay)}
-                          </span>
-                        ) : (
-                          (["morning", "afternoon"] as const).map((session) => {
-                            const closedCore = closed(d.park_id!, "core", session, d.date);
-                            const closedBuffer = closed(d.park_id!, "buffer", session, d.date);
-                            const value = d.safaris.find((s) => s.session === session)?.zone ?? "";
-                            const onClosed = (value === "core" && closedCore) || (value === "buffer" && closedBuffer);
-                            const safari = d.safaris.find((s) => s.session === session);
-                            // Closed times are not offered at all (only shown if an older plan already has one).
-                            if (closedCore && closedBuffer && !value) {
-                              return (
-                                <span key={session} className="text-xs text-sand-400">
-                                  {session === "morning" ? "Morning" : "Evening"}: park closed
-                                </span>
-                              );
-                            }
-                            return (
-                              <span key={session} className="flex flex-wrap items-center gap-1.5 text-xs text-sand-600">
-                                <label className="flex items-center gap-1.5">
-                                  {session === "morning" ? "Morning" : "Evening"}
+                      <li className="space-y-1 px-3 py-1.5">
+                        {ROWS.map(({ session, label }) => {
+                          const closedCore = closed(d.park_id!, "core", session, d.date);
+                          const closedBuffer = closed(d.park_id!, "buffer", session, d.date);
+                          const safari = d.safaris.find((x) => x.session === session);
+                          const value = safari?.zone ?? "";
+                          const onClosed = (value === "core" && closedCore) || (value === "buffer" && closedBuffer);
+                          const coveredByFullDay = session !== "full_day" && !!fullDay;
+                          return (
+                            <div key={session} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-sand-600">
+                              <Icon name={session === "morning" ? "clock" : session === "afternoon" ? "route" : "calendar"} className="h-3.5 w-3.5 shrink-0 text-sand-400" />
+                              <span className="w-28 shrink-0 font-medium text-olive-800">{label}</span>
+                              {coveredByFullDay ? (
+                                <span className="text-sand-400">Included in the full-day safari</span>
+                              ) : closedCore && closedBuffer && !value ? (
+                                <span className="text-sand-400">Park closed</span>
+                              ) : (
+                                <>
                                   <select
                                     className={`rounded-md border bg-white px-1.5 py-0.5 text-xs ${onClosed ? "border-error text-error" : "border-sand-300"}`}
                                     value={value}
-                                    onChange={(e) => setSafari(i, session, e.target.value as "" | "core" | "buffer")}
+                                    onChange={(e) => {
+                                      const z = e.target.value as "" | "core" | "buffer";
+                                      if (session === "full_day") setFullDay(i, z);
+                                      else setSafari(i, session, z);
+                                    }}
+                                    aria-label={label}
                                   >
-                                    <option value="">No safari</option>
+                                    <option value="">No</option>
                                     {(!closedCore || value === "core") && <option value="core">{closedCore ? "Core (closed)" : "Core"}</option>}
                                     {(!closedBuffer || value === "buffer") && <option value="buffer">{closedBuffer ? "Buffer (closed)" : "Buffer"}</option>}
                                   </select>
-                                </label>
-                                {safari && extras(safari)}
-                              </span>
-                            );
-                          })
-                        )}
+                                  {safari && extras(safari)}
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
                       </li>
                     );
                   })()}

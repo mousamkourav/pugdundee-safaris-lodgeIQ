@@ -16,7 +16,7 @@ export default async function ClosedPage({
   const tab = (await searchParams).tab === "cancelled" ? "cancelled" : "lost";
   const supabase = await createClient();
 
-  let q = supabase.from("sales_queries").select(QUERY_LIST_COLUMNS).eq("status", tab);
+  let q = supabase.from("sales_queries").select(QUERY_LIST_COLUMNS).is("deleted_at", null).eq("status", tab);
   if (!admin) q = q.eq("assigned_to", user.id);
   const { data, error } = await q.order("updated_at", { ascending: false }).limit(200);
   const rows = (data ?? []) as unknown as QueryRow[];

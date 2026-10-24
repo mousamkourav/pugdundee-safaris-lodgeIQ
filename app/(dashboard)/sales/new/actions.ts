@@ -96,7 +96,7 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
   const supabase = await createClient();
 
   if (queryId) {
-    const { data: existing } = await supabase.from("sales_queries").select("id, status, query_no").eq("id", queryId).maybeSingle();
+    const { data: existing } = await supabase.from("sales_queries").select("id, status, query_no").eq("id", queryId).is("deleted_at", null).maybeSingle();
     if (!existing) return { error: "Query not found, or it is not assigned to you." };
     const status = (existing as { status: string }).status;
     if (status === "lost" || status === "cancelled") return { error: "Reopen this query before creating a new version." };

@@ -77,6 +77,7 @@ export function buildPrompt(input: {
     "",
     "RULES:",
     "- Copy park, lodge, room and place names EXACTLY from the lists. Never invent one; use null if unsure.",
+    '- "lodge": only when the message names the lodge; otherwise null. Never choose a lodge yourself, even where a park has only one or two lodges.',
     '- "3 days" at a lodge means 3 nights. A second lodge in the same park is a separate stop.',
     '- arrival_place is where the road transfer to the first lodge starts (after any flight). departure_place is where the guests leave from at the end (before any flight).',
     "- Cities like Delhi are not stops: nights there go in city_stays (before or after the safari), flights in flights.",

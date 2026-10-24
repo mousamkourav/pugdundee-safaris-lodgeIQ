@@ -1,5 +1,21 @@
 import type { FieldDef } from "./types";
 
+// Guest page defaults, used until Sales settings are saved with other values.
+export const DIRECT_CONTACTS_DEFAULT = ["enquiry@pugdundeesafaris.com", "sales@pugdundeesafaris.com", "+91-11-40146400", "+91-11-40132103", "reservation@pugdundeesafaris.com"];
+export const WHATSAPP_DEFAULT = {
+  number: "919810402034",
+  text: "Hello, I saw your Pugdundee website and am interested to know more.",
+  link: "https://wa.me/message/RT3RQ4ZICJLHI1",
+};
+
+// The WhatsApp button's link: a chat with the message filled in, else the plain link.
+export function whatsappHref(number: unknown, text: unknown, link: unknown): string {
+  const digits = String(number ?? "").replace(/\D/g, "");
+  if (digits.length >= 10) return `https://wa.me/${digits}${String(text ?? "").trim() ? `?text=${encodeURIComponent(String(text).trim())}` : ""}`;
+  const l = String(link ?? "").trim();
+  return /^https:\/\/(wa\.me|api\.whatsapp\.com)\//i.test(l) ? l : WHATSAPP_DEFAULT.link;
+}
+
 // Fields of the single-row sales_settings.data jsonb. The "path" maps a form
 // field to its key inside data. NEVER rename a path once data is saved.
 export const SETTINGS_FIELDS: (FieldDef & { path: string[] })[] = [
@@ -7,6 +23,18 @@ export const SETTINGS_FIELDS: (FieldDef & { path: string[] })[] = [
   { name: "company_email", path: ["company", "email"], label: "Reservations email", type: "text" },
   { name: "company_phone", path: ["company", "phone"], label: "Reservations phone", type: "text" },
   { name: "company_gst", path: ["company", "gst"], label: "GST number", type: "text" },
+  {
+    name: "direct_guest_contacts",
+    path: ["guest_page", "direct_contacts"],
+    label: "Direct guests: contacts on the itinerary",
+    type: "textarea",
+    wide: true,
+    initial: DIRECT_CONTACTS_DEFAULT.join("\n"),
+    help: "One email or phone number per line. Indian (domestic) guests see these at the bottom of their itinerary instead of an emergency contact.",
+  },
+  { name: "whatsapp_number", path: ["guest_page", "whatsapp_number"], label: "WhatsApp number (guest page button)", type: "text", initial: WHATSAPP_DEFAULT.number, help: "With country code, digits only, e.g. 919810402034." },
+  { name: "whatsapp_text", path: ["guest_page", "whatsapp_text"], label: "WhatsApp message, filled in for the guest", type: "text", wide: true, initial: WHATSAPP_DEFAULT.text },
+  { name: "whatsapp_link", path: ["guest_page", "whatsapp_link"], label: "WhatsApp link (used when there is no number)", type: "text", wide: true, initial: WHATSAPP_DEFAULT.link },
   {
     name: "currency_default",
     path: ["currency_default"],

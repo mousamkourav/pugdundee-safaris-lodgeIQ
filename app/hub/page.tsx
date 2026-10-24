@@ -17,6 +17,7 @@ export default async function HubPage() {
   const { count: openCount } = await supabase
     .from("sales_queries")
     .select("id", { count: "exact", head: true })
+    .is("deleted_at", null)
     .eq("status", "open");
 
   const name: string = profile?.full_name || "there";

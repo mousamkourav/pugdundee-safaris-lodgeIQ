@@ -27,7 +27,7 @@ export default async function NewItineraryPage({
   let queryStatus: string | null = null;
   if (fromId) {
     const supabase = await createClient();
-    const { data: q } = await supabase.from("sales_queries").select("id, query_no, status").eq("id", fromId).maybeSingle();
+    const { data: q } = await supabase.from("sales_queries").select("id, query_no, status").eq("id", fromId).is("deleted_at", null).maybeSingle();
     if (!q) notFound();
     const { data: v } = await supabase
       .from("sales_itinerary_versions")
