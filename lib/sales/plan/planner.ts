@@ -119,7 +119,7 @@ function carryItems(oldDays: PlanDay[], days: PlanDay[]): PlanDay[] {
 export function buildDays(plan: Plan, ctx: BuilderContext): PlanDay[] {
   const fresh = buildDaysFresh(plan, ctx).map((d) => ({ ...d, items: [] as PlanItem[] }));
   if (!fresh.length) return fresh;
-  return carryItems(plan.days ?? [], addFlights(plan, addCityDays(plan, applyWants(plan, ctx, fresh))));
+  return carryItems(plan.days ?? [], addFlights(plan, addCityDays(plan, applyWants(plan, ctx, fresh), ctx)));
 }
 
 // The add-on at this lodge (else a general one) whose name has all the words, cheapest first.
@@ -249,7 +249,7 @@ const cityDay = (date: string, title: string, text: string): PlanDay => ({
 
 // Nights in a city outside our lodges, before the first lodge and after the last.
 // With a hotel price, each night carries a priced "hotel" item.
-function addCityDays(plan: Plan, days: PlanDay[]): PlanDay[] {
+function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[] {
   const before = (plan.city_stays ?? []).find((c) => c.when === "before" && c.nights > 0);
   const after = (plan.city_stays ?? []).find((c) => c.when === "after" && c.nights > 0);
   const where = (c: { city: string; hotel?: string }) => (c.hotel ? `${c.hotel}, ${c.city}` : `${c.city}; hotel to be confirmed`);
@@ -270,7 +270,16 @@ function addCityDays(plan: Plan, days: PlanDay[]): PlanDay[] {
   }
   if (after) {
     const last = out[out.length - 1];
-    out[out.length - 1] = { ...last, text: `${last.text} Overnight at ${where(after)}.`.trim(), items: [...last.items, ...night(after, 0)] };
+    // The last lodge day is not a departure any more: the guests drive on to the city.
+    // (The road is priced to the departure airport or station, which is in that city.)
+    const hours = last.transfer ? driveHours(ctx, last.transfer.from_location_id, last.transfer.to_location_id, plan.vehicle_type) : null;
+    const drive = last.kind === "departure" ? `After breakfast, drive to ${after.city}${hours ? ` (about ${hours} hours)` : ""}.` : last.text;
+    out[out.length - 1] = {
+      ...last,
+      ...(last.kind === "departure" ? { title: `Drive to ${after.city}` } : {}),
+      text: `${drive} Overnight at ${where(after)}.`.trim(),
+      items: [...last.items, ...night(after, 0)],
+    };
     for (let j = 1; j <= after.nights; j++) {
       out.push(
         j < after.nights
@@ -292,8 +301,11 @@ function addFlights(plan: Plan, days: PlanDay[]): PlanDay[] {
   const after = (plan.city_stays ?? []).find((c) => c.when === "after");
   const out = [...days];
   flights.forEach((f, i) => {
-    const inbound = (before && f.from === before.city) || (!(after && f.to === after.city) && i === 0);
-    const at = inbound ? firstLodge : lastLodge;
+    const fromStart = !!before && f.from === before.city && (i === 0 || !after || after.city !== before.city);
+    const inbound = fromStart || (!(after && f.to === after.city) && !(after && f.from === after.city) && i === 0);
+    // flying out of the city at the end ("fly Khajuraho to Delhi") is on the last day,
+    // after the city nights; flying into the city stay is on the last lodge day
+    const at = inbound ? firstLodge : after && f.from === after.city ? days.length - 1 : lastLodge;
     if (at < 0) return;
     const item: PlanItem = {
       id: `auto-flight-${i}`,

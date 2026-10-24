@@ -70,6 +70,7 @@ export function PlanStep({
 
   const lodgeName = (id: string | null) => ctx.properties.find((p) => p.id === id)?.name ?? "";
   const locName = (id: string) => ctx.locations.find((l) => l.id === id)?.name ?? "?";
+  const afterStay = (plan.city_stays ?? []).find((c) => c.when === "after" && c.nights > 0);
   const parkLodges = new Set(plan.stops.map((s) => s.property_id));
   // Experiences: the same one at several lodges (bush dinner, nature walk, cycling) is a
   // Pugdundee experience and shown once; one that exists at a single lodge is labelled
@@ -363,10 +364,16 @@ export function PlanStep({
                     {isTarget && <span className="rounded-full bg-olive-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">Adding here</span>}
                     {!plan.dateless && <span className="text-xs uppercase tracking-wide text-sand-500">{dayName(d.date)} {fmtDate(d.date)}</span>}
                   </span>
-                  <span className="truncate text-xs text-sand-500">{d.property_id ? lodgeName(d.property_id) : d.kind === "city" ? "City stay" : "Departure"}</span>
+                  <span className="truncate text-xs text-sand-500">{d.property_id ? lodgeName(d.property_id) : d.kind === "city" ? d.title || "City stay" : d.title || "Departure"}</span>
                 </button>
 
                 <ul className="divide-y divide-sand-100 text-sm">
+                  {d.kind === "city" && d.text && (
+                    <li className="flex items-center gap-2 px-3 py-1.5 text-xs text-sand-600">
+                      <Icon name="building" className="h-4 w-4 shrink-0 text-sand-500" />
+                      <span className="flex-1">{d.text}</span>
+                    </li>
+                  )}
                   {d.notes.map((n, k) => (
                     <li key={`n${k}`} className="flex gap-2 px-3 py-1.5 text-xs text-warning">
                       <Icon name="alert" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -376,7 +383,11 @@ export function PlanStep({
                   {d.transfer && (
                     <li className="flex items-center gap-2 px-3 py-1.5">
                       <Icon name="car" className="h-4 w-4 shrink-0 text-sand-500" />
-                      <span className="flex-1 truncate">{locName(d.transfer.from_location_id)} to {locName(d.transfer.to_location_id)}</span>
+                      <span className="flex-1 truncate">
+                        {locName(d.transfer.from_location_id)} to{" "}
+                        {/* the last lodge day before city nights: the drive is to the city hotel */}
+                        {d.kind === "departure" && afterStay ? (afterStay.hotel ? `${afterStay.hotel}, ${afterStay.city}` : afterStay.city) : locName(d.transfer.to_location_id)}
+                      </span>
                     </li>
                   )}
                   {d.park_id && (() => {

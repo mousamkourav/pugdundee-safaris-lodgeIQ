@@ -172,3 +172,19 @@ test("short park names and a steady headline", async () => {
   assert.equal(headlineFor("a|b"), headlineFor("a|b"));
   assert.ok(headlineFor("a|b").split(" ").length <= 6);
 });
+
+test("nights in a city at the end: drive there from the last lodge, fly out after the city nights", () => {
+  const p = sheetPlan();
+  p.city_stays = [{ when: "after", city: "Khajuraho", nights: 2, hotel: "Radisson Hotel Jass Khajuraho" }];
+  p.flights = [{ from: "Khajuraho", to: "Delhi" }];
+  p.days = buildDays(p, ctx);
+  const n = p.days.length;
+  const drive = p.days[n - 3];
+  assert.equal(drive.kind, "departure");
+  assert.equal(drive.title, "Drive to Khajuraho");
+  assert.match(drive.text, /^After breakfast, drive to Khajuraho.*Overnight at Radisson Hotel Jass Khajuraho, Khajuraho\.$/);
+  assert.doesNotMatch(drive.text, /onward journey/);
+  assert.ok(!drive.items.some((i) => i.type === "flight"));
+  assert.equal(p.days[n - 1].title, "Depart from Khajuraho");
+  assert.equal(p.days[n - 1].items.find((i) => i.type === "flight")!.title, "Flight Khajuraho to Delhi");
+});
