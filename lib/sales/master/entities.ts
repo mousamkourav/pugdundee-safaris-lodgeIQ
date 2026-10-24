@@ -120,13 +120,14 @@ export const ENTITIES: EntityDef[] = [
     group: "Places",
     icon: "leaf",
     description: "National parks, with descriptions used in itineraries.",
-    media: { owner: "park", max: 12 },
+    media: { owner: "park", max: 13 }, // 1 main image + 12 wildlife photos
     fields: [
       { name: "name", label: "Park name", type: "text", required: true, placeholder: "e.g. Tadoba-Andhari Tiger Reserve" },
       { name: "state", label: "State", type: "text", placeholder: "e.g. Maharashtra" },
       { name: "short_desc", label: "Short description", type: "textarea", wide: true, help: "One or two lines for cards and summaries." },
       { name: "long_desc", label: "Long description", type: "textarea", wide: true, help: "Shown in the client itinerary." },
       { name: "season_notes", label: "Season notes", type: "textarea", wide: true, placeholder: "e.g. Core zones open 1 Oct - 30 Jun" },
+      { name: "website", label: "Read more link", type: "text", wide: true, placeholder: "e.g. https://www.pugdundeesafaris.com/kanha-national-park", help: "Shown under Know about the parks on the guest itinerary. The cover photo is the hero image; the other photos are the wildlife slideshow." },
       sort,
       active,
     ],
@@ -402,6 +403,30 @@ export const ENTITIES: EntityDef[] = [
     order: [{ column: "name", ascending: true }],
   },
 
+  {
+    key: "flights",
+    table: "sales_flight_routes",
+    title: "Flight routes",
+    singular: "flight route",
+    group: "Safaris & travel",
+    icon: "send",
+    description: "Domestic flights the team can pick in an itinerary. Fares are typed (not live), per person one way; everything stays editable in the itinerary.",
+    fields: [
+      { name: "from_city", label: "From", type: "text", required: true, placeholder: "e.g. Delhi" },
+      { name: "to_city", label: "To", type: "text", required: true, placeholder: "e.g. Jabalpur" },
+      { name: "airline", label: "Airline", type: "text", placeholder: "e.g. IndiGo" },
+      { name: "flight_no", label: "Flight number", type: "text", placeholder: "e.g. 6E 2161" },
+      { name: "depart_time", label: "Take-off", type: "time" },
+      { name: "arrive_time", label: "Landing", type: "time" },
+      { name: "fare", label: "Fare per person (one way)", type: "money", required: true, initial: 15000 },
+      { name: "cabin", label: "Class", type: "text", empty: "Economy", initial: "Economy" },
+      notes,
+      sort,
+      active,
+    ],
+    list: ["from_city", "to_city", "airline", "flight_no", "depart_time", "arrive_time", "fare", "active"],
+    order: [{ column: "from_city", ascending: true }, { column: "to_city", ascending: true }],
+  },
   // ---------------------------- Commercial ----------------------------
   {
     key: "offers",

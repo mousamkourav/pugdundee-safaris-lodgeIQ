@@ -63,6 +63,8 @@ export interface FlightInfo {
   airline: string;
   number: string;
   time: string; // departure time, e.g. 08:30
+  arrive?: string; // landing time, e.g. 10:05
+  route_id?: string; // picked from Master data > Flight routes
   pnr: string; // empty until booked
   fare_pp?: number | null; // fare per person in rupees (typed, not live); the item price = fare x guests
   cabin?: string; // e.g. "Economy"
@@ -161,4 +163,17 @@ export interface BuilderContext {
   templates: { kind: string; title: string; body: string; park_id: string | null; property_id: string | null; is_default: boolean }[];
   content: ContentBlock[]; // guest-facing text blocks (inclusions, notes, terms)
   cancellation: CancellationSlab[];
+  flightRoutes?: FlightRoute[]; // Master data > Flight routes (empty before sales_v3_flights_parks.sql)
+}
+
+export interface FlightRoute {
+  id: string;
+  from_city: string;
+  to_city: string;
+  airline: string;
+  flight_no: string;
+  depart_time: string; // hh:mm or ""
+  arrive_time: string;
+  fare: number; // per person, one way
+  cabin: string;
 }

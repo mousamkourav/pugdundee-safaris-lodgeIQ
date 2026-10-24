@@ -10,7 +10,7 @@ const n = (v: unknown, f = 0) => (v === null || v === undefined || v === "" ? f 
 
 export async function loadBuilderContext(): Promise<{ ctx: BuilderContext; error: string | null }> {
   const supabase = await createClient();
-  const [{ data: pricing, error: pricingError }, props, locs, rooms, tpl, content, settings] = await Promise.all([
+  const [{ data: pricing, error: pricingError }, props, locs, rooms, tpl, content, settings, flights] = await Promise.all([
     loadPricingData(),
     supabase.from("sales_properties").select("id, name, park_id, kind, fallback_priority, sort").eq("active", true),
     supabase.from("sales_locations").select("id, name, type, property_id, code").eq("active", true).order("name"),
@@ -28,6 +28,8 @@ export async function loadBuilderContext(): Promise<{ ctx: BuilderContext; error
       .not("kind", "like", "day_%")
       .order("sort"),
     supabase.from("sales_settings").select("data").eq("id", 1).maybeSingle(),
+    // Master data > Flight routes (the table may not exist yet: then none)
+    supabase.from("sales_flight_routes").select("id, from_city, to_city, airline, flight_no, depart_time, arrive_time, fare, cabin").eq("active", true).order("from_city").order("to_city").order("sort"),
   ]);
   const err = pricingError ?? [props, locs, rooms, tpl, content, settings].find((r) => r.error)?.error?.message ?? null;
   const slabs = ((settings.data as { data?: { cancellation_slabs?: unknown } } | null)?.data?.cancellation_slabs ?? []) as Row[];
@@ -62,6 +64,19 @@ export async function loadBuilderContext(): Promise<{ ctx: BuilderContext; error
         property_id: sn(r.property_id),
         is_default: !!r.is_default,
       })),
+      flightRoutes: flights.error
+        ? []
+        : rows(flights).map((r) => ({
+            id: s(r.id),
+            from_city: s(r.from_city),
+            to_city: s(r.to_city),
+            airline: s(r.airline),
+            flight_no: s(r.flight_no),
+            depart_time: s(r.depart_time).slice(0, 5),
+            arrive_time: s(r.arrive_time).slice(0, 5),
+            fare: n(r.fare, 15000),
+            cabin: s(r.cabin) || "Economy",
+          })),
       cancellation: (Array.isArray(slabs) ? slabs : []).map((c) => ({
         min_days: n(c.min_days),
         max_days: c.max_days === null || c.max_days === undefined || c.max_days === "" ? null : n(c.max_days),

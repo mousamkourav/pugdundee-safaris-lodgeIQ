@@ -127,3 +127,54 @@ export async function reassignQuery(queryId: string, memberId: string, remark: s
 export async function deleteDraft(queryId: string): Promise<Result> {
   return safe("deleteDraft", () => deleteDraftUnsafe(queryId));
 }
+
+// ---------------------------------------------------------------- flight booking details
+
+export async function saveFlightBooking(
+  queryId: string,
+  itemId: string,
+  input: { airline: string; flight_no: string; depart_time: string; arrive_time: string; pnr: string; ticket_no: string; status: string; notes: string }
+): Promise<Result> {
+  return safe("saveFlightBooking", async () => {
+    const cu = await getCurrentUser();
+    if (!cu?.user || !isSalesUser(cu.profile?.role)) return { error: "You do not have access to Sales." };
+    // the user's own client: RLS decides whether they may see this query
+    const supabase = await createClient();
+    const { data: q } = await supabase.from("sales_queries").select("id, assigned_to").eq("id", queryId).maybeSingle();
+    if (!q) return { error: "Query not found, or it is not assigned to you." };
+    if (!isSalesAdmin(cu.profile?.role) && (q as { assigned_to: string | null }).assigned_to !== cu.user.id) return { error: "Only the member this query is assigned to can change its flights." };
+    const { data: v } = await supabase.from("sales_itinerary_versions").select("plan").eq("query_id", queryId).order("version_no", { ascending: false }).limit(1).maybeSingle();
+    const days = ((v as { plan?: { days?: { items?: { id?: string; type?: string }[] }[] } } | null)?.plan?.days ?? []) as { items?: { id?: string; type?: string }[] }[];
+    if (!days.some((d) => (d.items ?? []).some((it) => it.id === itemId && it.type === "flight"))) return { error: "This flight is not in the latest version of the itinerary." };
+
+    const time = (t: string) => (/^\d{1,2}:\d{2}$/.test(t.trim()) ? t.trim().padStart(5, "0") : null);
+    if (input.depart_time && !time(input.depart_time)) return { error: "Take-off time: use hh:mm." };
+    if (input.arrive_time && !time(input.arrive_time)) return { error: "Landing time: use hh:mm." };
+    const status = ["planned", "on_hold", "confirmed", "cancelled"].includes(input.status) ? input.status : "planned";
+    if (status === "confirmed" && !clean(input.pnr)) return { error: "A confirmed flight needs its PNR." };
+
+    const { createAdminClient } = await import("@/lib/supabase/admin");
+    const { error } = await createAdminClient()
+      .from("sales_flight_bookings")
+      .upsert(
+        {
+          query_id: queryId,
+          item_id: itemId.slice(0, 80),
+          airline: clean(input.airline, 60) || null,
+          flight_no: clean(input.flight_no, 20) || null,
+          depart_time: input.depart_time ? time(input.depart_time) : null,
+          arrive_time: input.arrive_time ? time(input.arrive_time) : null,
+          pnr: clean(input.pnr, 20).toUpperCase() || null,
+          ticket_no: clean(input.ticket_no, 40) || null,
+          status,
+          notes: clean(input.notes, 500) || null,
+          updated_by: cu.user.id,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "query_id,item_id" }
+      );
+    if (error) return { error: /does not exist|schema cache/i.test(error.message) ? "Run sales_v3_flights_parks.sql in Supabase first." : error.message };
+    revalidatePath(`/sales/queries/${queryId}`);
+    return { ok: true };
+  });
+}

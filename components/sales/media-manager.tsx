@@ -35,6 +35,7 @@ export function MediaManager({
   max,
   title = "Photos",
   hint = "The starred photo is the cover used in itineraries. Use the arrows to change the order.",
+  mode = "all",
 }: {
   owner: MediaOwner;
   ownerId: string | null;
@@ -42,6 +43,8 @@ export function MediaManager({
   max: number;
   title?: string;
   hint?: string;
+  // "cover": only the cover photo (a park's main image); "rest": every photo but the cover
+  mode?: "all" | "cover" | "rest";
 }) {
   const router = useRouter();
   const [picked, setPicked] = useState<PickedPhoto[]>([]);
@@ -73,7 +76,7 @@ export function MediaManager({
     }
 
     if (paths.length) {
-      const res = await addMedia(owner, ownerId, paths);
+      const res = await addMedia(owner, ownerId, paths, mode === "cover" ? "yes" : mode === "rest" ? "no" : "auto");
       if (res.error) {
         await bucket.remove(paths); // do not leave orphan files behind
         failed.push(res.error);
@@ -125,7 +128,7 @@ export function MediaManager({
               <div className="relative aspect-[4/3] bg-sand-100">
                 {/* eslint-disable-next-line @next/next/no-img-element -- Supabase public URL, sizes vary */}
                 <img src={m.url} alt={m.caption ?? ""} loading="lazy" className="h-full w-full object-cover" />
-                {m.is_cover && (
+                {m.is_cover && mode !== "cover" && (
                   <span className="absolute left-2 top-2">
                     <Badge tone="gold">Cover</Badge>
                   </span>
@@ -183,7 +186,7 @@ export function MediaManager({
                         onClick={() => run(() => setCover(m.id))}
                         className={`${ui.btnGhost} ${ui.btnSm}`}
                       >
-                        Make cover
+                        {mode === "rest" ? "Make main image" : "Make cover"}
                       </button>
                     )}
                     <button
@@ -219,7 +222,7 @@ export function MediaManager({
           )}
         </div>
       ) : (
-        <p className="text-sm text-sand-500">Photo limit reached. Delete one to add another.</p>
+        <p className="text-sm text-sand-500">{mode === "cover" ? "To change the main image, delete this one and upload another, or choose Make main image on a wildlife photo." : "Photo limit reached. Delete one to add another."}</p>
       )}
     </section>
   );

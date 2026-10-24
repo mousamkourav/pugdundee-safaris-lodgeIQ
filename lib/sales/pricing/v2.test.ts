@@ -146,3 +146,19 @@ test("dates not fixed: no closure errors (the weekday is unknown)", () => {
   assert.ok(priceTrip(s, data).errors.some((e) => e.includes("park closed")));
   assert.deepEqual(priceTrip({ ...s, rate_basis: { season: "high", safari_days: "weekday", year: "current" } }, data).errors, []);
 });
+
+test("yearly hike on add-ons: dates in the hike period get the add-ons %", () => {
+  const withAddon: PricingData = {
+    ...data,
+    addons: [{ id: "WALK", name: "Village walk", property_id: null, pricing_unit: "per_person", rate: 1000, tax_pct: 0, active: true }],
+    settings: { ...data.settings, hike: { label: "2027-28", from: "2027-07-01", to: "2028-06-30", hotels_pct: 0, safaris_pct: 0, transfers_pct: 0, addons_pct: 10 } },
+  };
+  const base: TripInput = { ...trip, safaris: [], transfers: [], addons: [{ addon_id: "WALK", date: "2027-01-18" }] };
+  assert.equal(priceTrip(base, withAddon).totals.addon, 2000); // before the hike period
+  const later = priceTrip({ ...base, addons: [{ addon_id: "WALK", date: "2027-08-10" }] }, withAddon);
+  assert.equal(later.totals.addon, 2200);
+  assert.ok(later.warnings.some((w) => w.includes("add-ons +10%")));
+  // dates not fixed, next season
+  const free = priceTrip({ ...base, rate_basis: { season: "high", safari_days: "weekday", year: "next" } }, withAddon);
+  assert.equal(free.totals.addon, 2200);
+});

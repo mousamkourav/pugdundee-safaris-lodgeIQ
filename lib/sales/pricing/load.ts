@@ -37,9 +37,9 @@ function hikeOf(v: unknown): RateHike | null {
   const from = date(h.from);
   const to = date(h.to);
   const pct = (x: unknown) => Math.max(-50, Math.min(100, num(x)));
-  const out = { label: str(h.label) || "next season", from: from!, to: to!, hotels_pct: pct(h.hotels_pct), safaris_pct: pct(h.safaris_pct), transfers_pct: pct(h.transfers_pct) };
+  const out = { label: str(h.label) || "next season", from: from!, to: to!, hotels_pct: pct(h.hotels_pct), safaris_pct: pct(h.safaris_pct), transfers_pct: pct(h.transfers_pct), addons_pct: pct(h.addons_pct) };
   if (!from || !to || to < from) return null;
-  return out.hotels_pct || out.safaris_pct || out.transfers_pct ? out : null;
+  return out.hotels_pct || out.safaris_pct || out.transfers_pct || out.addons_pct ? out : null;
 }
 
 export async function loadPricingData(): Promise<{ data: PricingData; error: string | null }> {

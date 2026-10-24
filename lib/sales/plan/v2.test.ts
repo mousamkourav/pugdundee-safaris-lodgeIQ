@@ -180,7 +180,7 @@ test("includes / does not include follow the itinerary", () => {
   assert.ok(d.inclusions.includes("All meals: breakfast, lunch and dinner"));
   assert.ok(d.inclusions.includes("Currently applicable taxes"));
   assert.ok(d.exclusions.includes("Accompanying lodge naturalist on safaris"));
-  assert.ok(d.exclusions.includes("Domestic flights"));
+  assert.ok(d.exclusions.includes("Flights and train tickets"));
   assert.ok(d.exclusions.some((x) => x.startsWith("Tips & gratuities")));
   // tick a naturalist: it moves to the includes
   p.days[1] = { ...p.days[1], safaris: p.days[1].safaris.map((s) => ({ ...s, naturalist: true })) };

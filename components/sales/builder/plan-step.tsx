@@ -29,7 +29,7 @@ const AIRPORTS = ["Delhi", "Mumbai", "Bengaluru", "Kolkata", "Jabalpur", "Nagpur
 const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 export function flightSummary(f?: PlanItem["flight"]) {
   if (!f) return "";
-  return [f.airline && f.number ? `${f.airline} ${f.number}` : f.airline || f.number, f.time && `departs ${f.time}`, f.pnr && `PNR ${f.pnr}`, f.fare_pp && `Rs ${f.fare_pp.toLocaleString("en-IN")} per person`]
+  return [f.airline && f.number ? `${f.airline} ${f.number}` : f.airline || f.number, f.time && `departs ${f.time}${f.arrive ? `, lands ${f.arrive}` : ""}`, f.pnr && `PNR ${f.pnr}`, f.fare_pp && `Rs ${f.fare_pp.toLocaleString("en-IN")} per person`]
     .filter(Boolean)
     .join(" \u00b7 ");
 }
@@ -55,7 +55,13 @@ export function PlanStep({
   const [overDay, setOverDay] = useState<number | null>(null);
   const [tab, setTab] = useState<"addons" | "custom">(ctx.pricing.addons.length ? "addons" : "custom");
   const [custom, setCustom] = useState<{ type: PlanItem["type"]; title: string; detail: string; price: string }>({ type: "activity", title: "", detail: "", price: "" });
-  const [flight, setFlight] = useState({ from: "", to: "", airline: "", number: "", time: "", pnr: "", fare: "", cabin: "Economy", baggage: FLIGHT_BAGGAGE });
+  const [flight, setFlight] = useState({ from: "", to: "", airline: "", number: "", time: "", arrive: "", pnr: "", fare: "", cabin: "Economy", baggage: FLIGHT_BAGGAGE, route_id: "" });
+  // Master data > Flight routes matching what is typed in From / To (all when both are empty)
+  const routes = (ctx.flightRoutes ?? []).filter(
+    (r) =>
+      (!flight.from.trim() || r.from_city.toLowerCase().startsWith(flight.from.trim().toLowerCase())) &&
+      (!flight.to.trim() || r.to_city.toLowerCase().startsWith(flight.to.trim().toLowerCase()))
+  );
   const [childrenText, setChildrenText] = useState(plan.guest.children.join(", "));
   const guests = plan.guest.adults + plan.guest.children.length;
   const autoJeeps = Math.max(1, Math.ceil(guests / 6));
@@ -193,6 +199,8 @@ export function PlanStep({
         airline: flight.airline.trim(),
         number: flight.number.trim(),
         time: flight.time.trim(),
+        ...(flight.arrive.trim() ? { arrive: flight.arrive.trim() } : {}),
+        ...(flight.route_id ? { route_id: flight.route_id } : {}),
         pnr: flight.pnr.trim(),
         ...(Number.isFinite(fare) && fare > 0 ? { fare_pp: Math.round(fare) } : {}),
         cabin: flight.cabin.trim() || "Economy",
@@ -586,11 +594,51 @@ export function PlanStep({
                 {custom.type === "flight" ? (
                   <div className="grid grid-cols-2 gap-2">
                     <datalist id="lq-airports">{AIRPORTS.map((a) => <option key={a} value={a} />)}</datalist>
-                    <input className={ui.inputSm} list="lq-airports" placeholder="From, e.g. Delhi" value={flight.from} onChange={(e) => setFlight((f) => ({ ...f, from: e.target.value }))} aria-label="Flight from" />
-                    <input className={ui.inputSm} list="lq-airports" placeholder="To, e.g. Jabalpur" value={flight.to} onChange={(e) => setFlight((f) => ({ ...f, to: e.target.value }))} aria-label="Flight to" />
+                    {(ctx.flightRoutes ?? []).length > 0 && (
+                      <select
+                        className={`${ui.select} col-span-2 w-full !py-1.5 text-sm`}
+                        value={flight.route_id}
+                        onChange={(e) => {
+                          const r = (ctx.flightRoutes ?? []).find((x) => x.id === e.target.value);
+                          if (!r) return setFlight((f) => ({ ...f, route_id: "" }));
+                          setFlight((f) => ({
+                            ...f,
+                            route_id: r.id,
+                            from: r.from_city,
+                            to: r.to_city,
+                            airline: r.airline,
+                            number: r.flight_no,
+                            time: r.depart_time,
+                            arrive: r.arrive_time,
+                            fare: String(r.fare),
+                            cabin: r.cabin || "Economy",
+                          }));
+                        }}
+                        aria-label="Pick a flight from Master data"
+                      >
+                        <option value="">Pick a flight ({routes.length} match{routes.length === 1 ? "" : "es"}), or type below</option>
+                        {routes.slice(0, 80).map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.from_city} to {r.to_city}
+                            {r.airline || r.flight_no ? ` \u00b7 ${[r.airline, r.flight_no].filter(Boolean).join(" ")}` : ""}
+                            {r.depart_time ? ` \u00b7 ${r.depart_time}${r.arrive_time ? `-${r.arrive_time}` : ""}` : ""}
+                            {` \u00b7 Rs ${r.fare.toLocaleString("en-IN")} pp`}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <input className={ui.inputSm} list="lq-airports" placeholder="From, e.g. Delhi" value={flight.from} onChange={(e) => setFlight((f) => ({ ...f, from: e.target.value, route_id: "" }))} aria-label="Flight from" />
+                    <input className={ui.inputSm} list="lq-airports" placeholder="To, e.g. Jabalpur" value={flight.to} onChange={(e) => setFlight((f) => ({ ...f, to: e.target.value, route_id: "" }))} aria-label="Flight to" />
                     <input className={ui.inputSm} placeholder="Airline" value={flight.airline} onChange={(e) => setFlight((f) => ({ ...f, airline: e.target.value }))} aria-label="Airline" />
                     <input className={ui.inputSm} placeholder="Flight no." value={flight.number} onChange={(e) => setFlight((f) => ({ ...f, number: e.target.value }))} aria-label="Flight number" />
-                    <input className={ui.inputSm} type="time" value={flight.time} onChange={(e) => setFlight((f) => ({ ...f, time: e.target.value }))} aria-label="Departure time" />
+                    <label className="flex items-center gap-1.5 text-[11px] text-sand-500">
+                      Take-off
+                      <input className={ui.inputSm} type="time" value={flight.time} onChange={(e) => setFlight((f) => ({ ...f, time: e.target.value }))} aria-label="Take-off time" />
+                    </label>
+                    <label className="flex items-center gap-1.5 text-[11px] text-sand-500">
+                      Landing
+                      <input className={ui.inputSm} type="time" value={flight.arrive} onChange={(e) => setFlight((f) => ({ ...f, arrive: e.target.value }))} aria-label="Landing time" />
+                    </label>
                     <input className={ui.inputSm} placeholder="PNR (once booked)" value={flight.pnr} onChange={(e) => setFlight((f) => ({ ...f, pnr: e.target.value }))} aria-label="PNR" />
                     <input className={`${ui.inputSm} tabular`} type="number" min={0} placeholder="Fare per person, Rs" value={flight.fare} onChange={(e) => setFlight((f) => ({ ...f, fare: e.target.value }))} aria-label="Fare per person" />
                     <input className={ui.inputSm} placeholder="Class, e.g. Economy" value={flight.cabin} onChange={(e) => setFlight((f) => ({ ...f, cabin: e.target.value }))} aria-label="Class" />
@@ -630,7 +678,7 @@ export function PlanStep({
                           if (!item) return;
                           addItem(targetDay, item);
                           setCustom((c) => ({ ...c, title: "", detail: "", price: "" }));
-                          setFlight({ from: "", to: "", airline: "", number: "", time: "", pnr: "", fare: "", cabin: "Economy", baggage: FLIGHT_BAGGAGE });
+                          setFlight({ from: "", to: "", airline: "", number: "", time: "", arrive: "", pnr: "", fare: "", cabin: "Economy", baggage: FLIGHT_BAGGAGE, route_id: "" });
                         }}
                       >
                         <Icon name="plus" className="h-4 w-4" />

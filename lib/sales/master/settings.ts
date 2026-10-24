@@ -53,6 +53,7 @@ export const SETTINGS_FIELDS: (FieldDef & { path: string[] })[] = [
   { name: "hike_hotels_pct", path: ["rate_hike", "hotels_pct"], label: "Hike % on hotels (rooms)", type: "number", empty: 0 },
   { name: "hike_safaris_pct", path: ["rate_hike", "safaris_pct"], label: "Hike % on safaris", type: "number", empty: 0 },
   { name: "hike_transfers_pct", path: ["rate_hike", "transfers_pct"], label: "Hike % on transfers", type: "number", empty: 0, help: "Transfer rates without an end date get this % for dates in the hike period." },
+  { name: "hike_addons_pct", path: ["rate_hike", "addons_pct"], label: "Hike % on add-ons and experiences", type: "number", empty: 0, help: "Add-ons have one price list (no dates): this % is added for dates in the hike period." },
   { name: "quote_validity_days", path: ["quote_validity_days"], label: "Quote valid for (days)", type: "int", empty: 15 },
   {
     name: "ai_parsing_enabled",

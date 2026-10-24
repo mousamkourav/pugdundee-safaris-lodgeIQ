@@ -44,7 +44,8 @@ export interface ClientView {
   detail: { date: string | null; label: string; quantity: number; net: number; gstPct: number | null; gst: number; amount: number }[]; // in quote currency
   dateless: boolean;
   stays: { property_id: string; room: string; meal: string; nights: number }[]; // room type per lodge
-  parks: { id: string; name: string; description: string; seasonNotes: string; photos: string[] }[];
+  // Know about the parks: the short text, the main image, the wildlife photos and the "Read more" link
+  parks: { id: string; name: string; description: string; hero: string | null; photos: string[]; website: string | null }[];
   driveHours: Record<string, number>; // "from|to" location ids -> hours
   heroUrl: string | null;
   lodges: { id: string; name: string; description: string; photos: string[]; website: string | null }[];
@@ -95,7 +96,7 @@ async function loadClientViewUncached(link: string): Promise<ClientView | null> 
   const locIds = [...new Set(plan.days.flatMap((d) => (d.transfer ? [d.transfer.from_location_id, d.transfer.to_location_id] : [])))];
   const [props, parks, media, brand, blocks, settings, consultant, rooms, parkMedia, closures, roads] = await Promise.all([
     db.from("sales_properties").select("id, name, short_desc, long_desc, website").in("id", propertyIds),
-    db.from("sales_parks").select("id, name, short_desc, long_desc, season_notes").in("id", parkIds),
+    db.from("sales_parks").select("*").in("id", parkIds), // "*": the website column is new (sales_v3_flights_parks.sql)
     db.from("sales_media").select("owner_id, storage_path, is_cover, sort").eq("owner_type", "property").in("owner_id", propertyIds).order("sort"),
     db.from("sales_media").select("storage_path, is_cover, sort").eq("owner_type", "brand").is("owner_id", null).order("is_cover", { ascending: false }).order("sort").limit(1),
     db.from("sales_content_blocks").select("kind, body, park_id, property_id, is_default, sort").eq("active", true).not("kind", "like", "day_%").order("sort"),
@@ -123,16 +124,17 @@ async function loadClientViewUncached(link: string): Promise<ClientView | null> 
   const parkRows = rows(parks);
   const parkList = parkIds.map((id) => {
     const p = parkRows.find((r) => r.id === id) ?? {};
+    const media = parkMediaRows.filter((m) => m.owner_id === id).sort((a, b) => a.sort - b.sort);
+    const cover = media.find((m) => m.is_cover);
+    const site = String(p.website ?? "").trim();
     return {
       id,
       name: String(p.name ?? ""),
-      description: String(p.long_desc || p.short_desc || ""),
-      seasonNotes: String(p.season_notes ?? ""),
-      photos: parkMediaRows
-        .filter((m) => m.owner_id === id)
-        .sort((a, b) => Number(b.is_cover) - Number(a.is_cover) || a.sort - b.sort)
-        .slice(0, 12)
-        .map((m) => url(m.storage_path)),
+      // the short description (40-50 words) is made for this; the long one only if there is no short one
+      description: String(p.short_desc || p.long_desc || "").trim(),
+      hero: cover ? url(cover.storage_path) : null,
+      photos: media.filter((m) => !m.is_cover).slice(0, 12).map((m) => url(m.storage_path)),
+      website: site ? (/^https?:\/\//i.test(site) ? site : `https://${site}`) : null,
     };
   });
   const roomName = Object.fromEntries(rows(rooms).map((r) => [String(r.id), String(r.name)]));

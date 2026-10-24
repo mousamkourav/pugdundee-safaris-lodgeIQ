@@ -209,7 +209,7 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
   // ---------------- dates not fixed / yearly hike ----------------
   const basis = trip.rate_basis ?? null;
   const hike = data.settings.hike ?? null;
-  const hikeUsed = { hotels: false, safaris: false, transfers: false };
+  const hikeUsed = { hotels: false, safaris: false, transfers: false, addons: false };
   // dates not fixed: weekday or weekend rates as chosen, not by the calendar
   const isWeekend = (days: number[], date: ISODate) => (basis ? basis.safari_days === "weekend" && days.length > 0 : days.includes(weekday(date)));
   const withHike = (n: number, pct: number) => (pct ? n * (1 + pct / 100) : n);
@@ -448,12 +448,15 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
       (addon.pricing_unit === "per_person" ? Math.max(guests, minGuests) : addon.pricing_unit === "per_room" ? Math.max(1, totalRooms) : 1);
     // Per group with some guests included (boat cruise: 2 guests, then Rs 1,500 each).
     const extraGuests = !tier && addon.pricing_unit === "per_group" && addon.included_guests != null && extraRate ? Math.max(0, countable - addon.included_guests) * qty : 0;
-    const base = (tier ? tier.rate : unitRate) * qty + extraGuests * (extraRate ?? 0);
+    // yearly hike: add-ons have one price list, so dates in the hike period get the % (dates not fixed: "next season")
+    const addonHike = hike?.addons_pct && (basis ? basis.year === "next" : !!a.date && inRange(a.date, hike.from, hike.to)) ? hike.addons_pct : 0;
+    if (addonHike) hikeUsed.addons = true;
+    const base = withHike((tier ? tier.rate : unitRate) * qty + extraGuests * (extraRate ?? 0), addonHike);
     const { amount, tax } = withTax(base, addon.tax_pct, false);
-    let description = addon.name;
+    let description = addon.name + hikeLabel(addonHike);
     if (extraGuests) description += ` (+${extraGuests} extra guest${extraGuests === 1 ? "" : "s"})`;
     else if (addon.pricing_unit === "per_person" && a.qty == null && minGuests > guests) description += ` (minimum ${minGuests} guests)`;
-    lines.push({ kind: "addon", date: a.date ?? null, description, quantity: qty, unit_price: tier ? tier.rate : unitRate, amount, tax, tax_pct: addon.tax_pct, property_id: addon.property_id ?? (a.date ? stayOn(a.date)?.property_id ?? null : null), ref_id: addon.id });
+    lines.push({ kind: "addon", date: a.date ?? null, description, quantity: qty, unit_price: round(withHike(tier ? tier.rate : unitRate, addonHike)), amount, tax, tax_pct: addon.tax_pct, property_id: addon.property_id ?? (a.date ? stayOn(a.date)?.property_id ?? null : null), ref_id: addon.id, ...(addonHike ? { hike: addonHike } : {}) });
     if (a.date && !basis && (addon.unavailable_weekdays ?? []).includes(weekday(a.date))) {
       warnings.push(`${addon.name} on ${dayName(a.date)} ${readableDate(a.date)}: ${addon.availability_note || `not available on ${dayName(a.date)}s`}.`);
     } else if (basis && addon.availability_note) {
@@ -680,8 +683,8 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
   const grandInCurrency = currency !== "INR" && fx ? Math.round((grand / fx) * 100) / 100 : grand;
 
   // ---------------- yearly hike used ----------------
-  if (hike && (hikeUsed.hotels || hikeUsed.safaris || hikeUsed.transfers)) {
-    const parts = [hikeUsed.hotels && `hotels +${hike.hotels_pct}%`, hikeUsed.safaris && `safaris +${hike.safaris_pct}%`, hikeUsed.transfers && `transfers +${hike.transfers_pct}%`].filter(Boolean);
+  if (hike && (hikeUsed.hotels || hikeUsed.safaris || hikeUsed.transfers || hikeUsed.addons)) {
+    const parts = [hikeUsed.hotels && `hotels +${hike.hotels_pct}%`, hikeUsed.safaris && `safaris +${hike.safaris_pct}%`, hikeUsed.transfers && `transfers +${hike.transfers_pct}%`, hikeUsed.addons && `add-ons +${hike.addons_pct}%`].filter(Boolean);
     warnings.push(`${hike.label} rates are not in master data yet, so last year's rates plus the yearly hike are used (${parts.join(", ")}).`);
   }
 

@@ -68,7 +68,15 @@ export default async function EntityEditPage({
         (isNew ? (
           <p className={ui.muted + " p-4 text-sm text-sand-500"}>Save first, then you can add photos.</p>
         ) : (
-          <MediaManager owner={entity.media.owner} ownerId={id} items={media} max={entity.media.max} />
+          entity.key === "parks" ? (
+            // a park: one main image (the hero of "Know about the parks") and a wildlife slideshow
+            <>
+              <MediaManager owner="park" ownerId={id} items={media.filter((m) => m.is_cover)} max={1} mode="cover" title="Main image" hint="The large picture at the top of this park in Know about the parks, on the guest itinerary and PDF. A wide landscape photo works best." />
+              <MediaManager owner="park" ownerId={id} items={media.filter((m) => !m.is_cover)} max={entity.media.max - 1} mode="rest" title="Wildlife photos" hint="The slideshow under the park's description (the PDF shows the first three). Use the arrows to change the order." />
+            </>
+          ) : (
+            <MediaManager owner={entity.media.owner} ownerId={id} items={media} max={entity.media.max} />
+          )
         ))}
     </div>
   );

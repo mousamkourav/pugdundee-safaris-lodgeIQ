@@ -42,7 +42,9 @@ function done(): ActionResult {
 
 // Files are uploaded straight from the browser to Storage (server actions have
 // a 1 MB body limit); this records the uploaded paths.
-async function addMediaUnsafe(owner: MediaOwner, ownerId: string | null, paths: string[]): Promise<ActionResult> {
+// cover: "auto" = the first photo becomes the cover when there is none; "yes" = the new
+// photo is the cover (a park's main image); "no" = never the cover (a park's wildlife photos).
+async function addMediaUnsafe(owner: MediaOwner, ownerId: string | null, paths: string[], cover: "auto" | "yes" | "no" = "auto"): Promise<ActionResult> {
   const denied = await guard();
   if (denied) return { error: denied };
   if (!OWNERS.includes(owner)) return { error: "Unknown photo owner." };
@@ -53,16 +55,22 @@ async function addMediaUnsafe(owner: MediaOwner, ownerId: string | null, paths: 
   const hasCover = existing.some((m) => m.is_cover);
   let sort = existing.reduce((mx, m) => Math.max(mx, m.sort), -1);
 
-  const defaultCategory = owner === "property" ? "exterior" : owner === "room_category" ? "room" : null;
+  const defaultCategory = owner === "property" ? "exterior" : owner === "room_category" ? "room" : owner === "park" ? (cover === "yes" ? "landscape" : "wildlife") : null;
   const rows = paths.map((storage_path, i) => ({
     owner_type: owner,
     owner_id: ownerId,
     storage_path,
     category: defaultCategory,
-    is_cover: !hasCover && i === 0,
+    is_cover: cover === "yes" ? i === 0 : cover === "no" ? false : !hasCover && i === 0,
     sort: ++sort,
   }));
   const supabase = await createClient();
+  if (cover === "yes" && hasCover) {
+    let clear = supabase.from("sales_media").update({ is_cover: false }).eq("owner_type", owner);
+    clear = ownerId ? clear.eq("owner_id", ownerId) : clear.is("owner_id", null);
+    const r = await clear;
+    if (r.error) return { error: r.error.message };
+  }
   const { error } = await supabase.from("sales_media").insert(rows);
   if (error) return { error: error.message };
   return done();
@@ -129,7 +137,8 @@ async function deleteMediaUnsafe(id: string): Promise<ActionResult> {
   // Remove the file too; a failure here only leaves an unused file behind.
   await supabase.storage.from(MEDIA_BUCKET).remove([row.storage_path]);
 
-  if (row.is_cover) {
+  // a park's main image is chosen on purpose: no wildlife photo takes its place
+  if (row.is_cover && row.owner_type !== "park") {
     const rest = await siblings(row.owner_type, row.owner_id);
     if (rest[0]) await supabase.from("sales_media").update({ is_cover: true }).eq("id", rest[0].id);
   }
@@ -211,8 +220,8 @@ async function updateMediaCategoryUnsafe(id: string, category: string): Promise<
 }
 
 // Public actions: same as above, but failures come back as { error } instead of crashing.
-export async function addMedia(owner: MediaOwner, ownerId: string | null, paths: string[]): Promise<ActionResult> {
-  return safe("addMedia", () => addMediaUnsafe(owner, ownerId, paths));
+export async function addMedia(owner: MediaOwner, ownerId: string | null, paths: string[], cover: "auto" | "yes" | "no" = "auto"): Promise<ActionResult> {
+  return safe("addMedia", () => addMediaUnsafe(owner, ownerId, paths, cover === "yes" || cover === "no" ? cover : "auto"));
 }
 
 export async function setCover(id: string): Promise<ActionResult> {

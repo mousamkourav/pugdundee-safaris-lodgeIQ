@@ -11,6 +11,8 @@ import { detailedBreakdown, priceBreakdown } from "@/lib/sales/pricing/breakdown
 import { DraftActions } from "@/components/sales/draft-actions";
 import { todayIST } from "@/lib/sales/plan/load-context";
 import { getMemberNames } from "@/lib/sales/members";
+import { loadFlightBookings } from "@/lib/sales/flight-bookings";
+import { FlightBookings, type FlightRowIn } from "@/components/sales/flight-bookings";
 import { rupees, fmtDate, fmtRange, daysSince } from "@/lib/sales/format";
 import { dayName } from "@/lib/sales/pricing/dates";
 import type { QueryStatus } from "@/lib/sales/status";
@@ -98,6 +100,19 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
     ? memberInfo.members.filter((m) => m.status !== "disabled").map((m) => ({ id: m.id, name: m.full_name || "Unnamed" }))
     : [];
   const deposit = pricing?.payments?.[0]?.amount ?? null;
+
+  // flights in the latest version, with the team's booking details
+  const flightItems = (plan?.days ?? []).flatMap((d, i) => (d.items ?? []).filter((it) => it.type === "flight" && it.flight).map((it) => ({ it, d, i })));
+  const bookings = flightItems.length ? await loadFlightBookings(q.id) : {};
+  const flights: FlightRowIn[] = flightItems.map(({ it, d, i }) => ({
+    itemId: it.id,
+    day: i + 1,
+    date: plan?.dateless ? "" : fmtDate(d.date),
+    from: it.flight!.from,
+    to: it.flight!.to,
+    planned: { airline: it.flight!.airline, number: it.flight!.number, time: it.flight!.time, arrive: it.flight!.arrive ?? "" },
+    booking: bookings[it.id] ?? null,
+  }));
 
   return (
     <div className="space-y-6">
@@ -267,6 +282,8 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
               </div>
             </section>
           )}
+
+          {flights.length > 0 && <FlightBookings queryId={q.id} flights={flights} canEdit={canAct && !isDraft} />}
 
           {plan && (
             <section className={`${ui.card} p-5`}>

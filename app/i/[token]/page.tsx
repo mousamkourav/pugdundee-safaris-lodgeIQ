@@ -297,6 +297,76 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
             </ol>
           </section>
 
+          {/* ---------------- know about the parks: closed on the page (+ opens), open in the PDF ---------------- */}
+          {view.parks.some((p) => p.description || p.hero || p.photos.length) && (
+            <section className="space-y-4">
+              <div data-pdf-block="">
+                <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--color-gold-600,#A8851C)]">The wilderness</p>
+                <h2 className="mt-2 font-display text-3xl text-olive-800">Know about the parks</h2>
+              </div>
+              <div className="-mx-5 divide-y divide-sand-200 bg-sand-50 sm:mx-0 sm:rounded-2xl sm:ring-1 sm:ring-sand-200">
+                {view.parks
+                  .filter((p) => p.description || p.hero || p.photos.length)
+                  .map((p) => (
+                    <div key={p.id}>
+                      {/* on the page */}
+                      <details className="park pdf-hide">
+                        <summary className="flex cursor-pointer list-none items-center gap-4 px-5 py-4 sm:px-8">
+                          {p.hero && (
+                            // eslint-disable-next-line @next/next/no-img-element -- public storage URL
+                            <img src={p.hero} alt="" className="h-12 w-16 shrink-0 rounded-lg object-cover" />
+                          )}
+                          <span className="min-w-0 flex-1 font-display text-xl text-olive-800">{p.name}</span>
+                          <span className="plus grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-2xl leading-none text-olive-700 ring-1 ring-sand-300 transition" aria-hidden="true">+</span>
+                          <span className="sr-only">Show more about {p.name}</span>
+                        </summary>
+                        <div className="space-y-4 px-5 pb-7 sm:px-8">
+                          {p.hero && (
+                            // eslint-disable-next-line @next/next/no-img-element -- public storage URL
+                            <img src={p.hero} alt={p.name} className="aspect-[16/9] w-full rounded-2xl object-cover" />
+                          )}
+                          {p.description && <p className="leading-relaxed">{p.description}</p>}
+                          {p.photos.length > 0 && (
+                            <div>
+                              <p className="text-xs font-bold uppercase tracking-[0.2em] text-sand-500">Wildlife of {shortPark(p.name)}</p>
+                              <PhotoCarousel photos={p.photos} label={`Wildlife of ${p.name}`} />
+                            </div>
+                          )}
+                          {p.website && (
+                            <a href={p.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-full border border-olive-300 px-4 py-2 text-sm font-semibold text-olive-700 hover:bg-white">
+                              Read more about {shortPark(p.name)} <Line name="arrow" className="h-4 w-4" />
+                            </a>
+                          )}
+                        </div>
+                      </details>
+                      {/* in the PDF: open, with three wildlife photos */}
+                      <div data-pdf-block="" className="pdf-only gap-4 px-5 py-6 sm:px-8">
+                        <h3 className="font-display text-2xl text-olive-800">{p.name}</h3>
+                        {p.hero && (
+                          // eslint-disable-next-line @next/next/no-img-element -- public storage URL
+                          <img src={p.hero} alt="" className="aspect-[16/9] w-full rounded-2xl object-cover" />
+                        )}
+                        {p.description && <p className="leading-relaxed">{p.description}</p>}
+                        {p.photos.length > 0 && (
+                          <div className="grid grid-cols-3 gap-2">
+                            {p.photos.slice(0, 3).map((src, k) => (
+                              // eslint-disable-next-line @next/next/no-img-element -- public storage URL
+                              <img key={k} src={src} alt="" className="aspect-[4/3] w-full rounded-lg object-cover" />
+                            ))}
+                          </div>
+                        )}
+                        {p.website && (
+                          <p className="text-sm text-olive-700">
+                            Read more: <a href={p.website} className="underline">{p.website.replace(/^https?:\/\/(www\.)?/, "")}</a>
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </section>
+          )}
+
           {/* ---------------- price ---------------- */}
           {view.show.prices && (
             <section data-pdf-block="" className="-mx-5 bg-[var(--color-olive-900,#2B3318)] px-6 py-8 text-white sm:mx-0 sm:rounded-2xl sm:px-10 sm:py-10">
@@ -442,45 +512,6 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
             </section>
           )}
         </div>
-
-        {/* ---------------- about the parks (opens on a click; always open in the PDF) ---------------- */}
-        {view.parks.some((p) => p.description || p.photos.length) && (
-          <section data-pdf-block="" className="space-y-3 px-5 pb-12 sm:px-12">
-            <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--color-gold-600,#A8851C)]">The wilderness</p>
-            <h2 className="font-display text-3xl text-olive-800">About the parks</h2>
-            <div className="divide-y divide-sand-200 rounded-2xl ring-1 ring-sand-200">
-              {view.parks
-                .filter((p) => p.description || p.photos.length)
-                .map((p) => (
-                  <div key={p.id}>
-                    <details className="park group pdf-hide">
-                      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
-                        <span className="font-display text-xl text-olive-800">{p.name}</span>
-                        <span className="plus grid h-8 w-8 shrink-0 place-items-center rounded-full bg-olive-50 text-xl leading-none text-olive-700 ring-1 ring-olive-100 transition" aria-hidden="true">+</span>
-                      </summary>
-                      <div className="space-y-4 px-5 pb-6">
-                        {p.description && <p className="whitespace-pre-line leading-relaxed">{p.description}</p>}
-                        {p.seasonNotes && <p className="text-sm text-sand-500">{p.seasonNotes}</p>}
-                        {p.photos.length > 0 && <PhotoCarousel photos={p.photos} label={p.name} />}
-                      </div>
-                    </details>
-                    <div className="pdf-only gap-3 px-5 py-5">
-                      <h3 className="font-display text-xl text-olive-800">{p.name}</h3>
-                      {p.description && <p className="whitespace-pre-line leading-relaxed">{p.description}</p>}
-                      {p.photos.length > 0 && (
-                        <div className="grid grid-cols-3 gap-2">
-                          {p.photos.slice(0, 6).map((src, k) => (
-                            // eslint-disable-next-line @next/next/no-img-element -- public storage URL
-                            <img key={k} src={src} alt="" className="aspect-[4/3] w-full rounded-lg object-cover" />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </section>
-        )}
 
         {/* ---------------- footer ---------------- */}
         <footer data-pdf-block="" className="bg-[var(--color-olive-900,#2B3318)] px-6 py-10 text-white sm:px-12">

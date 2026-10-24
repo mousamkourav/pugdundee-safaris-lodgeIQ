@@ -144,6 +144,7 @@ export interface RateHike {
   hotels_pct: number;
   safaris_pct: number;
   transfers_pct: number;
+  addons_pct?: number; // experiences and add-ons (they have no validity dates: applied to dates in the hike period)
 }
 
 export interface Offer {

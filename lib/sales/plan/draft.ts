@@ -103,7 +103,7 @@ function standardLists(plan: Plan, lodgeNames: Record<string, string>) {
 
   const flights = flightsLine(plan);
   if (flights) inc.push(flights);
-  else exc.push("Domestic flights");
+  else exc.push("Flights and train tickets");
 
   const items = plan.days.flatMap((d) => d.items ?? []);
   if (items.some((it) => it.type === "addon" || (it.type === "activity" && it.price))) inc.push("Experiences and activities shown in the itinerary");

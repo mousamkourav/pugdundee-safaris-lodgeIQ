@@ -78,6 +78,8 @@ export function sanitizePlan(input: unknown): Plan | null {
                     airline: str(f.airline, 60),
                     number: str(f.number, 20),
                     time: str(f.time, 10),
+                    ...(typeof f.arrive === "string" && f.arrive ? { arrive: str(f.arrive, 10) } : {}),
+                    ...(typeof f.route_id === "string" && /^[0-9a-f-]{36}$/i.test(f.route_id) ? { route_id: f.route_id } : {}),
                     pnr: str(f.pnr, 20),
                     ...(Number.isFinite(pp) && pp > 0 ? { fare_pp: Math.min(Math.round(pp), 10_000_000) } : {}),
                     ...(typeof f.cabin === "string" && f.cabin.trim() ? { cabin: str(f.cabin, 40).trim() } : {}),
