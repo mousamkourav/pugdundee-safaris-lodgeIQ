@@ -34,9 +34,14 @@ export const SUPER_ROLES: Role[] = ["super_admin", "senior_manager"];
 // admins (rates, members, all queries); sales_member sees only their own queries.
 export const SALES_ROLES: Role[] = ["super_admin", "senior_manager", "sales_member", "sales_admin"];
 
+// A deactivated account ("disabled") is turned away everywhere, not only at
+// sign-in: someone already signed in when an admin deactivates them loses access
+// on their next click. No profile row (a read failure) is not treated as deactivated.
+export const isInactive = (profile?: { status?: string | null } | null) => !!profile?.status && profile.status !== "active";
+
 // cache(): the dashboard layout and the page both call this during one request;
 // dedupe so the Auth + profile round-trips to Supabase happen once, not twice.
-export const getCurrentUser = cache(async function getCurrentUser() {
+const loadUser = cache(async function loadUser() {
   const supabase = await createClient();
   const {
     data: { user },
@@ -50,9 +55,19 @@ export const getCurrentUser = cache(async function getCurrentUser() {
   return { user, profile };
 });
 
+// The signed-in, ACTIVE user, or null. Server actions and API routes call this,
+// so a deactivated account gets their usual "no access" answer.
+export async function getCurrentUser() {
+  const res = await loadUser();
+  if (!res || isInactive(res.profile)) return null;
+  return res;
+}
+
+// Pages: not signed in -> /login; deactivated -> the "Account deactivated" page.
 export async function requireUser() {
-  const res = await getCurrentUser();
+  const res = await loadUser();
   if (!res?.user) redirect("/login");
+  if (isInactive(res.profile)) redirect("/account-inactive");
   return res;
 }
 

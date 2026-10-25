@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth";
 import { fetchMetrics, perRoom } from "@/lib/dashboard";
 
 export const dynamic = "force-dynamic";
@@ -8,11 +8,8 @@ export const dynamic = "force-dynamic";
 const toYM = (iso: string) => iso.slice(0, 10).slice(0, 7);
 
 export async function GET(request: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  // signed in and not deactivated
+  if (!(await getCurrentUser())) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

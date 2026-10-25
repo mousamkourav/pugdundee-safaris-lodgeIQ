@@ -1,18 +1,17 @@
 import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth";
 import { getMonthlySummary } from "@/lib/report";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  // signed in and not deactivated
+  if (!(await getCurrentUser())) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  const supabase = await createClient();
 
   const { searchParams } = new URL(request.url);
   const lodge = searchParams.get("lodge");
