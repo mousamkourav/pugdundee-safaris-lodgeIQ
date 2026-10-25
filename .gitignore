@@ -6,3 +6,6 @@ node_modules/
 .DS_Store
 
 design-reference/
+
+# TypeScript build cache (changes on every type check)
+tsconfig.tsbuildinfo
