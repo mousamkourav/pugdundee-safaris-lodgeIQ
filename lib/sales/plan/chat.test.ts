@@ -275,3 +275,28 @@ test("a city hotel in Master data is a city stay, never a safari stop", async ()
   const issues = checkData({ ...withCities.pricing, properties: withCities.properties }, TODAY).map((i) => i.message).join("\n");
   assert.doesNotMatch(issues, /Delhi|Khajuraho|Roseate|Radisson/);
 });
+
+test("several city stays at the end: Khajuraho, then Delhi; a hotel asked for each", () => {
+  const withAir: BuilderContext = { ...ctx, locations: [...ctx.locations, { id: "KHJ_AP", name: "Khajuraho Airport", type: "airport", property_id: null }] };
+  let plan = emptyPlan(TODAY);
+  let flags = initialFlags(plan);
+  const say = (m: string) => {
+    const r = chatTurn(plan, flags, m, withAir, TODAY);
+    plan = r.plan;
+    flags = r.flags;
+    return r;
+  };
+  let r = say("2 adults, foreign. 1 night in Delhi, then fly Delhi to Nagpur and reach Tadoba on 16 Jan 2027. Tadoba 4 nights, Pench 3 nights. Then 2 nights in Khajuraho, fly Khajuraho to Delhi and 1 night in Delhi before flying home.");
+  assert.deepEqual(plan.city_stays!.map((c) => `${c.when} ${c.city} ${c.nights}`), ["before Delhi 1", "after Khajuraho 2", "after Delhi 1"]);
+  assert.equal(plan.departure_location_id, "KHJ_AP");
+  assert.match(r.reply.text, /Which hotel in Delhi \(1 night before the safari\)/);
+  r = say("The Imperial, 18000");
+  assert.match(r.reply.text, /Which hotel in Khajuraho/);
+  r = say("Radisson, 9000");
+  assert.match(r.reply.text, /Which hotel in Delhi \(1 night at the end\)/);
+  r = say("same");
+  assert.deepEqual(plan.city_stays!.map((c) => [c.hotel, c.price]), [["The Imperial", 18000], ["Radisson", 9000], ["The Imperial", 18000]]);
+  const days = plan.days;
+  assert.equal(days[days.length - 1].title, "Depart from Delhi");
+  assert.ok(days.some((d) => d.title === "Khajuraho to Delhi" && d.items.some((i) => i.title === "Flight Khajuraho to Delhi")));
+});

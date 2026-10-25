@@ -7,6 +7,8 @@ import { PhotoCarousel } from "@/components/sales/photo-carousel";
 import { Icon } from "@/components/icons";
 import { dayName } from "@/lib/sales/pricing/dates";
 import { shortPark } from "@/lib/sales/plan/draft";
+import { segments } from "@/lib/sales/plan/planner";
+import { sameCity } from "@/lib/sales/plan/cities";
 
 // Guest-facing itinerary. Public: opened from a share link without signing in.
 export async function generateMetadata({ params }: { params: Promise<{ token: string }> }): Promise<Metadata> {
@@ -98,20 +100,28 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
   });
 
   // At a glance: the route, with nights, and the key numbers.
-  const before = (plan.city_stays ?? []).find((c) => c.when === "before");
-  const after = (plan.city_stays ?? []).find((c) => c.when === "after");
-  const route: { place: string; detail: string; nights: number; flightIn?: boolean }[] = [];
-  if (before) route.push({ place: before.city, detail: before.hotel || "City stay", nights: before.nights });
-  plan.stops.forEach((s, i) => {
-    const room = view.stays[i]?.room;
-    route.push({
-      place: shortPark(view.parkNames[s.park_id] ?? ""),
-      detail: [view.lodgeNames[s.property_id] ?? "", room].filter(Boolean).join(" \u00b7 "),
-      nights: s.nights,
-      flightIn: i === 0 && !!before && (plan.flights ?? []).length > 0,
-    });
+  // the whole trip in order: Delhi, the lodges, Khajuraho, Delhi, and any days added
+  const flights = plan.flights ?? [];
+  const segs = segments(plan);
+  const route: { place: string; detail: string; nights: number; flightIn?: boolean }[] = segs.map((seg, k) => {
+    const prev = segs[k - 1];
+    if (seg.kind === "city") {
+      const c = seg.stay;
+      return {
+        place: c.city || "Free day",
+        detail: c.hotel || (c.blank ? "Hotel to be confirmed" : "City stay"),
+        nights: c.nights,
+        flightIn: !!c.city && flights.some((f) => sameCity(f.to, c.city)),
+      };
+    }
+    const room = view.stays[seg.index]?.room;
+    return {
+      place: shortPark(view.parkNames[seg.stop.park_id] ?? ""),
+      detail: [view.lodgeNames[seg.stop.property_id] ?? "", room].filter(Boolean).join(" \u00b7 "),
+      nights: seg.stop.nights,
+      flightIn: seg.index === 0 && prev?.kind === "city" && !!prev.stay.city && flights.some((f) => sameCity(f.from, prev.stay.city)),
+    };
   });
-  if (after) route.push({ place: after.city, detail: after.hotel || "City stay", nights: after.nights, flightIn: (plan.flights ?? []).length > 1 });
   const lodgeNights = plan.stops.reduce((t, s) => t + s.nights, 0);
   const safaris = plan.days.reduce((t, d) => t + d.safaris.length, 0);
   const lodgeCount = new Set(plan.stops.map((s) => s.property_id)).size;

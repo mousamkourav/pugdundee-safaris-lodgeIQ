@@ -210,6 +210,7 @@ export async function loadPricingData(): Promise<{ data: PricingData; error: str
         id: str(r.id),
         name: str(r.name),
         property_id: strOrNull(r.property_id),
+        park_id: strOrNull(r.park_id), // a city here (Delhi): offered on a Delhi stay
         pricing_unit: str(r.pricing_unit) as Addon["pricing_unit"],
         rate: num(r.rate),
         tax_pct: num(r.tax_pct),

@@ -117,6 +117,7 @@ export interface Addon {
   id: string;
   name: string;
   property_id: string | null;
+  park_id?: string | null; // a city (Delhi sightseeing) or a park
   pricing_unit: "per_person" | "per_group" | "per_vehicle" | "per_room";
   rate: number;
   tax_pct: number;
@@ -233,6 +234,8 @@ export interface TransferInput {
   vehicle_type?: string; // default: cheapest suitable
   vehicles?: number; // default: enough for all guests
   night?: boolean; // apply night surcharge
+  from_label?: string; // names for places not in Master data (a typed city hotel)
+  to_label?: string;
 }
 
 export interface AddonInput {

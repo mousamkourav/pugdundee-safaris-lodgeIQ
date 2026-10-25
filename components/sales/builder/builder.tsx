@@ -56,7 +56,7 @@ function Stepper({ step, canGo, go }: { step: number; canGo: (n: number) => bool
 }
 
 function PriceBar({ plan, result, blockers }: { plan: Plan; result: PriceResult | null; blockers: string[] }) {
-  const nights = plan.stops.reduce((t, s) => t + s.nights, 0);
+  const nights = plan.stops.reduce((t, s) => t + s.nights, 0) + (plan.city_stays ?? []).reduce((t, c) => t + c.nights, 0); // lodges + city nights
   const needed = (result?.missing ?? []).filter((m) => plan.manual_prices?.[m.key] === undefined).length;
   return (
     <div className={`${ui.card} space-y-2 p-3`}>

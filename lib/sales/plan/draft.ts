@@ -122,7 +122,7 @@ function standardLists(plan: Plan, lodgeNames: Record<string, string>) {
     inc.push(m === "AP" ? "All meals: breakfast, lunch and dinner" : `Meals: ${(MEALS_LINE[m] ?? m).toLowerCase()}`);
   } else {
     for (const [m, lodges] of byMeal) inc.push(`${MEALS_LINE[m] ?? m} at ${joinAnd(lodges)}`);
-    for (const c of cities) inc.push(`Meals at ${c.hotel || "the hotel"} in ${c.city} as per the hotel's meal plan`);
+    for (const c of cities) if (c.hotel || c.city) inc.push(`Meals at ${c.hotel || "the hotel"}${c.city ? ` in ${c.city}` : ""} as per the hotel's meal plan`);
   }
 
   // lines that depend on this itinerary (also added to the Master data lists)
@@ -132,7 +132,7 @@ function standardLists(plan: Plan, lodgeNames: Record<string, string>) {
   if (safaris.length) inc.push("Jeep safaris as shown, with permit fee, jeep, park guide, packed breakfast on morning safaris and refreshments on evening safaris");
   if (safaris.some((x) => x.naturalist)) itineraryInc.push("Accompanying lodge naturalist on the safaris shown");
   else if (safaris.length) itineraryExc.push("Accompanying lodge naturalist on safaris");
-  if (plan.days.some((d) => d.transfer)) inc.push("Road transfers shown in the itinerary");
+  if (plan.days.some((d) => d.transfer || d.city_transfers?.length)) inc.push("Road transfers shown in the itinerary");
 
   const flights = flightsLine(plan);
   if (flights) itineraryInc.push(flights);

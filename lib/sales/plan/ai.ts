@@ -83,7 +83,7 @@ export function buildPrompt(input: {
     '- "lodge": only when the message names the lodge; otherwise null. Never choose a lodge yourself, even where a park has only one or two lodges.',
     '- "3 days" at a lodge means 3 nights. A second lodge in the same park is a separate stop.',
     '- arrival_place is where the road transfer to the first lodge starts (after any flight). departure_place is where the guests leave from at the end (before any flight).',
-    "- Cities like Delhi are not stops: nights there go in city_stays (before or after the safari), flights in flights.",
+    "- Cities like Delhi are not stops: nights there go in city_stays (before or after the safari, in travel order; there can be several, e.g. Khajuraho then Delhi at the end), flights in flights.",
     "- safaris = jeep safaris wanted at that stop; naturalists = how many of them with a naturalist (-1 = all). A boat safari is an experience, not a jeep safari.",
     '- room: "cottage", "tree" (tree house), "suite" (forest suite) or "deluxe" (deluxe room), only when said.',
     '- For a change to the trip so far ("make Pench 2 nights", "add Kanha"), give only what changes and set replace_route false. For a whole new route set replace_route true.',
@@ -164,7 +164,7 @@ export function aiToParsed(raw: unknown, full: BuilderContext): ParsedTrip {
       ...(str(c.hotel) ? { hotel: str(c.hotel)! } : {}),
       ...(int(c.price, 500, 10_000_000) ? { price: int(c.price, 500, 10_000_000)! } : {}),
     }))
-    .slice(0, 2);
+    .slice(0, 6); // several cities: Delhi before; Khajuraho, then Delhi after
   const arrival = placeOf(o.arrival_place);
   const departure = placeOf(o.departure_place);
   const meal = String(o.meal_plan ?? "").toUpperCase();

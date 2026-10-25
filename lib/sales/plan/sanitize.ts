@@ -51,6 +51,16 @@ export function sanitizePlan(input: unknown): Plan | null {
       park_id: strOrNull(d.park_id),
       safaris,
       transfer: t.from_location_id && t.to_location_id ? { from_location_id: str(t.from_location_id, 100), to_location_id: str(t.to_location_id, 100) } : null,
+      ...(Array.isArray(d.city_transfers) && d.city_transfers.length
+        ? {
+            city_transfers: d.city_transfers
+              .map((y) => obj(y))
+              .filter((y) => y.from_location_id && y.to_location_id)
+              .slice(0, 4)
+              .map((y) => ({ from_location_id: str(y.from_location_id, 140), to_location_id: str(y.to_location_id, 140), from_label: str(y.from_label, 140), to_label: str(y.to_label, 140) })),
+          }
+        : {}),
+      ...(Number.isInteger(Number(d.stay_index)) && d.stay_index !== null && d.stay_index !== undefined ? { stay_index: Math.max(0, Math.min(20, Number(d.stay_index))) } : {}),
       title: str(d.title, 200),
       text: str(d.text, 4000),
       notes: (Array.isArray(d.notes) ? d.notes : []).map((z) => str(z, 300)).slice(0, 10),
@@ -137,11 +147,13 @@ export function sanitizePlan(input: unknown): Plan | null {
     city_stays: (Array.isArray(p.city_stays) ? p.city_stays : [])
       .map((x) => obj(x))
       .filter((c) => (c.when === "before" || c.when === "after") && typeof c.city === "string" && Number(c.nights) > 0)
-      .slice(0, 2)
+      .slice(0, 12)
       .map((c) => ({
         when: c.when as "before" | "after",
         city: str(c.city, 60),
         nights: Math.min(14, Math.round(Number(c.nights))),
+        ...(Number.isInteger(Number(c.at)) && c.at !== null && c.at !== undefined && Number(c.at) >= 0 ? { at: Math.min(20, Number(c.at)) } : {}),
+        ...(c.blank === true ? { blank: true } : {}),
         ...(typeof c.hotel === "string" && c.hotel.trim() ? { hotel: str(c.hotel, 120).trim() } : {}),
         ...(Number(c.price) > 0 ? { price: Math.min(Math.round(Number(c.price)), 10_000_000) } : {}),
       })),

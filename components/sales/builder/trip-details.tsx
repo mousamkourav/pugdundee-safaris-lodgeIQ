@@ -4,7 +4,7 @@ import { safariOnly } from "@/lib/sales/plan/cities";
 import { useEffect, useState } from "react";
 import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
-import { DEFAULT_BASIS, commonVehicles, defaultStop, lodgesInPark, mealPlansOf, roomsFor, roomsOf } from "@/lib/sales/plan/planner";
+import { DEFAULT_BASIS, commonVehicles, defaultStop, lodgesInPark, mealPlansOf, roomsFor, roomsOf, stayAt } from "@/lib/sales/plan/planner";
 import type { BuilderContext, Plan, PlanStop } from "@/lib/sales/plan/types";
 import type { ChatFlags } from "@/lib/sales/plan/chat";
 import { Field } from "./field";
@@ -334,11 +334,18 @@ export function TripDetails({
         {/* nights in a city and flights, usually picked up by the trip assistant */}
         {((plan.city_stays ?? []).length > 0 || (plan.flights ?? []).length > 0) && (
           <div className="space-y-2">
-            <p className={ui.label}>City nights and flights</p>
+            <p className={ui.label}>City nights, added days and flights</p>
             {(plan.city_stays ?? []).map((c, i) => (
               <div key={`c${i}`} className="flex items-center gap-2 rounded-lg border border-sand-200 bg-sand-50 px-3 py-2 text-sm">
                 <span className="flex-1">
-                  {c.city}, {c.when === "before" ? "before the safari" : "at the end"}
+                  {c.blank ? `Added day${c.city ? ` in ${c.city}` : ""}` : c.city}
+                  {c.hotel ? <span className="text-sand-500"> ({c.hotel})</span> : null},{" "}
+                  {(() => {
+                    const at = stayAt(c, plan.stops.length);
+                    if (at === 0) return "before the safari";
+                    if (at >= plan.stops.length) return "at the end";
+                    return `after ${ctx.properties.find((x) => x.id === plan.stops[at - 1]?.property_id)?.name ?? "the lodge"}`;
+                  })()}
                 </span>
                 <label className="flex items-center gap-1.5 text-xs text-sand-600">
                   Nights

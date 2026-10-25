@@ -188,3 +188,64 @@ test("nights in a city at the end: drive there from the last lodge, fly out afte
   assert.equal(p.days[n - 1].title, "Depart from Khajuraho");
   assert.equal(p.days[n - 1].items.find((i) => i.type === "flight")!.title, "Flight Khajuraho to Delhi");
 });
+
+test("Delhi, the lodges, Khajuraho, Delhi: days in order, city transfers and flights on the right days", () => {
+  const p = sheetPlan();
+  p.departure_location_id = "NAG";
+  p.city_stays = [
+    { when: "before", city: "Delhi", nights: 1, hotel: "Roseate House", price: 15000 },
+    { when: "after", city: "Khajuraho", nights: 2, hotel: "Radisson", price: 9000 },
+    { when: "after", city: "Delhi", nights: 1, hotel: "Roseate House", price: 15000 },
+  ];
+  p.flights = [{ from: "Delhi", to: "Nagpur" }, { from: "Khajuraho", to: "Delhi" }];
+  p.days = buildDays(p, ctx);
+  // 1 Delhi + 7 lodge nights + 2 Khajuraho + 1 Delhi = 11 nights, 12 days
+  assert.equal(p.days.length, 12);
+  assert.equal(p.days[0].date, "2027-01-15");
+  assert.equal(p.days[0].title, "Arrive in Delhi");
+  assert.deepEqual(p.days[0].city_transfers!.map((t) => `${t.from_label} > ${t.to_label}`), ["Delhi Airport > Roseate House"]);
+  // day 2: hotel to Delhi airport, flight, Nagpur airport to the lodge
+  assert.equal(p.days[1].date, "2027-01-16");
+  assert.equal(p.days[1].property_id, "WEL");
+  assert.deepEqual(p.days[1].city_transfers!.map((t) => `${t.from_label} > ${t.to_label}`), ["Roseate House > Delhi Airport"]);
+  assert.ok(p.days[1].items.some((i) => i.title === "Flight Delhi to Nagpur"));
+  // leaving Pench: drive to Khajuraho, 2 nights
+  const drive = p.days[8];
+  assert.equal(drive.kind, "departure");
+  assert.equal(drive.title, "Drive to Khajuraho");
+  assert.match(drive.text, /Overnight at Radisson, Khajuraho/);
+  assert.equal(p.days[9].title, "Khajuraho");
+  // Khajuraho to Delhi by air: hotel > airport, flight, airport > hotel
+  const fly = p.days[10];
+  assert.equal(fly.title, "Khajuraho to Delhi");
+  assert.match(fly.text, /^Fly from Khajuraho to Delhi/);
+  assert.deepEqual(fly.city_transfers!.map((t) => `${t.from_label} > ${t.to_label}`), ["Radisson > Khajuraho Airport", "Delhi Airport > Roseate House"]);
+  assert.ok(fly.items.some((i) => i.title === "Flight Khajuraho to Delhi"));
+  const last = p.days[11];
+  assert.equal(last.title, "Depart from Delhi");
+  assert.deepEqual(last.city_transfers!.map((t) => `${t.from_label} > ${t.to_label}`), ["Roseate House > Delhi Airport"]);
+  // the lodge dates do not move; city transfers not in master data are prices to type
+  const r = priceTrip(planToTrip(p, "2026-10-05"), data);
+  assert.equal(r.lines.filter((l) => l.kind === "room")[0].date, "2027-01-16");
+  const missing = r.missing.map((m) => m.label);
+  assert.ok(missing.includes("Transfer Delhi Airport to Roseate House"));
+  assert.ok(missing.includes("Transfer Radisson to Khajuraho Airport"));
+  // hotel nights priced: 15000 + 2 x 9000 + 15000
+  assert.equal(r.lines.filter((l) => l.group === "hotel").reduce((t, l) => t + l.amount, 0), 48000);
+});
+
+test("a day added between two lodges moves the later lodge by a day", () => {
+  const p = sheetPlan();
+  p.city_stays = [{ when: "after", at: 1, city: "", nights: 1, blank: true, hotel: "Tiger Trails Camp", price: 6000 }];
+  p.days = buildDays(p, ctx);
+  assert.equal(p.days.length, 9);
+  const free = p.days[4];
+  assert.equal(free.kind, "city");
+  assert.equal(free.title, "Free day");
+  assert.equal(free.date, "2027-01-20");
+  assert.equal(p.days[5].property_id, "PTL");
+  assert.equal(p.days[5].date, "2027-01-21");
+  const r = priceTrip(planToTrip(p, "2026-10-05"), data);
+  assert.equal(r.lines.find((l) => l.kind === "room" && l.property_id === "PTL")!.date, "2027-01-21");
+  assert.ok(r.lines.some((l) => l.group === "hotel" && l.amount === 6000));
+});

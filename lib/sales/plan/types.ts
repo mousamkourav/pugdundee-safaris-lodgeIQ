@@ -31,13 +31,26 @@ export interface PlanStop {
   want_extras?: string[]; // experience keywords, e.g. "bush dinner", "boat safari"
 }
 
-// Nights in a city outside our lodges (Delhi before or after the safari).
+// Nights outside our lodges: a city (Delhi before the safari, Khajuraho and Delhi
+// after it), or a day added with "Add a day" (blank: no automatic transfers).
+// The trip runs: stays with at=0, lodge 1, stays with at=1, lodge 2, ... in list order.
 export interface CityStay {
   when: "before" | "after";
-  city: string;
+  city: string; // "" for an added day with no place given
   nights: number;
   hotel?: string; // name, or empty = to be confirmed
   price?: number | null; // per night, all rooms, incl. tax
+  at?: number; // how many lodges come before it; unset = before all ("before") or after all ("after")
+  blank?: boolean; // added with "Add a day"
+}
+
+// A road transfer in a city (airport to hotel...). A place not in Master data has
+// an id starting with "@" and is priced by hand.
+export interface CityTransfer {
+  from_location_id: string;
+  to_location_id: string;
+  from_label: string;
+  to_label: string;
 }
 
 // A flight the guest takes; placed on the right day automatically.
@@ -92,6 +105,8 @@ export interface PlanDay {
   park_id: string | null;
   safaris: DaySafari[];
   transfer: { from_location_id: string; to_location_id: string } | null;
+  city_transfers?: CityTransfer[]; // transfers in a city stay (airport to hotel, hotel to airport)
+  stay_index?: number; // the night is part of plan.city_stays[stay_index]
   title: string;
   text: string;
   notes: string[]; // planner remarks, e.g. "core closed, buffer used"

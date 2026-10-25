@@ -483,12 +483,14 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
         city = c.city;
       } else city = cityName(m.groups!.city);
       const when = m.index! < firstPark ? "before" : m.index! > lastPark ? "after" : null;
-      if (!when || stays.some((x) => x.when === when)) continue;
+      // several cities are fine (Khajuraho, then Delhi at the end); the same city twice on one side is not
+      if (!when || stays.some((x) => x.when === when && x.city === city)) continue;
       seen.add(m.index!);
-      stays.push({ when, city, nights: toNum(m.groups!.n) });
+      stays.push({ when, city, nights: toNum(m.groups!.n), at: m.index! } as (typeof stays)[number] & { at: number });
     }
   }
-  if (stays.length) out.cityStays = stays;
+  // in the order they are mentioned
+  if (stays.length) out.cityStays = (stays as ((typeof stays)[number] & { at: number })[]).sort((a, b) => a.at - b.at).map(({ at: _at, ...c }) => c);
   if (/\b(reverse|opposite\s+(?:order|direction|way)|other\s+way\s+round|wrong\s+(?:direction|order)|the other way)\b/.test(low)) out.reverse = true;
   // "all stays they will do nature walk", "any special at each lodge"
   for (const m of low.matchAll(/\b(?:all|every|each)\s+(?:the\s+|of\s+the\s+)?(?:stays?|lodges?|places?|parks?|locations?)\b/g)) {

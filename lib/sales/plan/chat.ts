@@ -678,7 +678,7 @@ export function nextQuestion(
           `You can type ${stillNeeded.length === 1 ? "it" : "them"} on the Plan & price step, save a draft and finish later, or say "on their own" for transfers.`,
       ]
     : [];
-  const nights = plan.stops.reduce((t, s) => t + s.nights, 0);
+  const nights = plan.stops.reduce((t, s) => t + s.nights, 0) + (plan.city_stays ?? []).reduce((t, c) => t + c.nights, 0); // lodges + city nights
   const safaris = plan.days.reduce((t, d) => t + d.safaris.length, 0);
   const guests = plan.guest.adults + plan.guest.children.length;
   let text =

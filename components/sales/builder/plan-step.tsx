@@ -5,11 +5,12 @@ import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { rupees, fmtDate } from "@/lib/sales/format";
 import { dayName } from "@/lib/sales/pricing/dates";
-import { closedAt, describe, roomsFor } from "@/lib/sales/plan/planner";
+import { closedAt, describe, roomsFor, segments, stayAt } from "@/lib/sales/plan/planner";
+import { cityParkIds, sameCity } from "@/lib/sales/plan/cities";
 import { detailedBreakdown } from "@/lib/sales/pricing/breakdown";
 import { FLIGHT_BAGGAGE } from "@/lib/sales/plan/draft";
 import type { PriceResult } from "@/lib/sales/pricing/types";
-import type { BuilderContext, DaySafari, Plan, PlanDay, PlanItem } from "@/lib/sales/plan/types";
+import type { BuilderContext, CityStay, DaySafari, Plan, PlanDay, PlanItem } from "@/lib/sales/plan/types";
 
 type SetPlan = (u: (p: Plan) => Plan) => void;
 const DRAG_TYPE = "application/x-lodgeiq-item";
@@ -70,15 +71,55 @@ export function PlanStep({
 
   const lodgeName = (id: string | null) => ctx.properties.find((p) => p.id === id)?.name ?? "";
   const locName = (id: string) => ctx.locations.find((l) => l.id === id)?.name ?? "?";
-  const afterStay = (plan.city_stays ?? []).find((c) => c.when === "after" && c.nights > 0);
+  // ---- city stays and added days
+  const stays = plan.city_stays ?? [];
+  const stayOf = (d: PlanDay) => (d.stay_index !== undefined ? stays[d.stay_index] : undefined);
+  const setStays = (fn: (s: CityStay[]) => CityStay[]) => setPlan((p) => ({ ...p, city_stays: fn(p.city_stays ?? []) }));
+  const updateStay = (k: number, patch: Partial<CityStay>) => setStays((s) => s.map((x, j) => (j === k ? { ...x, ...patch } : x)));
+  const removeStay = (k: number) => setStays((s) => s.filter((_, j) => j !== k));
+  const [addMenu, setAddMenu] = useState<number | null>(null);
+  // the lodge stay a day belongs to (a night there)
+  const lodgeSegOf = (d: PlanDay) => segments(plan).find((s) => s.kind === "lodge" && d.date >= s.checkIn && d.date < s.checkOut) as
+    | Extract<ReturnType<typeof segments>[number], { kind: "lodge" }>
+    | undefined;
+  // "Add a day" after day i: one more night where the guests are, or a blank day after this stay
+  function addDayAfter(i: number, mode: "night" | "blank") {
+    setAddMenu(null);
+    const d = plan.days[i];
+    const n = plan.stops.length;
+    const blank = (at: number): CityStay => ({ when: at === 0 ? "before" : "after", city: "", nights: 1, blank: true, ...(at < n ? { at } : {}) });
+    if (d.stay_index !== undefined && stays[d.stay_index]) {
+      const k = d.stay_index;
+      if (mode === "night") return updateStay(k, { nights: Math.min(14, stays[k].nights + 1) });
+      const b = blank(stayAt(stays[k], n));
+      return setStays((s) => [...s.slice(0, k + 1), b, ...s.slice(k + 1)]);
+    }
+    const seg = lodgeSegOf(d);
+    if (seg) {
+      if (mode === "night") return setPlan((p) => ({ ...p, stops: p.stops.map((st, j) => (j === seg.index ? { ...st, nights: Math.min(60, st.nights + 1) } : st)) }));
+      const at = seg.index + 1;
+      const pos = stays.findIndex((c) => stayAt(c, n) >= at);
+      const b = blank(at);
+      return setStays((s) => (pos < 0 ? [...s, b] : [...s.slice(0, pos), b, ...s.slice(pos)]));
+    }
+    // the last day: a blank day at the end
+    setStays((s) => [...s, { when: "after", city: "", nights: 1, blank: true }]);
+  }
+  const missingKeys = new Set((result?.missing ?? []).filter((m) => plan.manual_prices?.[m.key] === undefined).map((m) => m.key));
   const parkLodges = new Set(plan.stops.map((s) => s.property_id));
   // Experiences: the same one at several lodges (bush dinner, nature walk, cycling) is a
   // Pugdundee experience and shown once; one that exists at a single lodge is labelled
   // with it. Naturalists are a tick on each safari, so they are not listed here.
+  // City extras (Delhi sightseeing): add-ons with the city as their park, offered when the trip has nights there
+  const cityParks = cityParkIds(ctx);
+  const cityOfAddon = (a: (typeof ctx.pricing.addons)[number]) => (a.park_id && cityParks.has(a.park_id) ? ctx.pricing.parks.find((p) => p.id === a.park_id)?.name ?? null : null);
+  const tripCities = stays.map((c) => c.city).filter(Boolean);
   const addonGroups = (() => {
     const byName = new Map<string, typeof ctx.pricing.addons>();
     for (const a of ctx.pricing.addons) {
       if (a.active === false || a.alias || /^accompanying naturalist/i.test(a.name.trim())) continue;
+      const city = cityOfAddon(a);
+      if (city && !tripCities.some((c) => sameCity(c, city))) continue;
       // a Pugdundee-wide experience offered only at some lodges: hidden if none of them is in this trip
       if (!a.property_id && a.offered_at?.length && !a.offered_at.some((id) => parkLodges.has(id))) continue;
       const k = normName(a.name);
@@ -86,12 +127,12 @@ export function PlanStep({
     }
     const groups = [...byName.entries()].map(([key, entries]) => {
       const shared = entries.length > 1 || entries.some((e) => !e.property_id);
-      return { key, name: entries[0].name, entries, shared, lodgeId: shared ? null : entries[0].property_id, unit: entries[0].pricing_unit };
+      return { key, name: entries[0].name, entries, shared, lodgeId: shared ? null : entries[0].property_id, unit: entries[0].pricing_unit, city: cityOfAddon(entries[0]) };
     });
     return groups
       .filter((g) => g.shared || (g.lodgeId && parkLodges.has(g.lodgeId)))
       .filter((g) => !search || g.name.toLowerCase().includes(search.toLowerCase()))
-      .sort((a, b) => Number(b.shared) - Number(a.shared) || lodgeName(a.lodgeId).localeCompare(lodgeName(b.lodgeId)) || a.name.localeCompare(b.name));
+      .sort((a, b) => Number(!!a.city) - Number(!!b.city) || (a.city ?? "").localeCompare(b.city ?? "") || Number(b.shared) - Number(a.shared) || lodgeName(a.lodgeId).localeCompare(lodgeName(b.lodgeId)) || a.name.localeCompare(b.name));
   })();
   type AddonGroup = (typeof addonGroups)[number];
   // The add-on for a given day: that day's lodge's own, else the general one, else any.
@@ -368,6 +409,57 @@ export function PlanStep({
                 </button>
 
                 <ul className="divide-y divide-sand-100 text-sm">
+                  {d.stay_index !== undefined && stays[d.stay_index] && plan.days.findIndex((x) => x.stay_index === d.stay_index) === i && (() => {
+                    const k = d.stay_index!;
+                    const c = stays[k];
+                    return (
+                      <li className="flex flex-wrap items-center gap-1.5 bg-sand-50 px-3 py-2 text-xs">
+                        <Icon name="building" className="h-4 w-4 shrink-0 text-sand-500" />
+                        <input
+                          className="w-28 rounded border border-sand-200 bg-white px-1.5 py-1"
+                          placeholder={c.blank ? "Place (optional)" : "City"}
+                          value={c.city}
+                          onChange={(e) => updateStay(k, { city: e.target.value.slice(0, 60) })}
+                          aria-label="Place"
+                        />
+                        <input
+                          className="min-w-0 flex-1 rounded border border-sand-200 bg-white px-1.5 py-1"
+                          placeholder="Hotel (empty = to be confirmed)"
+                          value={c.hotel ?? ""}
+                          onChange={(e) => updateStay(k, { hotel: e.target.value.slice(0, 120) })}
+                          aria-label="Hotel"
+                        />
+                        <label className="flex items-center gap-1 text-sand-500" title="Price per night for all rooms, incl. tax">
+                          Rs
+                          <input
+                            type="number"
+                            min={0}
+                            className="tabular w-20 rounded border border-sand-200 bg-white px-1.5 py-1 text-right"
+                            placeholder="per night"
+                            value={c.price ?? ""}
+                            onChange={(e) => updateStay(k, { price: e.target.value === "" ? null : Math.max(0, Math.round(Number(e.target.value))) })}
+                            aria-label="Hotel price per night, all rooms"
+                          />
+                          /night
+                        </label>
+                        <label className="flex items-center gap-1 text-sand-500">
+                          Nights
+                          <input
+                            type="number"
+                            min={1}
+                            max={14}
+                            className="tabular w-12 rounded border border-sand-200 bg-white px-1.5 py-1 text-right"
+                            value={c.nights}
+                            onChange={(e) => updateStay(k, { nights: Math.max(1, Math.min(14, Math.round(Number(e.target.value)) || 1)) })}
+                            aria-label="Nights"
+                          />
+                        </label>
+                        <button type="button" onClick={() => removeStay(k)} className="rounded p-1 text-sand-400 hover:bg-error-bg hover:text-error" aria-label={c.blank ? "Remove this day" : `Remove the nights in ${c.city}`}>
+                          <Icon name="trash" className="h-3.5 w-3.5" />
+                        </button>
+                      </li>
+                    );
+                  })()}
                   {d.kind === "city" && d.text && (
                     <li className="flex items-center gap-2 px-3 py-1.5 text-xs text-sand-600">
                       <Icon name="building" className="h-4 w-4 shrink-0 text-sand-500" />
@@ -386,10 +478,21 @@ export function PlanStep({
                       <span className="flex-1 truncate">
                         {locName(d.transfer.from_location_id)} to{" "}
                         {/* the last lodge day before city nights: the drive is to the city hotel */}
-                        {d.kind === "departure" && afterStay ? (afterStay.hotel ? `${afterStay.hotel}, ${afterStay.city}` : afterStay.city) : locName(d.transfer.to_location_id)}
+                        {d.kind === "departure" && stayOf(d)?.city ? (stayOf(d)!.hotel ? `${stayOf(d)!.hotel}, ${stayOf(d)!.city}` : stayOf(d)!.city) : locName(d.transfer.to_location_id)}
                       </span>
                     </li>
                   )}
+                  {(d.city_transfers ?? []).map((t, k) => (
+                    <li key={`ct${k}`} className="flex items-center gap-2 px-3 py-1.5">
+                      <Icon name="car" className="h-4 w-4 shrink-0 text-sand-500" />
+                      <span className="flex-1 truncate">
+                        {t.from_label} to {t.to_label}
+                      </span>
+                      {missingKeys.has(`transfer|${d.date}|${t.from_location_id}|${t.to_location_id}`) && (
+                        <span className="shrink-0 rounded bg-warning-bg px-1.5 py-0.5 text-[10px] font-semibold text-warning">Price needed (top of page)</span>
+                      )}
+                    </li>
+                  ))}
                   {d.park_id && (() => {
                     const fullDay = d.safaris.find((x) => x.session === "full_day");
                     const extras = (safari: DaySafari) => (
@@ -540,6 +643,32 @@ export function PlanStep({
                     <li className="px-3 py-1.5 text-center text-[11px] italic text-sand-400">{overDay === i ? "Drop here" : "Drag items here, or select this day and click Add"}</li>
                   )}
                 </ul>
+                <div className="flex flex-wrap items-center gap-1.5 border-t border-sand-100 px-3 py-1.5">
+                  {addMenu === i ? (
+                    <>
+                      {(() => {
+                        const c = stayOf(d);
+                        const seg = c ? undefined : lodgeSegOf(d);
+                        const label = c ? `Another night ${c.city ? `in ${c.city}` : "here"}` : seg ? `Another night at ${lodgeName(seg.stop.property_id)}` : null;
+                        return label ? (
+                          <button type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} onClick={() => addDayAfter(i, "night")}>
+                            {label}
+                          </button>
+                        ) : null;
+                      })()}
+                      <button type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} onClick={() => addDayAfter(i, "blank")} title="A new day with its own hotel and price; add experiences or custom items to it">
+                        Blank day {lodgeSegOf(d) ? `after ${lodgeName(lodgeSegOf(d)!.stop.property_id)}` : "after this"}
+                      </button>
+                      <button type="button" className="text-[11px] text-sand-500 hover:underline" onClick={() => setAddMenu(null)}>
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button type="button" className="text-[11px] font-semibold text-olive-700 hover:underline" onClick={() => setAddMenu(i)}>
+                      + Add a day
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -573,12 +702,12 @@ export function PlanStep({
                   <ul className="max-h-[440px] space-y-1.5 overflow-y-auto">
                     {addonGroups.map((g, k) => {
                       const u = unitPrice(addonFor(g, targetDay), targetDay);
-                      const header = k === 0 || addonGroups[k - 1].shared !== g.shared || addonGroups[k - 1].lodgeId !== g.lodgeId;
+                      const header = k === 0 || addonGroups[k - 1].shared !== g.shared || addonGroups[k - 1].lodgeId !== g.lodgeId || addonGroups[k - 1].city !== g.city;
                       return (
                         <li key={g.key}>
                           {header && (
                             <p className="mb-1 mt-2 text-[10px] font-bold uppercase tracking-wide text-sand-500 first:mt-0">
-                              {g.shared ? "Pugdundee experiences" : `Only at ${lodgeName(g.lodgeId)}`}
+                              {g.city ? `In ${g.city}` : g.shared ? "Pugdundee experiences" : `Only at ${lodgeName(g.lodgeId)}`}
                             </p>
                           )}
                           <div

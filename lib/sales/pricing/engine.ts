@@ -366,7 +366,7 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
   for (const t of trip.transfers) {
     const from = locOf(t.from_location_id);
     const to = locOf(t.to_location_id);
-    const label = `${from?.name ?? "?"} to ${to?.name ?? "?"}`;
+    const label = `${from?.name ?? t.from_label ?? "?"} to ${to?.name ?? t.to_label ?? "?"}`;
     const billTo = from?.property_id ?? to?.property_id ?? null;
 
     // Rates for this road: this direction first; a rate entered only the other way
