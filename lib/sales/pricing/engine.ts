@@ -273,7 +273,14 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
         base += n <= 1 ? single : double + Math.max(0, n - 2) * (rate.extra_adult ?? 0);
         extraPart += Math.max(0, n - 2) * (rate.extra_adult ?? 0);
       }
-      const childParts = trip.children.map((age) => rate.child_rates.find((b) => age >= b.min_age && age <= b.max_age)?.rate ?? 0);
+      const childParts = trip.children.map((age) => {
+        const band = rate.child_rates.find((b) => age >= b.min_age && age <= b.max_age);
+        // a child (5 and over) with no band would show as "no charge": say so once per stay.
+        // Infants (under 5) without a band are free on purpose.
+        const note = `${propName(stay.property_id)}: no child rate for age ${age} on ${room?.name ?? "this room"}, so the child is priced at 0 (shown as "no charge"). Add a child rate in Master data, or correct the price on Plan & price.`;
+        if (!band && age >= INFANT_UNDER && !warnings.includes(note)) warnings.push(note);
+        return band?.rate ?? 0;
+      });
       for (const c of childParts) base += c;
       // who this night is for (the per-guest price): fractions of the line
       const pax = base > 0 ? { adult: (base - extraPart - childParts.reduce((t, c) => t + c, 0)) / base, extra: extraPart / base, child: childParts.map((c) => c / base) } : undefined;

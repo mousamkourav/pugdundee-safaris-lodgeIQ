@@ -163,6 +163,24 @@ test("yearly hike on add-ons: dates in the hike period get the add-ons %", () =>
   assert.equal(free.totals.addon, 2200);
 });
 
+test("a child with no child rate for their age is flagged, not silently free", () => {
+  const withKid = (child_rates: RoomRate["child_rates"]): PricingData => ({ ...seasons, roomRates: [{ ...seasons.roomRates[0], child_rates }] });
+  const kid = (age: number): TripInput => ({ ...stay("2026-10-05", 2), children: [age] });
+  const none = priceTrip(kid(8), withKid([]));
+  assert.equal(none.totals.room, 42480); // 2 nights x 18,000 + 18%: the child adds nothing
+  assert.equal(none.warnings.filter((w) => w.includes("age 8")).length, 1); // one warning, not one per night
+  const banded = withKid([{ min_age: 0, max_age: 4, rate: 0 }, { min_age: 5, max_age: 11, rate: 3000 }]);
+  const priced = priceTrip(kid(8), banded);
+  assert.equal(priced.totals.room, 49560); // + 2 x 3,000 + 18%
+  assert.ok(!priced.warnings.some((w) => w.includes("child rate")));
+  // a band at 0 (infants free) is a price, so no warning
+  assert.ok(!priceTrip(kid(3), banded).warnings.some((w) => w.includes("child rate")));
+  // an infant (under 5) with no band is free on purpose: no warning either
+  assert.ok(!priceTrip(kid(3), withKid([])).warnings.some((w) => w.includes("child rate")));
+  // the per-guest split agrees: the unbanded 8-year-old's room share is 0, the banded one's is not
+  assert.ok((none.split?.children[0].amount ?? 0) < (priced.split?.children[0].amount ?? 0));
+});
+
 test("yearly hike on transfers: only when no rate covers the date (like rooms and safaris)", () => {
   const road = { id: "T1", from_location_id: "JLR", to_location_id: "KL", vehicle_type: "Innova", capacity: 4, rate: 7000, drive_hours: 4, night_surcharge: 0, bidirectional: true, tax_pct: 0, active: true };
   const withRoad = (valid_to: string | null): PricingData => ({
