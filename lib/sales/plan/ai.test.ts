@@ -49,10 +49,12 @@ const GEMINI_ANSWER = {
   city_stays: [],
 };
 
-test("a Hinglish enquiry: the built-in reader misses it, the AI's answer builds the trip", () => {
+test("a Hinglish enquiry: the built-in reader reads it too, the AI's answer builds the trip", () => {
   const plan = emptyPlan(TODAY);
   const rulesOnly = chatTurn(plan, initialFlags(plan), HINGLISH, ctx, TODAY);
-  assert.ok(rulesOnly.plan.stops.every((s) => s.nights !== 4) || rulesOnly.plan.stops.length < 2); // the rules do not get it right
+  // the fallback when the AI is off or over its limit
+  assert.deepEqual(rulesOnly.plan.stops.map((s) => [s.park_id, s.nights]), [["TADOBA", 4], ["PENCH", 3]]);
+  assert.equal(rulesOnly.plan.guest.adults, 2);
   const ai = aiToParsed(GEMINI_ANSWER, ctx);
   assert.equal(ai.parks.length, 2); // Kaziranga dropped
   assert.deepEqual(ai.parks[1].extras, ["bush dinner"]); // unknown experience dropped

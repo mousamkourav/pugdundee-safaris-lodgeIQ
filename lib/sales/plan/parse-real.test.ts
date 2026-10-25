@@ -152,3 +152,19 @@ test("second US enquiry: Delhi night before, fly Delhi-Bhopal, two Bandhavgarh l
   // "Tadoba stay there 2 nights" is Tadoba, not a city stay
   assert.ok(!(p.cityStays ?? []).some((c) => c.nights === 2));
 });
+
+test("Hinglish enquiry without the AI: log, raat, din, bacche, sab safari naturalist ke saath, wapas", () => {
+  const p = read("2 log aa rahe hai 16 jan ko nagpur, pehle tadoba 4 raat phir pench 3 raat, sab safari naturalist ke saath, wapas nagpur se");
+  assert.equal(p.adults, 2);
+  assert.equal(p.arrival_date, "2027-01-16");
+  assert.deepEqual(p.parks.map((x) => [x.name.split(" ")[0], x.nights, x.naturalists ?? null]), [["Tadoba-Andhari", 4, -1], ["Pench", 3, -1]]);
+  assert.equal(p.arrival_place, "Nagpur Airport");
+  assert.equal(p.departure_place, "Nagpur Airport");
+  const q = read("4 bande aur 2 bacche, kanha 3 din, jabalpur se");
+  assert.equal(q.adults, 4);
+  assert.equal(q.children?.length, 2);
+  assert.equal(q.parks[0].nights, 3);
+  assert.equal(q.parks[0].nightsFromDays, true);
+  // "dinner" is not "din"
+  assert.equal(read("Kanha 2 nights, bush dinner").parks[0].nights, 2);
+});

@@ -251,9 +251,9 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
 
   // ---- guests
   const adultsM =
-    low.match(new RegExp(`\\b${NUM}\\s*(?:adults?|pax|people|persons|guests|travell?ers|ppl)\\b`)) ?? low.match(/\b(\d{1,2})\s*a\b(?![\w'])/);
+    low.match(new RegExp(`\\b${NUM}\\s*(?:adults?|pax|people|persons|guests|travell?ers|ppl|log|logon?|bande|aadmi)\\b`)) ?? low.match(/\b(\d{1,2})\s*a\b(?![\w'])/);
   const familyM = low.match(new RegExp(`\\bfamily of\\s*${NUM}\\b`));
-  const kidsM = low.match(new RegExp(`\\b${NUM}\\s*(?:kids?|children|childs?|child|infants?)\\b`));
+  const kidsM = low.match(new RegExp(`\\b${NUM}\\s*(?:kids?|children|childs?|child|infants?|bacche|bachche|bachhe|bachon|bacchon)\\b`));
   const LIST = "(\\d{1,2}(?:\\s*(?:,|and|&|/)\\s*\\d{1,2})*)";
   const ageSources = [
     low.match(new RegExp(`\\b(?:aged?|ages?)\\s*:?\\s*${LIST}`)),
@@ -368,7 +368,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
   // go either way, the writer's usual style decides.
   const gapIsGlue = (gap: string) => /^[\s\W]*(?:(?:in|at|@|of|for|stay(?:ing)?)[\s\W]+)*$/.test(gap.toLowerCase() + " ");
   const tokens: { start: number; end: number; value: number; before?: number; after?: number }[] = [];
-  const tokRe = new RegExp(`(?:\\bx\\s*${NUM}\\b|\\b${NUM}\\s*(?:n|nts?|nights?)\\b)`, "gi");
+  const tokRe = new RegExp(`(?:\\bx\\s*${NUM}\\b|\\b${NUM}\\s*(?:n|nts?|nights?|raat(?:ein|en|e)?)\\b)`, "gi");
   let tm: RegExpExecArray | null;
   while ((tm = tokRe.exec(text))) {
     const value = toNum((tm[1] ?? tm[2]).toLowerCase());
@@ -417,7 +417,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
       if (lead) p.nights = toNum(lead[1]);
     }
     if (!p.nights) {
-      const m = seg.match(new RegExp(`\\b${NUM}\\s*(nights?|n\\b|nts?|days?)`));
+      const m = seg.match(new RegExp(`\\b${NUM}\\s*(nights?|n\\b|nts?|days?|raat(?:ein|en|e)?\\b|din\\b)`));
       if (m && toNum(m[1]) > 0 && toNum(m[1]) <= 30) {
         p.nights = toNum(m[1]);
         if (/^d/.test(m[2])) p.nightsFromDays = true;
@@ -491,6 +491,10 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
   }
   // in the order they are mentioned
   if (stays.length) out.cityStays = (stays as ((typeof stays)[number] & { at: number })[]).sort((a, b) => a.at - b.at).map(({ at: _at, ...c }) => c);
+  // Hinglish "sab safari naturalist ke saath": every safari at every stop with a naturalist
+  if (/\b(?:sab|saari|sabhi)\s+safaris?\b[^.]{0,40}\bnaturalists?\b/.test(low) && !/\bnaturalists?\s+ke\s+bina\b/.test(low)) {
+    for (const p of out.parks) p.naturalists ??= -1;
+  }
   if (/\b(reverse|opposite\s+(?:order|direction|way)|other\s+way\s+round|wrong\s+(?:direction|order)|the other way)\b/.test(low)) out.reverse = true;
   // "all stays they will do nature walk", "any special at each lodge"
   for (const m of low.matchAll(/\b(?:all|every|each)\s+(?:the\s+|of\s+the\s+)?(?:stays?|lodges?|places?|parks?|locations?)\b/g)) {
@@ -509,7 +513,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
   const places = ctx.locations.filter((l) => l.type !== "property").sort((a, b) => (rank[a.type] ?? 9) - (rank[b.type] ?? 9));
   const placeHits = findAll(text, places.map((l) => ({ name: l.name, aliases: locationAliases(l.name, l.code) })));
   const arriveWords = /(arriv\w*|arr\.?|land\w*|pick(?:ing)?[\s-]?up(?:\s+(?:from|at))?|from|ex|start\w*|reach\w*|coming (?:in )?(?:to|at))\W*(?:at|in|to)?\W*$/i;
-  const departWords = /(depart\w*|dep\.?|leav\w*|drop(?:ping)?(?:\s+off)?|fly(?:ing)?\s+(?:out|back)|back to|end\w*|exit\w*|return\w*|onward)\W*(?:at|in|to|from|via|of)?\W*$/i;
+  const departWords = /(depart\w*|dep\.?|wapas|vapas|leav\w*|drop(?:ping)?(?:\s+off)?|fly(?:ing)?\s+(?:out|back)|back to|end\w*|exit\w*|return\w*|onward)\W*(?:at|in|to|from|via|of)?\W*$/i;
   const bothWords = /^\W*(in\s*(?:\/|&|and)?\s*out|in-out|round ?trip|both ways)\b/i;
   const unclassified: string[] = [];
   for (const h of placeHits) {
