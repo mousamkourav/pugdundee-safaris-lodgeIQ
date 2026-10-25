@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import * as XLSX from "xlsx";
+import { sheetFromRows } from "@/lib/excel";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getMonthlySummary } from "@/lib/report";
@@ -68,11 +68,7 @@ export async function GET(request: Request) {
     ["Overdue services", sm.overdue],
   ];
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"] = [{ wch: 28 }, { wch: 18 }];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Monthly Report");
-  const ab = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+  const ab = await sheetFromRows("Monthly Report", rows, [28, 18]);
 
   const fname = `${name.replace(/[^\w]+/g, "_")}_${month}.xlsx`;
   return new NextResponse(ab, {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import * as XLSX from "xlsx";
+import { sheetFromRows } from "@/lib/excel";
 import { getCurrentUser } from "@/lib/auth";
 import { fetchMetrics, perRoom } from "@/lib/dashboard";
 
@@ -75,15 +75,7 @@ export async function GET(request: Request) {
     ...body,
   ];
 
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [
-    { wch: 22 },
-    { wch: 10 },
-    ...Array(header.length - 2).fill({ wch: 15 }),
-  ];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Comparison");
-  const ab = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+  const ab = await sheetFromRows("Comparison", aoa, [22, 10, ...Array(header.length - 2).fill(15)]);
 
   const fname = `lodge_comparison_${month ?? "all"}.xlsx`;
   return new NextResponse(ab, {
