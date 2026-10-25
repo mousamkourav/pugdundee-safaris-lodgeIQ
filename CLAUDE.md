@@ -1,88 +1,121 @@
-# CLAUDE.md — Project context for LodgeIQ
+# CLAUDE.md - Project context for LodgeIQ
 
 > Claude Code reads this file automatically at the start of every session.
 > It is the source of truth for how this project is built. Keep it updated.
 
 ## What we're building
-LodgeIQ is a multi-lodge **operations, reporting & notification system** built **under the
-Pugdundee Safaris umbrella** (an internal product for the company's wildlife lodges —
-currently 7: Kings Lodge, Tree House Hideaway, Kanha Earth Lodge, Pench Tree Lodge, Denwa
-Backwater Escape, Ken River Lodge, Waghoba Eco Lodge; more later). It replaces a manual
-monthly Excel "Manager's Report" with structured data entry, dashboards, notifications, and
-(later) an AI assistant. **AI is out of scope for now** — build the core system first.
+LodgeIQ is the internal app of **Pugdundee Safaris** (wildlife lodges in Central India).
+One app, two modules:
+- **Lodge Reporting**: monthly reports, occupancy, expenses, energy, vehicles, assets and
+  service log, staff and payroll, bar, stock and purchases, compliance, notifications,
+  trip reports. Lodges: Kings Lodge, Tree House Hideaway, Kanha Earth Lodge, Pench Tree
+  Lodge, Denwa Backwater Escape, Ken River Lodge, Waghoba Eco Lodge (more later).
+- **Sales & Itinerary**: enquiry -> itinerary builder (chat assistant) -> pricing ->
+  guest itinerary page + PDF -> status (draft, open, quoted, booked, lost, cancelled).
+
+Live at https://pugdundeesafaris.org (Vercel; the vercel.app address redirects there).
+The owner is not a developer: explain in plain words, give PowerShell commands one per
+block, and say what output to expect. He deploys by pushing `main`; never push for him.
 
 ## Branding (must follow)
-This app must look like part of the Pugdundee Safaris brand. **`DESIGN_SYSTEM.md` is the
-source of truth for all visuals — read it before building any UI.** Do not invent colours.
-- Brand colours (from the logo): **Olive `#907A17` (primary)**, **Gold `#DAB705` (accent)**, warm "sand" neutrals.
-- Fonts: **Poppins** (headings) + **Inter** (body/tables/numbers) via `next/font`. The logo wordmark is an image — don't reproduce its handwriting font in the UI.
-- Logos are in `public/`: `pugdundee-logo-horizontal.jpeg` (sidebar top + login), `pugdundee-logo-circle.jpeg` (favicon + avatar).
-- Present the product as Pugdundee's: show the logo in the header/sidebar and a "by Pugdundee Safaris" lockup.
-- Apply the palette, typography, and component rules from DESIGN_SYSTEM.md consistently — earthy, calm, premium; warm sand backgrounds, olive for actions, gold for small accents.
+`DESIGN_SYSTEM.md` is the source of truth for colours and components. Do not invent colours.
+- Olive `#907A17` (primary), Gold `#DAB705` (accent), warm "sand" neutrals.
+- Fonts: **Epilogue** (headings) + **Work Sans** (body, labels, tabular numbers), loaded in
+  `app/fonts.ts`. (The typography section of DESIGN_SYSTEM.md still names Poppins/Inter:
+  the code is right, that section is out of date.)
+- Tailwind v4: tokens live in `app/globals.css` (`@theme`). There is no tailwind.config.js.
+- Shared UI: `components/ui.tsx` (class names), `components/icons.tsx`.
+- Logos in `public/`. Keep source files ASCII.
 
-## Tech stack (do not deviate without updating this file)
-- **Next.js (App Router, TypeScript)** — UI + API routes/server actions. No separate backend.
-- **Supabase** — Postgres DB, Auth, Storage, Row-Level Security. Data lives in Supabase cloud.
-- **Vercel** — hosting.
-- **Tailwind CSS** + **Tremor** (dashboards) + **Recharts** (charts) + **lucide-react** (icons).
-- **@supabase/ssr** for auth in the App Router (server + client helpers). Do NOT use the deprecated auth-helpers.
-- **Resend** for email. **WhatsApp Business API** (provider TBD: AiSensy/Interakt/Gupshup/Meta Cloud) for WhatsApp.
-- **Vercel Cron** for scheduled jobs (service-due scan, reminders).
-- Exports: **SheetJS** (Excel) and **@react-pdf/renderer** or a print route (PDF).
+## Tech stack
+- Next.js 15 App Router (React 19, server actions), TypeScript, Tailwind v4.
+- Supabase: Postgres + RLS + Auth + Storage (buckets `attachments`, `sales-media`).
+  `@supabase/ssr` helpers in `lib/supabase/`; the service-role client (`lib/supabase/admin.ts`)
+  is server-only.
+- Vercel hosting + Vercel Cron (`vercel.json`). Resend (email). Google Gemini (Sales AI
+  assistant). Frankfurter/ECB (exchange rates). exceljs (Excel), jsPDF + html-to-image (PDF).
 
-## Data model
-The full schema lives in `supabase/schema.sql` (already applied to Supabase).
-Read it before writing any query. Key facts:
-- Roles: `super_admin` > `general_manager` > `resort_manager` (+ future department_head/accounts/viewer).
-- Access is enforced by **RLS** using helper fns `is_admin()`, `is_super_admin()`, `has_lodge_access(lodge_id)`.
-- Operational data is **daily** (tables have `entry_date`) and rolls up to monthly via views/queries.
-- Payroll is **full**: attendance → payroll, with advances, leaves, deductions. See `payroll` table.
-- Every table has an `extra jsonb` column for future fields — use it instead of adding columns ad-hoc.
+## Roles (lib/auth.ts)
+- `super_admin`, `senior_manager`: both modules, admin everywhere (module picker at /hub).
+- `delhi_accounts`: Lodge Reporting, all lodges.
+- `lodge_manager`, `operations_manager`, `lodge_accounts`: Lodge Reporting, their lodges.
+- `sales_admin`: Sales admin (Master data, members, all queries); no Lodge Reporting.
+- `sales_member`: Sales, own queries only.
+- `task_creator`: Trip reports only.
+Access is checked on the server (every page via `requireUser()`, every server action and
+API route via `getCurrentUser()`), and RLS is the real guard. Deactivated accounts
+(`profiles.status` not `active`) are sent to /account-inactive and get no access.
+Middleware (`middleware.ts`) only routes; it is not the security boundary.
 
-## Roles & permissions (enforce in UI *and* rely on RLS)
-- **super_admin**: everything; add/remove lodges; manage all users incl. general managers.
-- **general_manager**: same operational reach as super_admin across all lodges, but CANNOT create/modify/remove a super_admin.
-- **resort_manager**: full data entry + dashboards for ONLY their assigned lodge(s).
-- Navigation must hide modules a role can't use. Never rely on hiding alone — RLS is the real guard.
+## Sales: where things are
+- Pages: `app/(dashboard)/sales/*` (dashboard, queries list and detail, `new` = builder,
+  `admin` = Master data, settings, members, photos, rates export/import).
+- Builder UI: `components/sales/builder/*` (trip details, chat panel, plan & price, final draft).
+- Guest page: `app/i/[token]/page.tsx` (public; data from `lib/sales/client-view.ts`, which
+  uses the service role and must never return costs, markup, discount or adjustment reasons,
+  or internal notes). PDF: `components/sales/download-pdf.tsx`.
+- Pricing: `lib/sales/pricing/engine.ts` (pure `priceTrip`), `load.ts` (reads master data),
+  `tariff.ts` (Pugdundee tariff -> per-room rates), `breakdown.ts` (guest breakup),
+  `health.ts` (rate data check).
+- Plan: `lib/sales/plan/planner.ts` (days, safaris, closures, transfers, flights, city
+  nights), `chat.ts` + `parse-text.ts` (assistant and built-in reader, incl. Hinglish),
+  `ai.ts` + `app/(dashboard)/sales/new/ai-actions.ts` (Gemini), `draft.ts` (guest text),
+  `sanitize.ts` (validates every plan coming from the browser).
+- Master data screens: `lib/sales/master/entities.ts`; rates Excel: `rates-workbook.ts`,
+  `rates-data.ts`, `slabs.ts` (payment / cancellation checks).
 
-## Modules (build order in BUILD_GUIDE.md)
-Lodges & users → Occupancy/extras → Expenses (F&B/Misc/Housekeeping) → Energy → Vehicles →
-Assets & service log → Staff + attendance + payroll → Bar (stock/rates) → Stock & purchases (+bill upload) →
-Notifications (email+WhatsApp) → Reports & analytics → Safari/Tickets/Guest-exp/Accounts → polish.
+## Sales pricing data (Pugdundee tariff)
+- `sales_tariff` (category x nationality indian/foreign/all x season all/shoulder/high/peak,
+  with validity), `sales_rate_categories`, `sales_tariff_calendar` (Peak incl. long weekends
+  wins over the season). Each `sales_room_categories` row points to a category.
+  `sales_room_rates` = lodge exceptions and partner/city hotel rates (priority 10).
+- Indian guests: published flat rates; foreign guests: seasonal rates; Ken River: B2B,
+  taxes included.
+- `sales_safari_rates` (park, zone, session, nationality, Tadoba booking window; weekend
+  rates also on the festive dates in settings), `sales_transfer_rates` (one row per road,
+  both directions, vehicle types, drive hours), `sales_addons`, `sales_offers` (incl.
+  multi-lodge), `sales_settings` (payment / cancellation slabs, FX, yearly hike, AI switch,
+  contacts).
+- Yearly hike: a date with no rate but covered by the hike period uses last year's rate +
+  the hike % (rooms, safaris, transfers); add-ons get the % on dates in the hike period.
+- City / partner hotels (kind `city_hotel` / `partner_lodge`) are not "our lodges": no
+  multi-lodge offer, no lodge discount, no automatic safaris.
+- Prices are always recalculated on the server when a quote is saved; never trust the
+  browser's numbers.
+
+## AI assistant (Sales builder)
+Gemini reads the enquiry first; the built-in reader (`parse-text.ts`) is the fallback.
+`GEMINI_API_KEY` (and optional `GEMINI_MODEL`) live in Vercel env, never in the DB; the
+"AI reading" switch is in Sales settings. Before sending: `scrubForAI()` removes emails,
+phone numbers and guest names (incl. the name in the guest fields). Gemini's answer is
+mapped to master data (`aiToParsed`) and never trusted for prices. Timeouts stay under
+Vercel's limit (page `maxDuration` 60 s).
+
+## Database rules
+- The original schema is `supabase/schema.sql`. Later changes are SQL files in `supabase/`.
+- Never connect to or change the production database. Every schema/data change is a new
+  SQL file that is idempotent (safe to run twice), starts with a comment block saying what
+  it does, and ends with a `select` that shows the result. The owner runs it in the
+  Supabase SQL Editor. If it removes something live code uses, split into "run any time"
+  and "run only after the deploy is Ready".
+- Do not touch `.env.local`, secrets, Vercel or Supabase settings; tell the owner instead.
 
 ## Conventions
-- **TypeScript everywhere**; generate DB types with `supabase gen types typescript`.
-- Feature-based folders under `app/(dashboard)/<module>/`. Shared UI in `components/`, data access in `lib/`.
-- All money is INR (₹), stored as `numeric`. Dates DD-MM-YYYY in UI, ISO in DB.
-- Server-side data fetching by default (server components / server actions). Use client components only for interactivity.
-- Reuse a single `<DataTable>`, `<EntryForm>`, `<KpiCard>`, `<PageHeader>` so every module looks the same.
-- Validate every form with **zod** before write. Never let a divide-by-zero or blank required field save.
-- Auto-calculate derived values (per-pax cost, per-km, per-hour, net salary) — users never type formulas.
-- Always filter/insert with `lodge_id`; never trust the client for access — RLS enforces, but pass the right lodge.
+- TypeScript everywhere; server components / server actions by default.
+- Server actions return `{ error }` instead of throwing (`lib/sales/safe.ts`).
+- Money: INR stored as numeric, shown in Indian style; dates ISO in DB, readable in UI.
+- Validate every input on the server; no `dangerouslySetInnerHTML` with user content.
+- Small, separate commits with clear messages; work on a branch, not `main`.
 
-## UX principles
-Simple, clean, obvious. Dashboard-first landing per role. One clear left nav grouped as
-Operations / Staff / Inventory / Reports / Admin. Mobile-responsive (no native app yet).
-Empty states + tooltips so a first-time manager understands each field.
+## Checks (run before and after every change)
+```
+npx tsc -p .
+npm test          # every test under lib/ (node test runner via tsx)
+npm run lint      # ESLint, Next.js rules
+npm run build
+```
+Add a test for every bug fixed in `lib/sales/**`.
 
-## Environment variables (in `.env.local`, never commit)
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=      # server only, for cron/admin tasks
-RESEND_API_KEY=
-WHATSAPP_API_KEY=               # provider-specific
-CRON_SECRET=                    # protects the cron route
-
-## Definition of done for a module
-1. List + create + edit + (soft) delete, all lodge-scoped.
-2. zod validation + friendly errors + loading states.
-3. Auto-calculated fields correct.
-4. Works for all three roles with correct access.
-5. Appears in nav only for permitted roles.
-6. A basic KPI/summary on the dashboard.
-
-## Guardrails
-- Do not build the AI assistant yet.
-- Do not add a separate Node/Express server.
-- Do not store secrets client-side or bypass RLS with the service role in browser code.
-- When unsure about a field, check `supabase/schema.sql` first.
+## Environment variables (`.env.local`, never commit)
+NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY (server
+only), RESEND_API_KEY, EMAIL_FROM, CRON_SECRET, GEMINI_API_KEY, GEMINI_MODEL (optional).
