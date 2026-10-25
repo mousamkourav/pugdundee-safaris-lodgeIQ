@@ -836,7 +836,7 @@ export function paymentSchedule(grand: number, arrival: ISODate | null, bookingD
       pct,
       due: null,
       amount: 0,
-      note: merged ? `Includes ${now.filter((s) => s.due !== null).map((s) => `${s.label.toLowerCase()} (due ${s.due})`).join(", ")}, already past.` : undefined,
+      note: merged ? `Includes ${now.filter((s) => s.due !== null).map((s) => `${s.label.toLowerCase()} (due ${readableDate(s.due!)})`).join(", ")}, already past.` : undefined,
     });
   }
   for (const s of later) out.push({ label: `${s.pct}% ${s.label.toLowerCase()}`, pct: s.pct, due: s.due, amount: 0 });

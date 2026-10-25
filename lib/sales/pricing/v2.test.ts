@@ -163,6 +163,16 @@ test("yearly hike on add-ons: dates in the hike period get the add-ons %", () =>
   assert.equal(free.totals.addon, 2200);
 });
 
+test("instalments already past: the note gives readable dates for the guest", () => {
+  // arrival 20 Jan 2027, booked 5 Oct 2026: the second deposit (145 days before) was due 28 Aug 2026
+  const p = paymentSchedule(100000, "2027-01-20", "2026-10-05", [
+    { label: "Deposit", pct: 25, days_before_arrival: null },
+    { label: "Second deposit", pct: 25, days_before_arrival: 145 },
+    { label: "Final balance", pct: 50, days_before_arrival: 45 },
+  ]);
+  assert.equal(p[0].note, "Includes second deposit (due 28 Aug 2026), already past.");
+});
+
 test("a child with no child rate for their age is flagged, not silently free", () => {
   const withKid = (child_rates: RoomRate["child_rates"]): PricingData => ({ ...seasons, roomRates: [{ ...seasons.roomRates[0], child_rates }] });
   const kid = (age: number): TripInput => ({ ...stay("2026-10-05", 2), children: [age] });
