@@ -452,7 +452,7 @@ export function chatTurn(
   if (parsed.cityStays?.length) {
     const keep = (next.city_stays ?? []).filter((c) => !parsed.cityStays!.some((x) => x.when === c.when));
     next.city_stays = [...keep, ...parsed.cityStays];
-    for (const c of parsed.cityStays) chips.push(`${c.nights} night${c.nights === 1 ? "" : "s"} in ${c.city} ${c.when === "before" ? "before the safari" : "at the end"}`);
+    for (const c of parsed.cityStays) chips.push(`${c.nights} night${c.nights === 1 ? "" : "s"} in ${c.city} ${c.when === "before" ? "before the safari" : "at the end"}${c.want_extras?.length ? ` with ${c.want_extras.join(", ")}` : ""}`);
   }
   // a city hotel from Master data named in the message: "1 night in Delhi at Roseate House"
   if (f.pending !== "hotel") {

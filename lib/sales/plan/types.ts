@@ -42,6 +42,7 @@ export interface CityStay {
   price?: number | null; // per night, all rooms, incl. tax
   at?: number; // how many lodges come before it; unset = before all ("before") or after all ("after")
   blank?: boolean; // added with "Add a day"
+  want_extras?: string[]; // asked for here: "sightseeing", "guide", "entrance" (matched to this city's add-ons)
 }
 
 // A road transfer in a city (airport to hotel...). A place not in Master data has

@@ -170,6 +170,7 @@ export function sanitizePlan(input: unknown): Plan | null {
         nights: Math.min(14, Math.round(Number(c.nights))),
         ...(Number.isInteger(Number(c.at)) && c.at !== null && c.at !== undefined && Number(c.at) >= 0 ? { at: Math.min(20, Number(c.at)) } : {}),
         ...(c.blank === true ? { blank: true } : {}),
+        ...(Array.isArray(c.want_extras) && c.want_extras.length ? { want_extras: c.want_extras.map((x) => str(x, 30)).filter(Boolean).slice(0, 6) } : {}),
         ...(typeof c.hotel === "string" && c.hotel.trim() ? { hotel: str(c.hotel, 120).trim() } : {}),
         ...(Number(c.price) > 0 ? { price: Math.min(Math.round(Number(c.price)), 10_000_000) } : {}),
       })),

@@ -345,3 +345,37 @@ test("Roseate House from Master data: its rates and the airport transfer are pri
   );
   check(chatTurn(plan, initialFlags(plan), msg, full, TODAY, ai, { aiPrimary: true }));
 });
+
+test("the whole Delhi - lodges - Khajuraho - Delhi trip from one message: naturalists, Khajuraho extras, the last drop", () => {
+  const places = [
+    { id: "IGI", name: "Delhi Airport (IGI)", type: "airport", property_id: null },
+    { id: "KHJ_AP", name: "Khajuraho Airport", type: "airport", property_id: null },
+    { id: "L_ROS", name: "Roseate House", type: "property", property_id: "ROS" },
+    { id: "L_RAD", name: "Radisson Hotel Jass Khajuraho", type: "property", property_id: "RAD" },
+  ];
+  const addon = (id: string, name: string, unit: "per_person" | "per_group" | "per_vehicle", rate: number) => ({ id, name, property_id: "RAD", pricing_unit: unit, rate, tax_pct: 0, active: true });
+  const full: BuilderContext = {
+    ...ctx,
+    pricing: {
+      ...ctx.pricing,
+      parks: [...ctx.pricing.parks, { id: "DELP", name: "Delhi" }, { id: "KHP", name: "Khajuraho" }],
+      properties: [...ctx.pricing.properties, { id: "ROS", name: "Roseate House", park_id: "DELP", kind: "city_hotel" }, { id: "RAD", name: "Radisson Hotel Jass Khajuraho", park_id: "KHP", kind: "city_hotel" }],
+      locations: [...ctx.pricing.locations, ...places.map(({ type: _t, ...l }) => l)],
+      addons: [...ctx.pricing.addons, addon("KG", "Khajuraho sightseeing: guide, per day", "per_group", 5000), addon("KV", "Khajuraho sightseeing: vehicle, per day", "per_vehicle", 6000), addon("KE", "Khajuraho temple entrances", "per_person", 1500)],
+    },
+    properties: [...ctx.properties, { id: "ROS", name: "Roseate House", park_id: "DELP", kind: "city_hotel", fallback_priority: 1, sort: 0 }, { id: "RAD", name: "Radisson Hotel Jass Khajuraho", park_id: "KHP", kind: "city_hotel", fallback_priority: 1, sort: 0 }],
+    locations: [...ctx.locations, ...places],
+  };
+  const msg =
+    "2 adults, foreign nationals, arriving Delhi on 15 Mar 2027. Delhi 1 night stay at Roseate House; fly Delhi to Nagpur and transfer to Waghoba Eco Lodge for 4 nights; transfer to Pench Tree Lodge for 3 nights; all safaris with naturalist. Transfer to Khajuraho 2 nights stay at Radisson Hotel Jass Khajuraho with sightseeing, guide and entrances; fly Khajuraho to Delhi and 1 night stay at Roseate House; drop to Delhi airport for the onward flight. Full board.";
+  const plan = emptyPlan(TODAY);
+  const r = chatTurn(plan, initialFlags(plan), msg, full, TODAY);
+  const days = r.plan.days;
+  const saf = days.flatMap((d) => d.safaris);
+  assert.ok(saf.length > 0 && saf.every((s) => s.naturalist));
+  const kh = days.find((d) => d.title === "Khajuraho")!;
+  assert.deepEqual(kh.items.filter((i) => i.addon_id).map((i) => i.addon_id).sort(), ["KE", "KG", "KV"]);
+  const last = days[days.length - 1];
+  assert.equal(last.title, "Depart from Delhi");
+  assert.deepEqual(last.city_transfers!.map((t) => `${t.from_label} > ${t.to_label}`), ["Roseate House > Delhi Airport (IGI)"]);
+});

@@ -29,7 +29,7 @@ export interface ParsedTrip {
   meal_plan?: "AP" | "MAP" | "CP" | "EP";
   notes: string[]; // assumptions made while reading
   flights?: { from: string; to: string; time?: string }[];
-  cityStays?: { when: "before" | "after"; city: string; nights: number; hotel?: string; price?: number }[];
+  cityStays?: { when: "before" | "after"; city: string; nights: number; hotel?: string; price?: number; want_extras?: string[] }[];
   reverse?: boolean; // "wrong direction", "the other way round"
   removeParks?: string[]; // parks to take out (from the AI)
   order?: string[]; // parks in a new order (from the AI)
@@ -522,6 +522,18 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   }
   // in the order they are mentioned
   const staysAt = (stays as ((typeof stays)[number] & { at: number })[]).sort((a, b) => a.at - b.at);
+  // what they want to do in a city: "Khajuraho 2 nights with sightseeing, guide and entrances"
+  // (read up to the next city or park mentioned)
+  const marks = [...staysAt.map((s) => s.at), ...parkHits.map((h) => h.index)].sort((a, b) => a - b);
+  for (const s of staysAt) {
+    const end = Math.min(marks.find((x) => x > s.at) ?? low.length, s.at + 200);
+    const win = low.slice(s.at, end);
+    const want: string[] = [];
+    if (/\b(sight\s?seeing|sightseeings?|sighting|city tour|temple tour)\b/.test(win)) want.push("sightseeing");
+    if (/\bguides?\b/.test(win)) want.push("guide");
+    if (/\b(entrances?|entry|entries|tickets?|monument fees?)\b/.test(win)) want.push("entrance");
+    if (want.length) s.want_extras = want;
+  }
   if (stays.length) out.cityStays = staysAt.map(({ at: _at, ...c }) => c);
   // "Arriving Delhi on 15 Mar; Delhi 1 night; fly to Jabalpur...": a date written before the
   // city nights is the day they land in the city, so the first lodge is reached that many nights later.
@@ -534,7 +546,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     out.arrival_date = lodgeDay;
   }
   // Hinglish "sab safari naturalist ke saath": every safari at every stop with a naturalist
-  if (/\b(?:sab|saari|sabhi)\s+safaris?\b[^.]{0,40}\bnaturalists?\b/.test(low) && !/\bnaturalists?\s+ke\s+bina\b/.test(low)) {
+  if (/\b(?:sab|saari|sabhi|all(?:\s+the)?|every)\s+safaris?\b[^.]{0,40}\bnaturalists?\b/.test(low) && !/\bnaturalists?\s+ke\s+bina\b/.test(low) && !/\bwithout\s+(?:an?\s+|the\s+)?naturalists?\b/.test(low)) {
     for (const p of out.parks) p.naturalists ??= -1;
   }
   if (/\b(reverse|opposite\s+(?:order|direction|way)|other\s+way\s+round|wrong\s+(?:direction|order)|the other way)\b/.test(low)) out.reverse = true;

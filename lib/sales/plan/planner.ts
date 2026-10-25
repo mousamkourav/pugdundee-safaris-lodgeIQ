@@ -303,8 +303,13 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
     const real = !c.blank && !!c.city; // a city from the trip, not an added day: transfers are worked out
     // a hotel from Master data with rooms and rates is priced from them, unless a price is typed
     const master = c.price ? null : masterHotel(ctx, c.hotel);
+    // experiences asked for here (sightseeing, guide, entrances): on the first full day, else the first
+    const extras = cityExtras(ctx, c, plan.guest.nationality);
+    const extrasDay = c.nights >= 2 ? 1 : 0;
     for (let j = 0; j < c.nights; j++) {
       const date = addDays(seg.checkIn, j);
+      const extraItems: PlanItem[] =
+        j === extrasDay ? extras.map((a, x) => ({ id: `auto-cx-${seg.index}-${x}`, type: "addon", title: a.name, detail: "", price: null, addon_id: a.id, qty: null, auto: `cityextra:${c.city}:${a.id}` })) : [];
       const hotel: PlanItem[] = c.price
         ? [{ id: `auto-hotel-${seg.index}-${j}`, type: "hotel", title: `Hotel: ${c.hotel || c.city || "to be confirmed"}`, detail: "", price: c.price, addon_id: null, qty: null, auto: `hotel:${date}:${c.hotel || c.city}:${c.price}` }]
         : [];
@@ -356,9 +361,9 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
               if (road) d = { ...d, transfer: { from_location_id: from, to_location_id: hotelLoc } };
             }
             const h = d.transfer ? driveHours(ctx, d.transfer.from_location_id, d.transfer.to_location_id, plan.vehicle_type) : null;
-            return withTransfer({ ...d, title, text: text.replace("{hours}", h ? ` (about ${h} hours)` : ""), items: [...d.items, ...hotel], stay_index: seg.index, ...(master ? { city_hotel: master } : {}) }, transfer);
+            return withTransfer({ ...d, title, text: text.replace("{hours}", h ? ` (about ${h} hours)` : ""), items: [...d.items, ...hotel, ...extraItems], stay_index: seg.index, ...(master ? { city_hotel: master } : {}) }, transfer);
           }
-          return withTransfer({ ...d, title, text: text.replace("{hours}", ""), items: [...d.items, ...hotel], stay_index: seg.index, ...(master ? { city_hotel: master } : {}) }, transfer);
+          return withTransfer({ ...d, title, text: text.replace("{hours}", ""), items: [...d.items, ...hotel, ...extraItems], stay_index: seg.index, ...(master ? { city_hotel: master } : {}) }, transfer);
         }
       );
     }
@@ -393,6 +398,33 @@ export function masterHotel(ctx: BuilderContext, name: string | undefined) {
     if (plans.length) return { property_id: prop.id, room_category_id: room.id, meal_plan: plans.includes("CP") ? "CP" : plans[0] };
   }
   return null;
+}
+
+// The add-ons of a city stay's hotel (or of its city) for what was asked: one each for
+// sightseeing (the vehicle), the guide and the entrances.
+const CITY_EXTRA: Record<string, { re: RegExp; not?: RegExp; prefer?: RegExp }> = {
+  sightseeing: { re: /sight\s?seeing|city tour|temple tour/i, not: /guide|entrance|ticket/i },
+  guide: { re: /guide/i, prefer: /sight\s?seeing|local/i },
+  entrance: { re: /entrance|entry|ticket|monument/i },
+};
+function cityExtras(ctx: BuilderContext, c: CityStay, nationality: string) {
+  if (!c.want_extras?.length) return [];
+  const hotelId = c.hotel ? ctx.properties.find((p) => p.name.toLowerCase() === c.hotel!.trim().toLowerCase())?.id : undefined;
+  const cityParks = new Set(ctx.pricing.parks.filter((p) => c.city && sameCity(p.name, c.city)).map((p) => p.id));
+  const offered = ctx.pricing.addons.filter(
+    (a) => a.active !== false && !a.alias && ((hotelId && a.property_id === hotelId) || (!a.property_id && a.park_id && cityParks.has(a.park_id)))
+  );
+  const out: typeof offered = [];
+  for (const kw of c.want_extras) {
+    const rule = CITY_EXTRA[kw];
+    if (!rule) continue;
+    const list = offered.filter((a) => rule.re.test(a.name) && !(rule.not && rule.not.test(a.name)) && !out.includes(a));
+    // the guest's version first when there are Indian and foreign ones
+    const forGuest = list.filter((a) => (nationality === "indian" ? !/foreign/i.test(a.name) : !/indian/i.test(a.name)));
+    const pick = (forGuest.length ? forGuest : list).sort((a, b) => Number(!!(rule.prefer && rule.prefer.test(b.name))) - Number(!!(rule.prefer && rule.prefer.test(a.name))))[0];
+    if (pick) out.push(pick);
+  }
+  return out;
 }
 
 // A city transfer between two places (each a Master data location, or "@name").
