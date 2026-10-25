@@ -147,7 +147,7 @@ async function learnFrom(
   queryId: string,
   userId: string
 ) {
-  const text = scrubForAI(enquiry ?? "").trim();
+  const text = scrubForAI(enquiry ?? "", [plan.guest.name]).trim();
   if (text.length < 15 || !plan.stops.length) return;
   await supabase
     .from("sales_chat_examples")

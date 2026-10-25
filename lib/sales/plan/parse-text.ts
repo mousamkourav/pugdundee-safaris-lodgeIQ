@@ -704,8 +704,18 @@ export function applyParsed(plan: Plan, parsed: ParsedTrip, ctx: BuilderContext)
   return { plan: next, understood, missing: [...missing, ...parsed.notes] };
 }
 
-// Text safe to send to an outside AI: no emails, phone numbers or long digit runs.
-export function scrubForAI(text: string) {
+// Text safe to send to an outside AI: no emails, phone numbers or long digit runs,
+// and no guest names: written as "Mr X" / "name is X", or the name typed in the
+// guest fields (passed in as `names`), in full or any part of 3+ letters.
+export function scrubForAI(text: string, names: string[] = []) {
+  const parts = names
+    .flatMap((n) => [n.trim(), ...n.split(/[^\p{L}'-]+/u)])
+    .map((p) => p.trim())
+    .filter((p) => p.length >= 3 && !/^(mr|mrs|ms|miss|dr|prof|and|family)$/i.test(p))
+    .sort((a, b) => b.length - a.length); // the full name before its parts
+  for (const p of [...new Set(parts)]) {
+    text = text.replace(new RegExp(`(?<![\\p{L}])${escapeRe(p)}(?:'?s)?(?![\\p{L}])`, "giu"), "[guest]"); // also "Kapoors", "Kapoor's"
+  }
   return text
     .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, "[email]")
     .replace(/\+?\d[\d\s-]{8,}\d/g, "[number]")

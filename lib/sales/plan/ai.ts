@@ -98,9 +98,9 @@ export function buildPrompt(input: {
     input.examples.length ? `EXAMPLES OF ENQUIRIES THIS TEAM HAS QUOTED (message -> correct JSON):\n${input.examples.map((e) => `Message: ${e.message}\nJSON: ${e.expected}`).join("\n\n")}` : "",
     "",
     `TRIP SO FAR: ${planSummary(input.plan, ctx)}`,
-    input.history.length ? `CONVERSATION:\n${input.history.map((h) => `${h.role === "user" ? "Sales" : "Assistant"}: ${scrubForAI(h.text).slice(0, 400)}`).join("\n")}` : "",
+    input.history.length ? `CONVERSATION:\n${input.history.map((h) => `${h.role === "user" ? "Sales" : "Assistant"}: ${scrubForAI(h.text, [input.plan.guest.name]).slice(0, 400)}`).join("\n")}` : "",
     "",
-    `LAST MESSAGE: ${scrubForAI(input.message)}`,
+    `LAST MESSAGE: ${scrubForAI(input.message, [input.plan.guest.name])}`,
   ]
     .filter((x) => x !== "")
     .join("\n");

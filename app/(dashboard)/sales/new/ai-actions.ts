@@ -102,7 +102,7 @@ async function aiUnderstandUnsafe(input: { message: string; history: { role: "us
   // keep a log (no names, emails or phone numbers) to see what the assistant misreads
   await supabase
     .from("sales_chat_log")
-    .insert({ created_by: cu.user.id, message: scrubForAI(input.message), result: res.json ?? null, error: res.error ?? null, model: res.model ?? null })
+    .insert({ created_by: cu.user.id, message: scrubForAI(input.message, [plan.guest.name]), result: res.json ?? null, error: res.error ?? null, model: res.model ?? null })
     .then(() => undefined, () => undefined);
   if (res.error || res.json === undefined) return { error: res.error ?? "No answer from the AI." };
   return { parsed: aiToParsed(res.json, ctx) };

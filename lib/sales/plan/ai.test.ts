@@ -118,6 +118,24 @@ test("the prompt carries our data and similar past quotes, never guest names", (
   assert.match(scrubForAI("for Mrs Sharma, 2 adults"), /\[guest\]/);
 });
 
+test("the guest's name from the guest fields never reaches the AI, even without Mr/Mrs", () => {
+  const plan = { ...emptyPlan(TODAY), guest: { ...emptyPlan(TODAY).guest, name: "Sangeeta Kapoor" } };
+  const prompt = buildPrompt({
+    message: "Sangeeta and family, 3 pax, tadoba 3n",
+    history: [{ role: "user", text: "quote for KAPOOR ji please" }],
+    plan,
+    ctx,
+    glossary: [],
+    examples: [],
+    today: TODAY,
+  });
+  assert.doesNotMatch(prompt, /sangeeta|kapoor/i);
+  assert.match(prompt, /\[guest\] and family, 3 pax, tadoba 3n/);
+  // parks and lodges are untouched, and short words are never taken for a name
+  assert.equal(scrubForAI("Al wants Kanha 2 nights", ["Al"]), "Al wants Kanha 2 nights");
+  assert.equal(scrubForAI("Kanha 2 nights for the Kapoors, Kapoor's daughter too", ["Kapoor"]), "Kanha 2 nights for the [guest], [guest] daughter too");
+});
+
 test("learning: a saved quote becomes an example, and similar enquiries find it", () => {
   const plan = emptyPlan(TODAY);
   const r = chatTurn(plan, initialFlags(plan), HINGLISH, ctx, TODAY, aiToParsed(GEMINI_ANSWER, ctx), { aiPrimary: true });
