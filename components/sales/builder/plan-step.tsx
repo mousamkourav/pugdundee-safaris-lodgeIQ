@@ -5,7 +5,7 @@ import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { rupees, fmtDate } from "@/lib/sales/format";
 import { dayName } from "@/lib/sales/pricing/dates";
-import { closedAt, describe, roomsFor, segments, stayAt } from "@/lib/sales/plan/planner";
+import { closedAt, describe, routeOf, roomsFor, segments, stayAt } from "@/lib/sales/plan/planner";
 import { cityParkIds, sameCity } from "@/lib/sales/plan/cities";
 import { detailedBreakdown } from "@/lib/sales/pricing/breakdown";
 import { FLIGHT_BAGGAGE } from "@/lib/sales/plan/draft";
@@ -105,6 +105,40 @@ export function PlanStep({
     // the last day: a blank day at the end
     setStays((s) => [...s, { when: "after", city: "", nights: 1, blank: true }]);
   }
+  // vehicles on one road: typed here, else the trip's, else enough for the group; 0 = not needed
+  const transferLine = (date: string, a: string, b: string) =>
+    result?.lines.find((l) => l.kind === "transfer" && l.date === date && (l.description === `${a} to ${b}` || l.description.startsWith(`${a} to ${b} by`)));
+  const setRouteVehicles = (key: string, v: number | null) =>
+    setPlan((p) => {
+      const rv = { ...(p.route_vehicles ?? {}) };
+      if (v === null) delete rv[key];
+      else rv[key] = v;
+      return { ...p, route_vehicles: rv };
+    });
+  const vehiclesBox = (from: string, to: string, date: string, a: string, b: string) => {
+    const key = routeOf(from, to);
+    const set = plan.route_vehicles?.[key];
+    const line = transferLine(date, a, b);
+    if (plan.own_vehicle) return <span className="shrink-0 text-[11px] italic text-sand-400">own vehicle</span>;
+    return (
+      <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-sand-500">
+        {set === 0 ? <span className="italic">not needed</span> : line && !line.missing ? <span className="tabular text-xs text-sand-600">{rupees(line.amount)}</span> : null}
+        <label className="flex items-center gap-1" title="Vehicles on this transfer. Empty = automatic; 0 = not needed (the guests make their own way)">
+          Vehicles
+          <input
+            type="number"
+            min={0}
+            max={20}
+            placeholder={line && !line.missing ? String(line.quantity) : "auto"}
+            className="tabular w-12 rounded border border-sand-200 px-1.5 py-0.5 text-right text-xs"
+            value={set ?? ""}
+            onChange={(e) => setRouteVehicles(key, e.target.value === "" ? null : Math.max(0, Math.min(20, Math.round(Number(e.target.value)))))}
+            aria-label={`Vehicles from ${a} to ${b}`}
+          />
+        </label>
+      </span>
+    );
+  };
   const missingKeys = new Set((result?.missing ?? []).filter((m) => plan.manual_prices?.[m.key] === undefined).map((m) => m.key));
   // the trip's lodges, and the city hotels it stays at (Roseate House): their own add-ons are offered
   const hotelIdOf = (name?: string) => ctx.properties.find((p) => p.name.toLowerCase() === (name ?? "").trim().toLowerCase())?.id;
@@ -334,6 +368,23 @@ export function PlanStep({
             onChange={(e) => setGuest({ rooms: Math.max(1, Math.min(30, Number(e.target.value) || 1)) })}
           />
         </label>
+        <label className="flex items-center gap-1.5 text-xs text-sand-600" title="Vehicles on every transfer. Empty = enough for the group. Change one road on its own day.">
+          Transfer vehicles
+          <input
+            type="number"
+            min={1}
+            max={20}
+            placeholder="auto"
+            disabled={!!plan.own_vehicle}
+            className="tabular w-16 rounded-md border border-sand-300 px-2 py-1 text-sm disabled:opacity-50"
+            value={plan.transfer_vehicles ?? ""}
+            onChange={(e) => setPlan((p) => ({ ...p, transfer_vehicles: e.target.value === "" ? null : Math.max(1, Math.min(20, Math.round(Number(e.target.value)) || 1)) }))}
+          />
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-sand-600" title="The guests drive themselves: no transfers are planned or charged">
+          <input type="checkbox" className="h-4 w-4" checked={!!plan.own_vehicle} onChange={(e) => setPlan((p) => ({ ...p, own_vehicle: e.target.checked || undefined }))} />
+          Own vehicle (no transfers)
+        </label>
         <span className="self-center text-[11px] text-sand-500">Prices update as you change these. Save a new version to share the new price.</span>
         {plan.dateless && (
           <span className="self-center rounded-full bg-gold-50 px-2 py-0.5 text-[11px] font-semibold text-olive-800 ring-1 ring-gold-200">
@@ -438,7 +489,7 @@ export function PlanStep({
                           <input
                             type="number"
                             min={0}
-                            className="tabular w-20 rounded border border-sand-200 bg-white px-1.5 py-1 text-right"
+                            className="tabular w-24 rounded border border-sand-200 bg-white px-1.5 py-1 text-right"
                             placeholder={d.city_hotel ? "Master rate" : "per night"}
                             title={d.city_hotel ? "Priced from this hotel's rates in Master data. Type a price to use your own instead." : "Price per night for all rooms, incl. tax"}
                             value={c.price ?? ""}
@@ -485,6 +536,7 @@ export function PlanStep({
                         {/* the last lodge day before city nights: the drive is to the city hotel */}
                         {d.kind === "departure" && stayOf(d)?.city ? (stayOf(d)!.hotel ? `${stayOf(d)!.hotel}, ${stayOf(d)!.city}` : stayOf(d)!.city) : locName(d.transfer.to_location_id)}
                       </span>
+                      {vehiclesBox(d.transfer.from_location_id, d.transfer.to_location_id, d.date, locName(d.transfer.from_location_id), locName(d.transfer.to_location_id))}
                     </li>
                   )}
                   {(d.city_transfers ?? []).map((t, k) => (
@@ -493,9 +545,10 @@ export function PlanStep({
                       <span className="flex-1 truncate">
                         {t.from_label} to {t.to_label}
                       </span>
-                      {missingKeys.has(`transfer|${d.date}|${t.from_location_id}|${t.to_location_id}`) && (
+                      {missingKeys.has(`transfer|${d.date}|${t.from_location_id}|${t.to_location_id}`) && !plan.own_vehicle && plan.route_vehicles?.[routeOf(t.from_location_id, t.to_location_id)] !== 0 && (
                         <span className="shrink-0 rounded bg-warning-bg px-1.5 py-0.5 text-[10px] font-semibold text-warning">Price needed (top of page)</span>
                       )}
+                      {vehiclesBox(t.from_location_id, t.to_location_id, d.date, t.from_label, t.to_label)}
                     </li>
                   ))}
                   {d.park_id && (() => {
@@ -595,12 +648,33 @@ export function PlanStep({
                       {it.addon_id ? (
                         (() => {
                           const l = addonLine(d.date, it.addon_id);
-                          if (!l) return <span className="tabular shrink-0 text-xs text-sand-600">-</span>;
+                          const unit = ctx.pricing.addons.find((a) => a.id === it.addon_id)?.pricing_unit;
+                          const unitWord = unit === "per_person" ? "Guests" : unit === "per_vehicle" ? "Vehicles" : unit === "per_room" ? "Rooms" : "Qty";
+                          // how many: automatic (guests, jeeps, rooms) unless typed here
+                          const qtyBox = (
+                            <label className="flex shrink-0 items-center gap-1 text-[11px] text-sand-500" title={`${unitWord} charged. Empty = automatic.`}>
+                              {unitWord}
+                              <input
+                                type="number"
+                                min={1}
+                                max={500}
+                                placeholder={l ? String(l.quantity) : "auto"}
+                                className="tabular w-12 rounded border border-sand-200 px-1.5 py-0.5 text-right text-xs"
+                                value={it.qty ?? ""}
+                                onChange={(e) => updateItem(i, it.id, { qty: e.target.value === "" ? null : Math.max(1, Math.min(500, Math.round(Number(e.target.value)) || 1)) })}
+                                aria-label={`${unitWord} for ${it.title}`}
+                              />
+                            </label>
+                          );
+                          if (!l) return <span className="flex shrink-0 items-center gap-2">{qtyBox}<span className="tabular text-xs text-sand-600">-</span></span>;
                           const how = `${l.quantity} x ${rupees(l.unit_price)}${l.tax_pct ? ` + ${l.tax_pct}% GST` : ""} = ${rupees(l.amount)}`;
                           return (
-                            <span className="tabular shrink-0 text-right text-xs leading-tight text-sand-600" title={how}>
-                              {rupees(l.amount)}
-                              <span className="block text-[10px] text-sand-400">{l.quantity} x {rupees(l.unit_price)}{l.tax_pct ? " + GST" : ""}</span>
+                            <span className="flex shrink-0 items-center gap-2">
+                              {qtyBox}
+                              <span className="tabular text-right text-xs leading-tight text-sand-600" title={how}>
+                                {rupees(l.amount)}
+                                <span className="block text-[10px] text-sand-400">{l.quantity} x {rupees(l.unit_price)}{l.tax_pct ? " + GST" : ""}</span>
+                              </span>
                             </span>
                           );
                         })()

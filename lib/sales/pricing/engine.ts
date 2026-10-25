@@ -37,8 +37,7 @@ import type {
   SafariInput,
   SafariRate,
   TransferRate,
-  TripInput,
-} from "./types";
+  TripInput, PaxSplit } from "./types";
 
 const round = (n: number) => Math.round(n);
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -269,14 +268,18 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
       const single = singleRaw ?? double;
 
       let base = 0;
-      for (const n of occ) base += n <= 1 ? single : double + Math.max(0, n - 2) * (rate.extra_adult ?? 0);
-      for (const age of trip.children) {
-        const band = rate.child_rates.find((b) => age >= b.min_age && age <= b.max_age);
-        base += band?.rate ?? 0;
+      let extraPart = 0;
+      for (const n of occ) {
+        base += n <= 1 ? single : double + Math.max(0, n - 2) * (rate.extra_adult ?? 0);
+        extraPart += Math.max(0, n - 2) * (rate.extra_adult ?? 0);
       }
+      const childParts = trip.children.map((age) => rate.child_rates.find((b) => age >= b.min_age && age <= b.max_age)?.rate ?? 0);
+      for (const c of childParts) base += c;
+      // who this night is for (the per-guest price): fractions of the line
+      const pax = base > 0 ? { adult: (base - extraPart - childParts.reduce((t, c) => t + c, 0)) / base, extra: extraPart / base, child: childParts.map((c) => c / base) } : undefined;
       base = withHike(base, hikePct);
       const { amount, tax } = withTax(base, rate.tax_pct, rate.rates_include_tax);
-      lines.push({ kind: "room", date: night, description: label + hikeLabel(hikePct), quantity: stay.rooms, unit_price: round(base / stay.rooms), amount, tax, tax_pct: rate.tax_pct, property_id: stay.property_id, ref_id: stay.room_category_id, ...(hikePct ? { hike: hikePct } : {}) });
+      lines.push({ kind: "room", date: night, description: label + hikeLabel(hikePct), quantity: stay.rooms, unit_price: round(base / stay.rooms), amount, tax, tax_pct: rate.tax_pct, property_id: stay.property_id, ref_id: stay.room_category_id, ...(hikePct ? { hike: hikePct } : {}), ...(pax ? { pax } : {}) });
     }
   }
 
@@ -707,7 +710,12 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     totals: { room, safari, transfer, addon, discount, markup, adjustment, tax: packageTax, grand },
     byProperty,
     guests,
-    perPerson: perPersonOf(grand, guests, trip.adults, data.settings.per_person_basis),
+    // with children or an extra adult, "per person" is the price per adult (the total is not divided by the children)
+    ...(() => {
+      const split = paxSplit(lines, trip, data, grand);
+      const mixed = trip.children.length > 0 || split.extra_adults > 0;
+      return { perPerson: mixed ? split.adult : perPersonOf(grand, guests, trip.adults, data.settings.per_person_basis), split };
+    })(),
     arrival,
     departure,
     currency,
@@ -721,6 +729,54 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     basis,
     errors,
     warnings,
+  };
+}
+
+// The price per guest. Room nights go to whom they are for (adults on twin sharing, the extra
+// adult's supplement, each child's rate); typed hotel nights to the adults; jeeps, transfers and
+// per-vehicle or per-group extras are shared by everyone 5 and over; per-person extras and flights
+// by everyone. Discounts, markup and package GST change all shares in proportion, so the shares
+// add up to the total. Infants are under 5.
+export const INFANT_UNDER = 5;
+export function paxSplit(lines: PriceLine[], trip: TripInput, data: PricingData, grand: number): PaxSplit {
+  const adults = Math.max(1, trip.adults);
+  const kids = trip.children;
+  const seats = adults + kids.filter((a) => a >= INFANT_UNDER).length;
+  const heads = adults + kids.length;
+  const occ = occupancy(trip.adults, trip.stays[0]?.rooms ?? 1);
+  const extraAdults = occ.reduce((t, n) => t + Math.max(0, n - 2), 0);
+  const twin = Math.max(0, adults - extraAdults);
+  let roomAdult = 0;
+  let roomExtra = 0;
+  const roomChild = kids.map(() => 0);
+  let hotel = 0;
+  let shared = 0;
+  let perHead = 0;
+  for (const l of lines) {
+    if (l.missing || l.kind === "discount") continue;
+    if (l.kind === "room") {
+      if (l.pax) {
+        roomAdult += l.amount * l.pax.adult;
+        roomExtra += l.amount * l.pax.extra;
+        l.pax.child.forEach((f, i) => (roomChild[i] = (roomChild[i] ?? 0) + l.amount * f));
+      } else hotel += l.amount; // a room price typed by hand: for the adults
+    } else if (l.kind === "addon" && l.group === "flight") perHead += l.amount;
+    else if (l.kind === "addon" && l.group === "hotel") hotel += l.amount;
+    else if (l.kind === "addon" && !l.manual && data.addons.find((a) => a.id === l.ref_id)?.pricing_unit === "per_person") perHead += l.amount;
+    else shared += l.amount;
+  }
+  if (!twin) roomExtra += roomAdult;
+  const common = (age: number | null) => (age === null || age >= INFANT_UNDER ? shared / seats : 0) + perHead / heads;
+  const adult = (twin ? roomAdult / twin : 0) + hotel / adults + common(null);
+  const extra = extraAdults ? roomExtra / extraAdults + hotel / adults + common(null) : null;
+  const child = kids.map((age, i) => roomChild[i] + common(age));
+  const sum = adult * twin + (extra ?? 0) * extraAdults + child.reduce((t, c) => t + c, 0);
+  const f = sum > 0 ? grand / sum : 1;
+  return {
+    adult: round(adult * f),
+    extra_adult: extra === null ? null : round(extra * f),
+    extra_adults: extraAdults,
+    children: kids.map((age, i) => ({ age, amount: round(child[i] * f), infant: age < INFANT_UNDER })),
   };
 }
 

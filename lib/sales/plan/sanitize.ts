@@ -148,6 +148,18 @@ export function sanitizePlan(input: unknown): Plan | null {
     markup_pct: p.markup_pct === null || p.markup_pct === undefined || p.markup_pct === "" ? null : Math.max(-50, Math.min(200, Number(p.markup_pct) || 0)),
     adjustment: Number.isFinite(adjAmount) && adjAmount !== 0 ? { amount: Math.round(adjAmount), reason: str(adj.reason, 300).trim() } : null,
     currency: (["USD", "EUR", "GBP", "AUD"] as const).find((c) => c === p.currency) ?? "INR",
+    ...(p.own_vehicle === true ? { own_vehicle: true } : {}),
+    ...(Number.isInteger(Number(p.transfer_vehicles)) && p.transfer_vehicles !== null && p.transfer_vehicles !== undefined && Number(p.transfer_vehicles) >= 1 ? { transfer_vehicles: Math.min(20, Number(p.transfer_vehicles)) } : {}),
+    ...(p.route_vehicles && typeof p.route_vehicles === "object"
+      ? {
+          route_vehicles: Object.fromEntries(
+            Object.entries(p.route_vehicles as Record<string, unknown>)
+              .filter(([k, v]) => k.length <= 300 && Number.isInteger(Number(v)) && Number(v) >= 0)
+              .slice(0, 60)
+              .map(([k, v]) => [k, Math.min(20, Number(v))])
+          ),
+        }
+      : {}),
     city_stays: (Array.isArray(p.city_stays) ? p.city_stays : [])
       .map((x) => obj(x))
       .filter((c) => (c.when === "before" || c.when === "after") && typeof c.city === "string" && Number(c.nights) > 0)

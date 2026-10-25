@@ -174,3 +174,23 @@ test("per jeep add-ons: one for each jeep that day, else enough jeeps for the gr
   const set: TripInput = { ...two, adults: 4, safaris: [{ ...s0, date: "2027-01-18", vehicles: 3 }] };
   assert.equal(line(set).quantity, 3);
 });
+
+test("price per guest: adults, the extra adult, a child and an infant; the shares add up to the total", () => {
+  const kids: PricingData = {
+    ...seasons,
+    roomRates: [{ ...rate("K1", "2027-01-01", "2027-03-31", 20000, "High."), extra_adult: 6000, child_rates: [{ min_age: 5, max_age: 12, rate: 4000 }], tax_pct: 0 }],
+    addons: [{ id: "WALK", name: "Village walk", property_id: null, pricing_unit: "per_person", rate: 1000, tax_pct: 0, active: true }],
+  };
+  const t: TripInput = { ...stay("2027-01-10", 2), adults: 3, children: [8, 2], addons: [{ addon_id: "WALK", date: "2027-01-10" }] };
+  const r = priceTrip(t, kids);
+  const s = r.split!;
+  // room: 2 nights x (20,000 twin + 6,000 extra bed + 4,000 child) = 60,000; walk: 5 x 1,000
+  assert.equal(r.totals.grand, 65000);
+  assert.equal(s.extra_adults, 1);
+  assert.equal(s.adult, 20000 + 1000); // 40,000 for the two sharing adults, plus the walk
+  assert.equal(s.extra_adult, 12000 + 1000);
+  assert.deepEqual(s.children, [{ age: 8, amount: 8000 + 1000, infant: false }, { age: 2, amount: 1000, infant: true }]);
+  assert.equal(s.adult * 2 + s.extra_adult! + s.children.reduce((x, c) => x + c.amount, 0), r.totals.grand);
+  // "per person" is now per adult, not the total divided by the children too
+  assert.equal(r.perPerson, s.adult);
+});

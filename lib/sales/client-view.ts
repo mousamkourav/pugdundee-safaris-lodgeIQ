@@ -3,6 +3,8 @@
 // token (32 random hex characters) is what grants access to one version.
 // Never return internal costs (lodge split, net costs) from here.
 import { createAdminClient } from "@/lib/supabase/admin";
+import type { PaxSplit } from "@/lib/sales/pricing/types";
+import { convertSplit } from "@/lib/sales/pricing/pax";
 import { addDays } from "@/lib/sales/pricing/dates";
 import { MEDIA_BUCKET } from "@/lib/sales/master/types";
 import { DIRECT_CONTACTS_DEFAULT, WHATSAPP_DEFAULT, whatsappHref } from "@/lib/sales/master/settings";
@@ -36,6 +38,7 @@ export interface ClientView {
   fx: number | null;
   total: number; // in quote currency
   perPerson: number; // in quote currency
+  split?: PaxSplit; // per adult / extra adult / child / infant, in quote currency
   payments: (Instalment & { amountInCurrency: number })[];
   validUntil: string;
   quotedOn: string; // when this version was prepared
@@ -228,6 +231,7 @@ async function loadClientViewUncached(link: string): Promise<ClientView | null> 
     fx,
     total: conv(pricing.totals.grand),
     perPerson: conv(pricing.perPerson),
+    split: convertSplit(pricing.split, conv),
     payments: pricing.payments.map((p) => ({ ...p, amountInCurrency: conv(p.amount) })),
     validUntil: addDays(version.created_at.slice(0, 10), validity),
     quotedOn: version.created_at.slice(0, 10),

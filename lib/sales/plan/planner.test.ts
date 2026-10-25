@@ -304,3 +304,24 @@ test("two airport places for Delhi: the one with a transfer rate to the hotel is
   assert.equal(t.length, 2);
   assert.ok(t.every((l) => !l.missing && l.amount === 3000));
 });
+
+test("vehicles on transfers: for the whole trip, for one road (0 = not needed), or own vehicle", () => {
+  const p = sheetPlan();
+  p.guest = { ...p.guest, adults: 6, rooms: 3 };
+  p.days = buildDays(p, ctx);
+  const transfers = (q: Plan) => priceTrip(planToTrip(q, "2026-10-05"), data).lines.filter((l) => l.kind === "transfer");
+  const auto = transfers(p);
+  assert.equal(auto.length, 3);
+  // two vehicles on every transfer: twice the price
+  const two = transfers({ ...p, transfer_vehicles: 2 });
+  assert.deepEqual(two.map((l) => l.quantity), [2, 2, 2]);
+  assert.equal(two[0].amount, auto[0].amount * (2 / auto[0].quantity));
+  // the drive into the first lodge is not needed; one road with 3 vehicles
+  const first = p.days[0].transfer!;
+  const last = p.days[p.days.length - 1].transfer!;
+  const mixed = transfers({ ...p, route_vehicles: { [`${first.from_location_id}>${first.to_location_id}`]: 0, [`${last.from_location_id}>${last.to_location_id}`]: 3 } });
+  assert.equal(mixed.length, 2);
+  assert.equal(mixed[mixed.length - 1].quantity, 3);
+  // own vehicle: no transfers at all
+  assert.equal(transfers({ ...p, own_vehicle: true }).length, 0);
+});

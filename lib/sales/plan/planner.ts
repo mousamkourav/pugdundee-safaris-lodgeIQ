@@ -311,6 +311,7 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
       let title = place(c);
       let text = c.city ? `A day in ${c.city}. Overnight at ${where(c)}.` : `A free day. Overnight at ${where(c)}.`;
       let transfer: CityTransfer | null = null;
+      let roadToHotel = false; // the last lodge's drive goes straight to this hotel
       if (j === 0) {
         if (!prev) {
           title = c.city ? `Arrive in ${c.city}` : "Free day";
@@ -328,6 +329,7 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
           text = c.city ? `After breakfast, drive to ${c.city}{hours}. Overnight at ${where(c)}.` : `After breakfast, check out of ${lodgeName(prev.stop.property_id)}. Overnight at ${where(c)}.`;
           // flown in from the lodges' airport (Nagpur to Delhi): the lodge's departure transfer goes to that airport
           const inFlight = flights.find((f) => sameCity(f.to, c.city) && !segs.slice(0, k).some((s) => s.kind === "city" && sameCity(s.stay.city, f.from)));
+          roadToHotel = real && !inFlight;
           if (real && inFlight) {
             transfer = cityTransfer(ctx, airportOf(ctx, c.city, hotelOf(ctx, c).id), hotelOf(ctx, c));
             title = `Fly to ${c.city}`;
@@ -345,6 +347,14 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
         (d) => {
           // the lodge's departure day becomes the day the guests move on to this stay
           if (d.kind === "departure") {
+            // by road to the city hotel (Kings Lodge to Radisson Khajuraho): that road's rate when Master data has
+            // one, else the rate to the city's airport (the same town) as before
+            if (roadToHotel && d.transfer) {
+              const hotelLoc = hotelOf(ctx, c).id;
+              const from = d.transfer.from_location_id;
+              const road = ctx.pricing.transferRates.some((r) => r.active !== false && ((r.from_location_id === from && r.to_location_id === hotelLoc) || (r.to_location_id === from && r.from_location_id === hotelLoc)));
+              if (road) d = { ...d, transfer: { from_location_id: from, to_location_id: hotelLoc } };
+            }
             const h = d.transfer ? driveHours(ctx, d.transfer.from_location_id, d.transfer.to_location_id, plan.vehicle_type) : null;
             return withTransfer({ ...d, title, text: text.replace("{hours}", h ? ` (about ${h} hours)` : ""), items: [...d.items, ...hotel], stay_index: seg.index, ...(master ? { city_hotel: master } : {}) }, transfer);
           }
@@ -657,9 +667,18 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
   const flightPax = plan.guest.adults + plan.guest.children.length;
   for (const d of plan.days) {
     if (d.park_id) for (const s of d.safaris) safaris.push({ date: d.date, park_id: d.park_id, zone: s.zone, session: s.session, naturalist: !!s.naturalist, ...(s.jeeps ? { vehicles: s.jeeps } : {}) });
-    if (d.transfer) transfers.push({ date: d.date, ...d.transfer, vehicle_type: plan.vehicle_type ?? undefined });
+    // own vehicle: no transfers. Otherwise vehicles as set for that road, else for every transfer,
+    // else enough for the group; 0 on a road = not needed (the guests make their own way)
+    const vehiclesFor = (from: string, to: string) => plan.route_vehicles?.[routeOf(from, to)] ?? plan.transfer_vehicles ?? undefined;
+    if (d.transfer && !plan.own_vehicle) {
+      const v = vehiclesFor(d.transfer.from_location_id, d.transfer.to_location_id);
+      if (v !== 0) transfers.push({ date: d.date, ...d.transfer, vehicle_type: plan.vehicle_type ?? undefined, ...(v ? { vehicles: v } : {}) });
+    }
     // transfers in a city: Master data rate when both places are there, else a price typed on Plan & price
-    for (const t of d.city_transfers ?? []) transfers.push({ date: d.date, from_location_id: t.from_location_id, to_location_id: t.to_location_id, from_label: t.from_label, to_label: t.to_label, vehicle_type: plan.vehicle_type ?? undefined });
+    for (const t of plan.own_vehicle ? [] : d.city_transfers ?? []) {
+      const v = vehiclesFor(t.from_location_id, t.to_location_id);
+      if (v !== 0) transfers.push({ date: d.date, from_location_id: t.from_location_id, to_location_id: t.to_location_id, from_label: t.from_label, to_label: t.to_label, vehicle_type: plan.vehicle_type ?? undefined, ...(v ? { vehicles: v } : {}) });
+    }
     for (const it of d.items ?? []) {
       if (it.addon_id) addons.push({ addon_id: it.addon_id, date: d.date, qty: it.qty ?? undefined });
       else {
@@ -691,6 +710,9 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
     line_prices: plan.line_prices ?? {},
   };
 }
+
+// The key of a road for vehicles set by hand.
+export const routeOf = (from: string, to: string) => `${from}>${to}`;
 
 export const DEFAULT_BASIS: RateBasis = { season: "high", safari_days: "weekday", year: "current" };
 

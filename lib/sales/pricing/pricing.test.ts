@@ -118,12 +118,16 @@ test("data check: complete sheet data has no errors; gaps are found", async () =
   assert.ok(broken.some((i) => i.message.includes("no safari rates")));
 });
 
-test("per-person basis: all guests by default, adults only when set", () => {
+test("with a child, the price is per adult plus the child's own price (the total is not divided by the child)", () => {
   const withChild = { ...trip, children: [8] };
-  const all = priceTrip(withChild, data);
-  assert.equal(all.perPerson, Math.round(all.totals.grand / 3));
-  const adults = priceTrip(withChild, { ...data, settings: { ...data.settings, per_person_basis: "adults" } });
-  assert.equal(adults.perPerson, Math.round(adults.totals.grand / 2));
+  const r = priceTrip(withChild, data);
+  const s = r.split!;
+  assert.equal(r.perPerson, s.adult);
+  assert.notEqual(r.perPerson, Math.round(r.totals.grand / 3));
+  assert.ok(Math.abs(s.adult * withChild.adults + s.children[0].amount - r.totals.grand) <= withChild.adults + 1); // rounding
+  // no children: the same as before
+  const plain = priceTrip(trip, data);
+  assert.equal(plain.perPerson, Math.round(plain.totals.grand / trip.adults));
 });
 
 test("missing rates become 'price needed' items, and typed prices are used", () => {

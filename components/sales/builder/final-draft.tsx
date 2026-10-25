@@ -1,6 +1,7 @@
 "use client";
 
 import { ui } from "@/components/ui";
+import { paxLines } from "@/lib/sales/pricing/pax";
 import { Icon } from "@/components/icons";
 import { rupees, fmtDate } from "@/lib/sales/format";
 import { dayName } from "@/lib/sales/pricing/dates";
@@ -210,8 +211,12 @@ export function FinalDraft({
                     <p className="eyebrow">Trip quotation</p>
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div>
-                        <p className="tabular font-display text-2xl font-semibold text-olive-800">{money(result.perPerson)}</p>
-                        <p className="text-sm text-sand-500">per person</p>
+                        {paxLines(result.perPerson, result.split, money).map((l, k) => (
+                          <p key={k} className={k === 0 ? "" : "text-sm"}>
+                            <span className={`tabular font-display font-semibold text-olive-800 ${k === 0 ? "text-2xl" : "text-base"}`}>{l.amount}</span>{" "}
+                            <span className="text-sm text-sand-500">{l.label}</span>
+                          </p>
+                        ))}
                       </div>
                       <div className="sm:text-right">
                         <p className="eyebrow">Total</p>

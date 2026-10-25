@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { paxLines } from "@/lib/sales/pricing/pax";
 import { loadClientView } from "@/lib/sales/client-view";
 import { DownloadPdfButton } from "@/components/sales/download-pdf";
 import { ShareButtons } from "@/components/sales/share-buttons";
@@ -412,10 +413,26 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
               <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--color-gold-200,#EBD9A0)]">Trip quotation</p>
               <div className="mt-4 grid gap-6 sm:grid-cols-2 sm:items-end">
                 <div>
-                  <p className="font-display text-5xl font-semibold text-[var(--color-gold-200,#EBD9A0)]">{money(view.perPerson, view.currency)}</p>
-                  <p className="mt-1 text-white/75">
-                    per person &middot; {view.guests} guest{view.guests === 1 ? "" : "s"}
-                  </p>
+                  {(() => {
+                    const [first, ...rest] = paxLines(view.perPerson, view.split, (n) => money(n, view.currency));
+                    return (
+                      <>
+                        <p className="font-display text-5xl font-semibold text-[var(--color-gold-200,#EBD9A0)]">{first.amount}</p>
+                        <p className="mt-1 text-white/75">
+                          {first.label} &middot; {view.guests} guest{view.guests === 1 ? "" : "s"}
+                        </p>
+                        {rest.length > 0 && (
+                          <ul className="mt-3 space-y-0.5 text-white/85">
+                            {rest.map((l, k) => (
+                              <li key={k}>
+                                <span className="font-semibold">{l.amount}</span> <span className="text-white/65">{l.label}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
                 <div className="sm:text-right">
                   <p className="text-sm uppercase tracking-[0.15em] text-white/60">Total</p>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { paxText } from "@/lib/sales/pricing/pax";
 import { requireUser, isSalesAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ui } from "@/components/ui";
@@ -187,7 +188,7 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
                 <h2 className="text-lg">Price (version {current.version_no})</h2>
                 <div className="text-right">
                   <p className="tabular font-display text-2xl font-semibold text-olive-800">{rupees(pricing.totals.grand)}</p>
-                  <p className="text-xs text-sand-500">{rupees(pricing.perPerson)} per person</p>
+                  <p className="text-xs text-sand-500">{paxText(pricing.perPerson, pricing.split, rupees)}</p>
                 </div>
               </div>
               <div className="mt-4 overflow-x-auto">

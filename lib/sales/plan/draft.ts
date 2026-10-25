@@ -132,7 +132,8 @@ function standardLists(plan: Plan, lodgeNames: Record<string, string>) {
   if (safaris.length) inc.push("Jeep safaris as shown, with permit fee, jeep, park guide, packed breakfast on morning safaris and refreshments on evening safaris");
   if (safaris.some((x) => x.naturalist)) itineraryInc.push("Accompanying lodge naturalist on the safaris shown");
   else if (safaris.length) itineraryExc.push("Accompanying lodge naturalist on safaris");
-  if (plan.days.some((d) => d.transfer || d.city_transfers?.length)) inc.push("Road transfers shown in the itinerary");
+  if (plan.own_vehicle) itineraryExc.push("Transfers: the guests travel in their own vehicle");
+  else if (plan.days.some((d) => d.transfer || d.city_transfers?.length)) inc.push("Road transfers shown in the itinerary");
 
   const flights = flightsLine(plan);
   if (flights) itineraryInc.push(flights);

@@ -155,6 +155,9 @@ export interface Plan {
   manual_prices: Record<string, number>; // prices typed for rates master data does not have
   city_stays?: CityStay[];
   flights?: PlanFlight[];
+  own_vehicle?: boolean; // the guests travel in their own vehicle: no transfers are planned or charged
+  transfer_vehicles?: number | null; // vehicles on every transfer; null = enough for the group
+  route_vehicles?: Record<string, number>; // vehicles on one road ("from>to" place ids); 0 = not needed
 }
 
 export interface ContentBlock {

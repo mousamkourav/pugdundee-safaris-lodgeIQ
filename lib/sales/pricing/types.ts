@@ -305,6 +305,16 @@ export interface PriceLine {
   missing?: boolean; // no rate found and no typed price: amount is 0 and an error is reported
   manual?: boolean; // priced with a price typed by the sales person
   key?: string; // for missing / manual lines: the MissingPrice key
+  // a room night: which share of it is for twin-sharing adults, the extra adult(s) and each child
+  pax?: { adult: number; extra: number; child: number[] };
+}
+
+// The price per guest: adults on twin sharing, an extra adult, each child by age (infants under 5).
+export interface PaxSplit {
+  adult: number; // per adult, twin (or single) sharing
+  extra_adult: number | null; // per extra adult in a room (extra bed); null when none
+  extra_adults: number;
+  children: { age: number; amount: number; infant: boolean }[]; // per child, in the order given
 }
 
 export interface PropertyTotals {
@@ -341,7 +351,8 @@ export interface PriceResult {
   };
   byProperty: PropertyTotals[];
   guests: number;
-  perPerson: number;
+  perPerson: number; // per adult when the group has children or an extra adult (see split)
+  split?: PaxSplit;
   arrival: ISODate | null;
   departure: ISODate | null;
   currency: "INR" | "USD" | "EUR" | "GBP" | "AUD";

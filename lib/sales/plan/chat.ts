@@ -7,6 +7,7 @@
 // =====================================================================
 
 import { rupees } from "@/lib/sales/format";
+import { paxText } from "@/lib/sales/pricing/pax";
 import { countryName, findPhone } from "@/lib/sales/countries";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 import type { ISODate } from "@/lib/sales/pricing/types";
@@ -152,6 +153,11 @@ export function chatTurn(
     chips.push(`guest ${next.guest.name}`);
   }
 
+  // ---- travelling in their own vehicle: no transfers at all
+  if (/\b(own (?:car|vehicle|cab|transport)|self[- ]?drive|apni (?:gaadi|gadi|car)|their (?:own )?car)\b/.test(low) && !next.own_vehicle) {
+    next.own_vehicle = true;
+    chips.push("own vehicle: no transfers");
+  }
   // ---- "on their own": no pick-up or drop
   if (/\b(on (their|his|her) own|self[- ]?drive|own (car|vehicle|transport)|no (pick ?up|drop|transfers?|airport))\b/.test(low)) {
     if (f.pending === "departure" || /\b(leav\w*|depart\w*|drop)\b/.test(low)) {
@@ -694,7 +700,7 @@ export function nextQuestion(
   const guests = plan.guest.adults + plan.guest.children.length;
   let text =
     `${nights} night${nights === 1 ? "" : "s"}, ${safaris} safari${safaris === 1 ? "" : "s"}, ${guests} guest${guests === 1 ? "" : "s"} in ${plan.guest.rooms} room${plan.guest.rooms === 1 ? "" : "s"}. ` +
-    `${stillNeeded.length ? "Total so far" : "Total"} ${rupees(r.totals.grand)} (${rupees(r.perPerson)} per person)${stillNeeded.length ? ", without the missing prices" : ""}.`;
+    `${stillNeeded.length ? "Total so far" : "Total"} ${rupees(r.totals.grand)} (${paxText(r.perPerson, r.split, rupees)})${stillNeeded.length ? ", without the missing prices" : ""}.`;
   let pending: ChatFlags["pending"] = null;
   if (!plan.guest.name.trim()) {
     text += " What is the guest's name? It is needed to save.";

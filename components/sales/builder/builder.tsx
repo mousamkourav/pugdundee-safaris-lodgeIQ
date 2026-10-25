@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { paxText } from "@/lib/sales/pricing/pax";
 import { useRouter } from "next/navigation";
 import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
@@ -64,7 +65,7 @@ function PriceBar({ plan, result, blockers }: { plan: Plan; result: PriceResult 
         <div>
           <p className="eyebrow">{needed ? "Total so far" : "Total"}</p>
           <p className="tabular font-display text-2xl font-semibold text-olive-800">{result && !blockers.length ? rupees(result.totals.grand) : "-"}</p>
-          {result && !blockers.length && <p className="text-xs text-sand-500">{rupees(result.perPerson)} per person</p>}
+          {result && !blockers.length && <p className="text-xs text-sand-500">{paxText(result.perPerson, result.split, rupees)}</p>}
         </div>
         <div className="text-right text-xs text-sand-500">
           {nights > 0 && <p>{nights} nights</p>}
@@ -505,7 +506,7 @@ export function Builder({
             <p className="text-sm">
               <span className="eyebrow mr-2">{pricesNeeded.length ? "Total so far" : "Total"}</span>
               <span className="tabular font-display text-lg font-semibold text-olive-800">{result && !blockers.length ? rupees(result.totals.grand) : "-"}</span>
-              {result && !blockers.length && <span className="ml-2 text-xs text-sand-500">{rupees(result.perPerson)} per person</span>}
+              {result && !blockers.length && <span className="ml-2 text-xs text-sand-500">{paxText(result.perPerson, result.split, rupees)}</span>}
             </p>
             {nextBlockedBy ? (
               <p className="truncate text-xs font-medium text-error" title={nextBlockedBy}>{nextBlockedBy}</p>
