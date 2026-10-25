@@ -300,3 +300,48 @@ test("several city stays at the end: Khajuraho, then Delhi; a hotel asked for ea
   assert.equal(days[days.length - 1].title, "Depart from Delhi");
   assert.ok(days.some((d) => d.title === "Khajuraho to Delhi" && d.items.some((i) => i.title === "Flight Khajuraho to Delhi")));
 });
+
+test("Roseate House from Master data: its rates and the airport transfer are priced; the arrival is the flight's airport", async () => {
+  const { priceTrip } = await import("@/lib/sales/pricing/engine");
+  const { planToTrip } = await import("./planner");
+  const { aiToParsed } = await import("./ai");
+  const places = [
+    { id: "DEL1", name: "Delhi", type: "airport", property_id: null },
+    { id: "IGI", name: "Delhi Airport (IGI)", type: "airport", property_id: null },
+    { id: "KHJ_AP", name: "Khajuraho Airport", type: "airport", property_id: null },
+    { id: "L_ROS", name: "Roseate House", type: "property", property_id: "ROS" },
+  ];
+  const full: BuilderContext = {
+    ...ctx,
+    pricing: {
+      ...ctx.pricing,
+      parks: [...ctx.pricing.parks, { id: "DELP", name: "Delhi" }],
+      properties: [...ctx.pricing.properties, { id: "ROS", name: "Roseate House", park_id: "DELP", kind: "city_hotel" }],
+      rooms: [...ctx.pricing.rooms, { id: "ROS_D", property_id: "ROS", name: "AC Deluxe", max_adults: 2, max_children: 1, extra_bed: true }],
+      roomRates: [...ctx.pricing.roomRates, { id: "RR", room_category_id: "ROS_D", valid_from: "2026-10-01", valid_to: "2027-03-31", meal_plan: "CP", rate_single: null, rate_double: 23000, extra_adult: null, child_rates: [], weekend_days: [], weekend_rate_single: null, weekend_rate_double: null, min_nights: 1, tax_pct: 18, rates_include_tax: false, active: true, notes: null }],
+      locations: [...ctx.pricing.locations, ...places.map(({ type: _t, ...l }) => l)],
+      transferRates: [...ctx.pricing.transferRates, { id: "T_ROS", from_location_id: "IGI", to_location_id: "L_ROS", vehicle_type: "Innova / Crysta", capacity: 6, rate: 3000, drive_hours: null, night_surcharge: 0, valid_from: null, valid_to: null, bidirectional: false, tax_pct: 0, active: true }],
+    },
+    properties: [...ctx.properties, { id: "ROS", name: "Roseate House", park_id: "DELP", kind: "city_hotel", fallback_priority: 1, sort: 0 }],
+    rooms: [...ctx.rooms, { id: "ROS_D", property_id: "ROS", name: "AC Deluxe", sort: 0 }],
+    locations: [...ctx.locations, ...places],
+  };
+  const msg = "2 Guest arriving delhi on 15th Mar'27; Delhi 1 nights stay at Roseate House; fly to nagpur transfer to tadoba stay for 4 nights; transfer to pench stay for 3 nights; transfer to Khajuraho 2 nights stay; fly to Delhi 1 nights stay at delhi; drop to airport";
+  const check = (r: ReturnType<typeof chatTurn>) => {
+    assert.equal(r.plan.arrival_location_id, "NAG");
+    assert.equal(r.plan.departure_location_id, "KHJ_AP");
+    assert.equal(r.plan.days[0].date, "2027-03-15");
+    assert.deepEqual(r.plan.days[0].city_hotel, { property_id: "ROS", room_category_id: "ROS_D", meal_plan: "CP" });
+    const p = priceTrip(planToTrip(r.plan, TODAY), full.pricing);
+    assert.ok(p.lines.some((l) => l.kind === "room" && l.property_id === "ROS" && l.amount === 27140));
+    assert.ok(!p.missing.some((m) => /Roseate/.test(m.label)), p.missing.map((m) => m.label).join("; "));
+  };
+  const plan = emptyPlan(TODAY);
+  check(chatTurn(plan, initialFlags(plan), msg, full, TODAY));
+  // Gemini leaving out the flight out of Khajuraho and the last Delhi night: the reader's fuller list is kept
+  const ai = aiToParsed(
+    { adults: 2, arrival_date: "2027-03-16", arrival_place: "Khajuraho Airport", stops: [{ park: "Tadoba-Andhari Tiger Reserve", nights: 4 }, { park: "Pench National Park", nights: 3 }], flights: [{ from: "Delhi", to: "Nagpur" }], city_stays: [{ when: "before", city: "Delhi", nights: 1, hotel: "Roseate House" }] },
+    full
+  );
+  check(chatTurn(plan, initialFlags(plan), msg, full, TODAY, ai, { aiPrimary: true }));
+});

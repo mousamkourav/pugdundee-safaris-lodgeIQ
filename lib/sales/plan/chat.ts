@@ -369,12 +369,22 @@ export function chatTurn(
 
   // ---- with flights, the airports are where they fly in and out: "fly to Bhopal ... leave from Nagpur to Delhi"
   if (parsed.flights?.length) {
-    const airportFor = (city: string) => placesOf(ctx).find((l) => l.type === "airport" && l.name.toLowerCase().startsWith(city.toLowerCase()));
+    // the airport of a city: one called "... Airport" first when there are two ("Delhi", "Delhi Airport (IGI)")
+    const airportFor = (city: string) => {
+      const all = placesOf(ctx).filter((l) => l.type === "airport" && (l.name.toLowerCase().startsWith(city.toLowerCase()) || sameCity(l.name, city)));
+      return all.find((l) => /airport/i.test(l.name)) ?? all[0];
+    };
     const fl = parsed.flights;
-    const beforeCity = parsed.cityStays?.find((c) => c.when === "before")?.city;
-    const afterCity = parsed.cityStays?.find((c) => c.when === "after")?.city;
-    const inbound = fl.find((x) => x.from === beforeCity) ?? (fl.length > 1 || !afterCity ? fl[0] : undefined);
-    const outbound = [...fl].reverse().find((x) => x.to === afterCity && x !== inbound) ?? (fl.length > 1 ? fl[fl.length - 1] : undefined);
+    const stays = parsed.cityStays ?? [];
+    const beforeCity = stays.find((c) => c.when === "before")?.city;
+    const afterCity = stays.find((c) => c.when === "after")?.city;
+    const isAfterCity = (c: string) => stays.some((s) => s.when === "after" && sameCity(s.city, c));
+    // flying in: from the city they stay in first, else the first flight that does not leave an end-of-trip city
+    const inbound = (beforeCity ? fl.find((x) => sameCity(x.from, beforeCity)) : undefined) ?? fl.find((x) => !isAfterCity(x.from) && (fl.length > 1 || !afterCity));
+    const outbound =
+      [...fl].reverse().find((x) => afterCity && sameCity(x.to, afterCity) && x !== inbound) ??
+      fl.find((x) => afterCity && sameCity(x.from, afterCity) && x !== inbound) ??
+      (fl.length > 1 ? fl[fl.length - 1] : undefined);
     const inAirport = inbound && airportFor(inbound.to);
     const outAirport = outbound && airportFor(outbound.from);
     if (inAirport && next.arrival_location_id !== inAirport.id) {
@@ -529,7 +539,8 @@ export function chatTurn(
   // ---- rebuild the day plan when the route changed
   const routeChanged = routeKey(next) !== routeKey(plan);
   if (routeChanged) {
-    next.days = next.stops.length && !routeProblems(next, ctx).length ? buildDays(next, ctx) : [];
+    // the days need every hotel (Roseate House for its rates and transfers), not only the safari lodges
+    next.days = next.stops.length && !routeProblems(next, ctx).length ? buildDays(next, full) : [];
   }
 
   const step = nextQuestion(next, f, full, today);
@@ -667,7 +678,7 @@ export function nextQuestion(
     };
   }
 
-  const r = priceTrip(planToTrip(plan, today), ctx.pricing);
+  const r = priceTrip(planToTrip(plan, today), full.pricing);
   if (r.errors.length) {
     return { text: "Before I can quote this, please check:", pending: null, warnings: r.errors, ready: false };
   }

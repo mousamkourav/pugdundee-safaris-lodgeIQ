@@ -205,8 +205,9 @@ export function mergePrimary(ai: ParsedTrip, rule: ParsedTrip): ParsedTrip {
     departure_place: ai.departure_place ?? rule.departure_place,
     parks: usedAiParks ? ai.parks : rule.parks,
     meal_plan: ai.meal_plan ?? rule.meal_plan,
-    flights: ai.flights ?? rule.flights,
-    cityStays: ai.cityStays ?? rule.cityStays,
+    // the fuller reading of flights and city nights wins: the AI sometimes drops a leg the reader found
+    flights: (ai.flights?.length ?? 0) >= (rule.flights?.length ?? 0) ? ai.flights ?? rule.flights : rule.flights,
+    cityStays: (ai.cityStays?.length ?? 0) >= (rule.cityStays?.length ?? 0) ? ai.cityStays ?? rule.cityStays : rule.cityStays,
     reverse: ai.reverse ?? rule.reverse,
     removeParks: ai.removeParks,
     order: ai.order,

@@ -407,7 +407,8 @@ function airportOf(ctx: BuilderContext, city: string, hotelId?: string): { id: s
 function hotelOf(ctx: BuilderContext, c: CityStay): { id: string; label: string } {
   const name = (c.hotel ?? "").trim();
   const prop = name ? ctx.properties.find((p) => p.name.toLowerCase() === name.toLowerCase()) : undefined;
-  const loc = prop ? ctx.locations.find((l) => l.property_id === prop.id) : undefined;
+  // its place (linked to the hotel, else a place with the same name)
+  const loc = (prop ? ctx.locations.find((l) => l.property_id === prop.id) : undefined) ?? (name ? ctx.locations.find((l) => l.name.toLowerCase() === name.toLowerCase()) : undefined);
   if (loc) return { id: loc.id, label: loc.name };
   const label = name || `hotel in ${c.city}`;
   return { id: `@${label}`, label };
