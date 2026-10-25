@@ -6,6 +6,7 @@ import { getCurrentUser, isSalesAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getEntity } from "@/lib/sales/master/entities";
 import { RATE_SHEETS, fromCell, isEditable, sameValue, toCell, type CancellationRow, type PaymentRow } from "@/lib/sales/master/rates-sheet";
+import { checkCancellationRows, checkPaymentRows } from "@/lib/sales/master/slabs";
 
 type Change = { entity: string; id: string; field: string; old: unknown; new: unknown };
 export type ApplyResult = { ok?: boolean; error?: string; applied?: number; skipped?: string[] };
@@ -69,21 +70,19 @@ async function applyUnsafe(input: {
     if (error) skipped.push("Payment & cancellation: " + error.message);
     else {
       const data = { ...((s as { data: Record<string, unknown> }).data ?? {}) };
-      const n = (v: unknown) => (v === null || v === undefined || v === "" ? null : Number(v));
       if (input.payment) {
-        const rows = input.payment.map((p) => ({ label: String(p.label ?? "Instalment").slice(0, 60), pct: Number(p.pct), days_before_arrival: n(p.days_before_arrival) }));
-        const total = rows.reduce((t, r) => t + r.pct, 0);
-        if (rows.some((r) => !Number.isFinite(r.pct)) || Math.abs(total - 100) > 0.001) skipped.push(`Payment schedule: the percentages add up to ${total}, not 100.`);
+        const checked = checkPaymentRows(input.payment);
+        if (checked.error) skipped.push(checked.error);
         else {
-          data.payment_slabs = rows;
+          data.payment_slabs = checked.rows;
           applied++;
         }
       }
       if (input.cancellation) {
-        const rows = input.cancellation.map((c) => ({ min_days: Number(c.min_days), max_days: n(c.max_days), pct: Number(c.pct) }));
-        if (rows.some((r) => !Number.isFinite(r.min_days) || !Number.isFinite(r.pct))) skipped.push("Cancellation charges: a value is not a number.");
+        const checked = checkCancellationRows(input.cancellation);
+        if (checked.error) skipped.push(checked.error);
         else {
-          data.cancellation_slabs = rows;
+          data.cancellation_slabs = checked.rows;
           applied++;
         }
       }
