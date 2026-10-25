@@ -10,6 +10,7 @@
 // =====================================================================
 
 import type { ISODate } from "@/lib/sales/pricing/types";
+import { addDays } from "@/lib/sales/pricing/dates";
 import { defaultStop, mealPlansOf, roomsOf } from "./planner";
 import type { BuilderContext, Plan } from "./types";
 import { findCountry, countryName } from "@/lib/sales/countries";
@@ -251,9 +252,9 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
 
   // ---- guests
   const adultsM =
-    low.match(new RegExp(`\\b${NUM}\\s*(?:adults?|pax|people|persons|guests|travell?ers|ppl|log|logon?|bande|aadmi)\\b`)) ?? low.match(/\b(\d{1,2})\s*a\b(?![\w'])/);
+    low.match(new RegExp(`\\b${NUM}\\s*(?:adults?|pax|people|persons|guests?|travell?ers|ppl)\\b`)) ?? low.match(/\b(\d{1,2})\s*a\b(?![\w'])/);
   const familyM = low.match(new RegExp(`\\bfamily of\\s*${NUM}\\b`));
-  const kidsM = low.match(new RegExp(`\\b${NUM}\\s*(?:kids?|children|childs?|child|infants?|bacche|bachche|bachhe|bachon|bacchon)\\b`));
+  const kidsM = low.match(new RegExp(`\\b${NUM}\\s*(?:kids?|children|childs?|child|infants?)\\b`));
   const LIST = "(\\d{1,2}(?:\\s*(?:,|and|&|/)\\s*\\d{1,2})*)";
   const ageSources = [
     low.match(new RegExp(`\\b(?:aged?|ages?)\\s*:?\\s*${LIST}`)),
@@ -314,12 +315,14 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
   const monthOf = (m: string) => MONTHS[m] ?? MONTHS[m.slice(0, 3)];
   const range = low.match(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s*(?:-|to|till|until)\\s*(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH}\\.?${YEAR}`));
   const candidates: { at: number; date: ISODate }[] = [];
+  let firstDateAt: number | null = null; // where the arrival date is written
   const push = (at: number, d: ISODate | null) => d && candidates.push({ at, date: d });
   if (range) {
     const m = monthOf(range[3]);
     const a = makeDate(yearOf(range[4], range[5]), m, Number(range[1]), today);
     const b = a ? makeDate(Number(a.slice(0, 4)), m, Number(range[2]), a) : null;
     if (a && b && b > a) {
+      firstDateAt = range.index!;
       out.arrival_date = a;
       out.departure_date = b;
     }
@@ -335,7 +338,10 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
     const monD = new RegExp(`\\b${MONTH}\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b${YEAR}`, "g");
     while ((m = monD.exec(low))) push(m.index, makeDate(yearOf(m[3], m[4]), monthOf(m[1]), Number(m[2]), today));
     candidates.sort((a, b) => a.at - b.at);
-    if (candidates[0]) out.arrival_date = candidates[0].date;
+    if (candidates[0]) {
+      out.arrival_date = candidates[0].date;
+      firstDateAt = candidates[0].at;
+    }
     if (candidates[1] && candidates[1].date > candidates[0].date) out.departure_date = candidates[1].date;
   }
 
@@ -368,7 +374,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
   // go either way, the writer's usual style decides.
   const gapIsGlue = (gap: string) => /^[\s\W]*(?:(?:in|at|@|of|for|stay(?:ing)?)[\s\W]+)*$/.test(gap.toLowerCase() + " ");
   const tokens: { start: number; end: number; value: number; before?: number; after?: number }[] = [];
-  const tokRe = new RegExp(`(?:\\bx\\s*${NUM}\\b|\\b${NUM}\\s*(?:n|nts?|nights?|raat(?:ein|en|e)?)\\b)`, "gi");
+  const tokRe = new RegExp(`(?:\\bx\\s*${NUM}\\b|\\b${NUM}\\s*(?:n|nts?|nights?)\\b)`, "gi");
   let tm: RegExpExecArray | null;
   while ((tm = tokRe.exec(text))) {
     const value = toNum((tm[1] ?? tm[2]).toLowerCase());
@@ -417,7 +423,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
       if (lead) p.nights = toNum(lead[1]);
     }
     if (!p.nights) {
-      const m = seg.match(new RegExp(`\\b${NUM}\\s*(nights?|n\\b|nts?|days?|raat(?:ein|en|e)?\\b|din\\b)`));
+      const m = seg.match(new RegExp(`\\b${NUM}\\s*(nights?|n\\b|nts?|days?)`));
       if (m && toNum(m[1]) > 0 && toNum(m[1]) <= 30) {
         p.nights = toNum(m[1]);
         if (/^d/.test(m[2])) p.nightsFromDays = true;
@@ -467,8 +473,10 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
     new RegExp(`\\b(?:stay(?:ing)?|overnight|spend(?:ing)?)\\s+(?:in\\s+|at\\s+)?(?<city>${CITY_RE}|there)\\s+(?:for\\s+)?(?<n>${NUM.slice(1, -1)})\\s*nights?\\b`, "g"),
     // "stay one night at Delhi", "spend 2 nights in Delhi"
     new RegExp(`\\b(?:stay(?:ing)?|spend(?:ing)?)\\s+(?:for\\s+)?(?<n>${NUM.slice(1, -1)})\\s*nights?\\s+(?:in|at)\\s+(?<city>${CITY_RE}|there)\\b`, "g"),
-    // "1 night in Delhi"
-    new RegExp(`\\b(?<n>${NUM.slice(1, -1)})\\s*nights?\\s+(?:in|at)\\s+(?<city>${CITY_RE})\\b`, "g"),
+    // "1 night in Delhi", "1 nights stay at delhi"
+    new RegExp(`\\b(?<n>${NUM.slice(1, -1)})\\s*nights?\\s+(?:stay\\s+|halt\\s+)?(?:in|at)\\s+(?<city>${CITY_RE})\\b`, "g"),
+    // "Delhi 1 nights stay", "transfer to Khajuraho 2 nights", "Delhi - 1 night"
+    new RegExp(`\\b(?<city>${CITY_RE})\\s*(?:[-:(]\\s*|for\\s+)?(?<n>${NUM.slice(1, -1)})\\s*(?:nights?|n)\\b`, "g"),
   ];
   const seen = new Set<number>();
   for (const re of stayPatterns) {
@@ -490,10 +498,17 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
     }
   }
   // in the order they are mentioned
-  if (stays.length) out.cityStays = (stays as ((typeof stays)[number] & { at: number })[]).sort((a, b) => a.at - b.at).map(({ at: _at, ...c }) => c);
-  // Hinglish "sab safari naturalist ke saath": every safari at every stop with a naturalist
-  if (/\b(?:sab|saari|sabhi)\s+safaris?\b[^.]{0,40}\bnaturalists?\b/.test(low) && !/\bnaturalists?\s+ke\s+bina\b/.test(low)) {
-    for (const p of out.parks) p.naturalists ??= -1;
+  const staysAt = (stays as ((typeof stays)[number] & { at: number })[]).sort((a, b) => a.at - b.at);
+  if (stays.length) out.cityStays = staysAt.map(({ at: _at, ...c }) => c);
+  // "Arriving Delhi on 15 Mar; Delhi 1 night; fly to Jabalpur...": a date written before the
+  // city nights is the day they land in the city, so the first lodge is reached that many nights later.
+  // (A date written after them, "reach Kanha on 16 Mar", is already the lodge date.)
+  const firstBefore = staysAt.find((s) => s.when === "before");
+  if (out.arrival_date && firstBefore && firstDateAt !== null && firstDateAt < firstBefore.at) {
+    const lead = staysAt.filter((s) => s.when === "before").reduce((t, s) => t + s.nights, 0);
+    const lodgeDay = addDays(out.arrival_date, lead);
+    if (out.departure_date && out.departure_date <= lodgeDay) delete out.departure_date; // "reach Kanha on 16 Mar" as well
+    out.arrival_date = lodgeDay;
   }
   if (/\b(reverse|opposite\s+(?:order|direction|way)|other\s+way\s+round|wrong\s+(?:direction|order)|the other way)\b/.test(low)) out.reverse = true;
   // "all stays they will do nature walk", "any special at each lodge"
@@ -513,7 +528,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
   const places = ctx.locations.filter((l) => l.type !== "property").sort((a, b) => (rank[a.type] ?? 9) - (rank[b.type] ?? 9));
   const placeHits = findAll(text, places.map((l) => ({ name: l.name, aliases: locationAliases(l.name, l.code) })));
   const arriveWords = /(arriv\w*|arr\.?|land\w*|pick(?:ing)?[\s-]?up(?:\s+(?:from|at))?|from|ex|start\w*|reach\w*|coming (?:in )?(?:to|at))\W*(?:at|in|to)?\W*$/i;
-  const departWords = /(depart\w*|dep\.?|wapas|vapas|leav\w*|drop(?:ping)?(?:\s+off)?|fly(?:ing)?\s+(?:out|back)|back to|end\w*|exit\w*|return\w*|onward)\W*(?:at|in|to|from|via|of)?\W*$/i;
+  const departWords = /(depart\w*|dep\.?|leav\w*|drop(?:ping)?(?:\s+off)?|fly(?:ing)?\s+(?:out|back)|back to|end\w*|exit\w*|return\w*|onward)\W*(?:at|in|to|from|via|of)?\W*$/i;
   const bothWords = /^\W*(in\s*(?:\/|&|and)?\s*out|in-out|round ?trip|both ways)\b/i;
   const unclassified: string[] = [];
   for (const h of placeHits) {
@@ -641,7 +656,8 @@ export function applyParsed(plan: Plan, parsed: ParsedTrip, ctx: BuilderContext)
   else missing.push("parks");
 
   if (parsed.departure_date && next.arrival_date && stops.length) {
-    const planned = stops.reduce((t, s) => t + s.nights, 0);
+    // lodge nights plus city nights after them (the departure date is at the end of the trip)
+    const planned = stops.reduce((t, s) => t + s.nights, 0) + (parsed.cityStays ?? []).filter((c) => c.when === "after").reduce((t, c) => t + c.nights, 0);
     const asked = nightsBetween(next.arrival_date, parsed.departure_date);
     if (asked !== planned) parsed.notes.push(`The dates give ${asked} nights but the parks add up to ${planned}. Check the nights.`);
   }

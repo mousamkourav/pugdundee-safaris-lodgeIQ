@@ -132,3 +132,20 @@ test("dates in many formats", () => {
   for (const [text, want] of cases) assert.equal(read(text).arrival_date, want, text);
   assert.equal(read("arrive 31 Feb 2027").arrival_date, undefined);
 });
+
+test("the way enquiries are written: arriving Delhi on a date, 'Delhi 1 nights stay', several cities at the end", () => {
+  const p = extractTrip(
+    "2 Guest arrining delhi on 15th Mar'27; Delhi 1 nights stay; fly to nagpur transfer to tadoba stay for 4 nights and 8 safari with naturalist; transfer to pench stay for 3 nights; transfer to Khajuraho 2 nights stay'; fly to Delhi 1 nights stay at delhi; drop to airport for further connection",
+    ctx,
+    "2026-10-25"
+  );
+  assert.equal(p.adults, 2);
+  // landing in Delhi on 15 Mar, one night there: the first lodge on 16 Mar
+  assert.equal(p.arrival_date, "2027-03-16");
+  assert.equal(p.departure_date, undefined);
+  assert.deepEqual(p.cityStays!.map((c) => `${c.when} ${c.city} ${c.nights}`), ["before Delhi 1", "after Khajuraho 2", "after Delhi 1"]);
+  assert.deepEqual(p.flights, [{ from: "Delhi", to: "Nagpur" }, { from: "Khajuraho", to: "Delhi" }]);
+  // a date written after the city nights is the lodge date, as before
+  const q = extractTrip("2 adults. 1 night in Delhi, then fly to Nagpur and reach Tadoba on 16 Mar 2027, Tadoba 4 nights", ctx, "2026-10-25");
+  assert.equal(q.arrival_date, "2027-03-16");
+});
