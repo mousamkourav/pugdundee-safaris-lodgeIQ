@@ -249,3 +249,58 @@ test("a day added between two lodges moves the later lodge by a day", () => {
   assert.equal(r.lines.find((l) => l.kind === "room" && l.property_id === "PTL")!.date, "2027-01-21");
   assert.ok(r.lines.some((l) => l.group === "hotel" && l.amount === 6000));
 });
+
+test("a city hotel with rates in Master data is priced from them (B&B), not typed; offers leave it alone", () => {
+  const withRoseate: BuilderContext = {
+    ...ctx,
+    pricing: {
+      ...ctx.pricing,
+      properties: [...ctx.pricing.properties, { id: "ROS", name: "Roseate House", park_id: null, kind: "city_hotel" }],
+      rooms: [...ctx.pricing.rooms, { id: "ROS_D", property_id: "ROS", name: "AC Deluxe", max_adults: 2, max_children: 1, extra_bed: true }],
+      roomRates: [
+        ...ctx.pricing.roomRates,
+        { id: "R1", room_category_id: "ROS_D", valid_from: "2026-10-01", valid_to: "2027-03-31", meal_plan: "CP", rate_single: null, rate_double: 23000, extra_adult: null, child_rates: [], weekend_days: [], weekend_rate_single: null, weekend_rate_double: null, min_nights: 1, tax_pct: 18, rates_include_tax: false, active: true, notes: null },
+      ],
+    },
+    properties: [...ctx.properties, { id: "ROS", name: "Roseate House", park_id: null, kind: "city_hotel", fallback_priority: 1, sort: 0 }],
+    rooms: [...ctx.rooms, { id: "ROS_D", property_id: "ROS", name: "AC Deluxe", sort: 0 }],
+  };
+  const p = sheetPlan();
+  p.guest.rooms = 1;
+  p.city_stays = [{ when: "before", city: "Delhi", nights: 1, hotel: "Roseate House" }];
+  p.days = buildDays(p, withRoseate);
+  assert.deepEqual(p.days[0].city_hotel, { property_id: "ROS", room_category_id: "ROS_D", meal_plan: "CP" });
+  const r = priceTrip(planToTrip(p, "2026-10-05"), withRoseate.pricing);
+  const ros = r.lines.filter((l) => l.kind === "room" && l.property_id === "ROS");
+  assert.equal(ros.length, 1);
+  assert.equal(ros[0].date, "2027-01-15");
+  assert.equal(ros[0].amount, 27140); // 23,000 + 18% GST
+  // a price typed by hand wins
+  p.city_stays = [{ when: "before", city: "Delhi", nights: 1, hotel: "Roseate House", price: 20000 }];
+  p.days = buildDays(p, withRoseate);
+  assert.equal(p.days[0].city_hotel, undefined);
+  assert.ok(!priceTrip(planToTrip(p, "2026-10-05"), withRoseate.pricing).lines.some((l) => l.kind === "room" && l.property_id === "ROS"));
+});
+
+test("two airport places for Delhi: the one with a transfer rate to the hotel is used, and priced", () => {
+  const c2: BuilderContext = {
+    ...ctx,
+    pricing: {
+      ...ctx.pricing,
+      locations: [...ctx.pricing.locations, { id: "DEL1", name: "Delhi", property_id: null }, { id: "DEL2", name: "Delhi Airport (IGI)", property_id: null }, { id: "L_ROS", name: "Roseate House", property_id: "ROS" }],
+      transferRates: [...ctx.pricing.transferRates, { id: "T_ROS", from_location_id: "DEL2", to_location_id: "L_ROS", vehicle_type: "Innova / Crysta", capacity: 6, rate: 3000, drive_hours: null, night_surcharge: 0, valid_from: null, valid_to: null, bidirectional: false, tax_pct: 0, active: true }],
+    },
+    properties: [...ctx.properties, { id: "ROS", name: "Roseate House", park_id: null, kind: "city_hotel", fallback_priority: 1, sort: 0 }],
+    locations: [...ctx.locations, { id: "DEL1", name: "Delhi", type: "airport", property_id: null }, { id: "DEL2", name: "Delhi Airport (IGI)", type: "airport", property_id: null }, { id: "L_ROS", name: "Roseate House", type: "property", property_id: "ROS" }],
+  };
+  const p = sheetPlan();
+  p.city_stays = [{ when: "before", city: "Delhi", nights: 1, hotel: "Roseate House", price: 20000 }];
+  p.flights = [{ from: "Delhi", to: "Nagpur" }];
+  p.days = buildDays(p, c2);
+  assert.deepEqual(p.days[0].city_transfers, [{ from_location_id: "DEL2", to_location_id: "L_ROS", from_label: "Delhi Airport (IGI)", to_label: "Roseate House" }]);
+  const r = priceTrip(planToTrip(p, "2026-10-05"), c2.pricing);
+  const t = r.lines.filter((l) => l.kind === "transfer" && /Roseate/.test(l.description));
+  // in on day 1, back to the airport on day 2 (the same road the other way round), both priced
+  assert.equal(t.length, 2);
+  assert.ok(t.every((l) => !l.missing && l.amount === 3000));
+});

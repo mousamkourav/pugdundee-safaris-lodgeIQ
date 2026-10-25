@@ -107,6 +107,8 @@ export interface PlanDay {
   transfer: { from_location_id: string; to_location_id: string } | null;
   city_transfers?: CityTransfer[]; // transfers in a city stay (airport to hotel, hotel to airport)
   stay_index?: number; // the night is part of plan.city_stays[stay_index]
+  // a city hotel from Master data with rates (and no price typed): the night is priced from its rates
+  city_hotel?: { property_id: string; room_category_id: string; meal_plan: string };
   title: string;
   text: string;
   notes: string[]; // planner remarks, e.g. "core closed, buffer used"

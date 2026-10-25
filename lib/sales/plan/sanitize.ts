@@ -60,6 +60,10 @@ export function sanitizePlan(input: unknown): Plan | null {
               .map((y) => ({ from_location_id: str(y.from_location_id, 140), to_location_id: str(y.to_location_id, 140), from_label: str(y.from_label, 140), to_label: str(y.to_label, 140) })),
           }
         : {}),
+      ...(() => {
+        const h = obj(d.city_hotel);
+        return h.property_id && h.room_category_id ? { city_hotel: { property_id: str(h.property_id, 100), room_category_id: str(h.room_category_id, 100), meal_plan: ["EP", "CP", "MAP", "AP"].includes(String(h.meal_plan)) ? String(h.meal_plan) : "CP" } } : {};
+      })(),
       ...(Number.isInteger(Number(d.stay_index)) && d.stay_index !== null && d.stay_index !== undefined ? { stay_index: Math.max(0, Math.min(20, Number(d.stay_index))) } : {}),
       title: str(d.title, 200),
       text: str(d.text, 4000),

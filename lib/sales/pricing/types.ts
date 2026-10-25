@@ -208,6 +208,7 @@ export interface StayInput {
   check_in: ISODate;
   nights: number;
   rooms: number;
+  outside?: boolean; // a city hotel (Roseate House): priced from its rates, never part of offers
 }
 
 export interface SafariInput {

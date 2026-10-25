@@ -530,7 +530,7 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
       continue;
     }
     const eligibleStays = trip.stays.filter(
-      (s) => (!offer.property_ids.length || offer.property_ids.includes(s.property_id)) && (!offer.room_category_ids.length || offer.room_category_ids.includes(s.room_category_id))
+      (s) => !s.outside && (!offer.property_ids.length || offer.property_ids.includes(s.property_id)) && (!offer.room_category_ids.length || offer.room_category_ids.includes(s.room_category_id))
     );
     const nights = eligibleStays.reduce((t, s) => t + s.nights, 0);
     if (offer.offer_type === "multi_lodge") {
@@ -591,7 +591,7 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
   if (!toApply.length) {
     const own = new Set(data.properties.filter((p) => (p.kind ?? "own_lodge") === "own_lodge").map((p) => p.id));
     const lodges = new Set(trip.stays.filter((s) => own.has(s.property_id)).map((s) => s.property_id)).size;
-    const nightsAll = trip.stays.reduce((t, s) => t + s.nights, 0);
+    const nightsAll = trip.stays.filter((s) => !s.outside).reduce((t, s) => t + s.nights, 0);
     const best = data.offers
       .filter((o) => o.active && o.offer_type === "multi_lodge" && lodges >= (o.min_lodges ?? 2) && nightsAll >= o.min_nights && inRange(trip.booking_date, o.book_from, o.book_to))
       .sort((a, b) => (b.value ?? 0) - (a.value ?? 0))[0];

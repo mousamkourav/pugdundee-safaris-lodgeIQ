@@ -106,7 +106,10 @@ export function PlanStep({
     setStays((s) => [...s, { when: "after", city: "", nights: 1, blank: true }]);
   }
   const missingKeys = new Set((result?.missing ?? []).filter((m) => plan.manual_prices?.[m.key] === undefined).map((m) => m.key));
-  const parkLodges = new Set(plan.stops.map((s) => s.property_id));
+  // the trip's lodges, and the city hotels it stays at (Roseate House): their own add-ons are offered
+  const hotelIdOf = (name?: string) => ctx.properties.find((p) => p.name.toLowerCase() === (name ?? "").trim().toLowerCase())?.id;
+  const cityHotelIds = [...plan.days.map((d) => d.city_hotel?.property_id), ...(plan.city_stays ?? []).map((c) => hotelIdOf(c.hotel))].filter((x): x is string => !!x);
+  const parkLodges = new Set([...plan.stops.map((s) => s.property_id), ...cityHotelIds]);
   // Experiences: the same one at several lodges (bush dinner, nature walk, cycling) is a
   // Pugdundee experience and shown once; one that exists at a single lodge is labelled
   // with it. Naturalists are a tick on each safari, so they are not listed here.
@@ -137,7 +140,8 @@ export function PlanStep({
   type AddonGroup = (typeof addonGroups)[number];
   // The add-on for a given day: that day's lodge's own, else the general one, else any.
   const addonFor = (g: AddonGroup, dayIndex: number) => {
-    const lodge = plan.days[dayIndex]?.property_id ?? null;
+    const day = plan.days[dayIndex];
+    const lodge = day?.property_id ?? day?.city_hotel?.property_id ?? (day?.stay_index !== undefined ? hotelIdOf(plan.city_stays?.[day.stay_index]?.hotel) : undefined) ?? null;
     return (
       g.entries.find((e) => e.property_id === lodge) ??
       g.entries.find((e) => !e.property_id && (!e.offered_at?.length || (lodge && e.offered_at.includes(lodge)))) ??
@@ -435,7 +439,8 @@ export function PlanStep({
                             type="number"
                             min={0}
                             className="tabular w-20 rounded border border-sand-200 bg-white px-1.5 py-1 text-right"
-                            placeholder="per night"
+                            placeholder={d.city_hotel ? "Master rate" : "per night"}
+                            title={d.city_hotel ? "Priced from this hotel's rates in Master data. Type a price to use your own instead." : "Price per night for all rooms, incl. tax"}
                             value={c.price ?? ""}
                             onChange={(e) => updateStay(k, { price: e.target.value === "" ? null : Math.max(0, Math.round(Number(e.target.value))) })}
                             aria-label="Hotel price per night, all rooms"
