@@ -230,7 +230,8 @@ function normaliseText(input: string, vocabulary: string[], notes: string[]) {
 
 // ---------------------------------------------------------------- extract
 
-export function extractTrip(input: string, ctx: BuilderContext, today: ISODate): ParsedTrip {
+// hotels: the city hotels in Master data (Roseate House in Delhi), so "1 night at Roseate House" is a Delhi night
+export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, hotels: { name: string; city: string }[] = []): ParsedTrip {
   const out: ParsedTrip = { parks: [], notes: [] };
 
   // Everything the text can refer to: parks, and lodges (which imply their park).
@@ -495,6 +496,28 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate):
       if (!when || stays.some((x) => x.when === when && x.city === city)) continue;
       seen.add(m.index!);
       stays.push({ when, city, nights: toNum(m.groups!.n), at: m.index! } as (typeof stays)[number] & { at: number });
+    }
+  }
+  // a night at a city hotel from Master data without the city's name: "1 night stay at Roseate House"
+  const GENERIC_HOTEL = new Set(["hotel", "the", "house", "resort", "inn", "lodge", "palace", "grand", "new", "jass"]);
+  for (const h of hotels) {
+    const full = h.name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const first = full.split(" ").find((w) => w.length >= 4 && !GENERIC_HOTEL.has(w));
+    const alias = [escapeRe(full).replace(/ /g, "[\\s,.-]+"), ...(first ? [escapeRe(first)] : [])].join("|");
+    const city = cityName(h.city.toLowerCase().trim());
+    const N = NUM.slice(1, -1);
+    const res = [
+      new RegExp(`\\b(?<n>${N})\\s*(?:nights?|n)\\s+(?:stay\\s+|halt\\s+)?(?:in|at)\\s+(?:the\\s+)?(?:${alias})\\b`, "g"),
+      new RegExp(`\\b(?:stay(?:ing)?|overnight)\\s+(?:in|at)\\s+(?:the\\s+)?(?:${alias})\\b[^.;]{0,30}?\\b(?:for\\s+)?(?<n>${N})\\s*nights?\\b`, "g"),
+    ];
+    for (const re of res) {
+      for (const m of low.matchAll(re)) {
+        if ([...seen].some((x) => Math.abs(x - m.index!) < 25)) continue;
+        const when = m.index! < firstPark ? "before" : m.index! > lastPark ? "after" : null;
+        if (!when || stays.some((x) => x.when === when && x.city === city)) continue;
+        seen.add(m.index!);
+        stays.push({ when, city, nights: toNum(m.groups!.n), hotel: h.name, at: m.index! } as (typeof stays)[number] & { at: number });
+      }
     }
   }
   // in the order they are mentioned

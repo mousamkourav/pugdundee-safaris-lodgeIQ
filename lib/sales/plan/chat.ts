@@ -189,7 +189,7 @@ export function chatTurn(
   }
 
   // ---- read the message
-  let parsed = extractTrip(msg, ctx, today);
+  let parsed = extractTrip(msg, ctx, today, cityHotels(full));
   // With the AI assistant on, its reading comes first and the built-in reader fills gaps;
   // otherwise the AI only fills what the built-in reader missed.
   const ruleParsed = parsed;

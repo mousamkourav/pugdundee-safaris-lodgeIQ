@@ -149,3 +149,16 @@ test("the way enquiries are written: arriving Delhi on a date, 'Delhi 1 nights s
   const q = extractTrip("2 adults. 1 night in Delhi, then fly to Nagpur and reach Tadoba on 16 Mar 2027, Tadoba 4 nights", ctx, "2026-10-25");
   assert.equal(q.arrival_date, "2027-03-16");
 });
+
+test("a night at a city hotel from Master data, without the city's name, is a night in its city", () => {
+  const hotels = [{ name: "Roseate House", city: "New Delhi" }, { name: "Radisson Hotel Jass Khajuraho", city: "Khajuraho" }];
+  const p = extractTrip(
+    "2 adults, arriving Delhi on 15 Mar 2027. Delhi 1 night stay at Roseate House; fly Delhi to Nagpur and transfer to Tadoba for 4 nights; transfer to Khajuraho 2 nights stay at Radisson Hotel Jass Khajuraho; fly Khajuraho to Delhi and 1 night stay at Roseate House; drop to Delhi airport",
+    ctx,
+    "2026-10-25",
+    hotels
+  );
+  assert.deepEqual(p.cityStays!.map((c) => `${c.when} ${c.city} ${c.nights}`), ["before Delhi 1", "after Khajuraho 2", "after Delhi 1"]);
+  assert.equal(p.cityStays![2].hotel, "Roseate House");
+  assert.equal(p.arrival_date, "2027-03-16");
+});

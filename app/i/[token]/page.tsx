@@ -8,7 +8,7 @@ import { PhotoCarousel } from "@/components/sales/photo-carousel";
 import { Icon } from "@/components/icons";
 import { dayName } from "@/lib/sales/pricing/dates";
 import { shortPark } from "@/lib/sales/plan/draft";
-import { segments } from "@/lib/sales/plan/planner";
+import { routeOf, segments } from "@/lib/sales/plan/planner";
 import { sameCity } from "@/lib/sales/plan/cities";
 
 // Guest-facing itinerary. Public: opened from a share link without signing in.
@@ -226,7 +226,13 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
             <ol className="mt-8 space-y-10">
               {plan.days.map((d, i) => {
                 const lodge = d.property_id && firstDayAt.get(d.property_id) === i ? view.lodges.find((l) => l.id === d.property_id) : null;
-                const items = (d.items ?? []).filter((it) => it.type !== "flight" && (it.type !== "note" || it.title));
+                // transfers in a city (airport to hotel, hotel to airport), unless the guests drive themselves
+                const cityTransfers = plan.own_vehicle
+                  ? []
+                  : (d.city_transfers ?? [])
+                      .filter((t) => plan.route_vehicles?.[routeOf(t.from_location_id, t.to_location_id)] !== 0)
+                      .map((t, k) => ({ id: `ct${i}-${k}`, type: "transfer" as const, title: `Transfer: ${t.from_label} to ${t.to_label}`, detail: "" }));
+                const items = [...cityTransfers, ...(d.items ?? []).filter((it) => it.type !== "flight" && (it.type !== "note" || it.title))];
                 // flights travel between the day before and this day: shown on their own, before the day
                 const flights = (d.items ?? []).filter((it) => it.type === "flight" && it.flight);
                 return (
@@ -288,7 +294,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                             {items.map((it) => (
                               <li key={it.id} className="flex gap-3">
                                 <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-sand-100 text-olive-700">
-                                  <Line name={it.type === "flight" ? "plane" : it.type === "hotel" ? "bed" : it.type === "meal" ? "star" : "leaf"} className="h-4 w-4" />
+                                  <Line name={it.type === "flight" ? "plane" : it.type === "hotel" ? "bed" : it.type === "meal" ? "star" : it.type === "transfer" ? "jeep" : "leaf"} className="h-4 w-4" />
                                 </span>
                                 <span className="min-w-0">
                                   <span className="font-medium text-olive-800">{it.title}</span>
