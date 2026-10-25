@@ -163,6 +163,28 @@ test("yearly hike on add-ons: dates in the hike period get the add-ons %", () =>
   assert.equal(free.totals.addon, 2200);
 });
 
+test("yearly hike on transfers: only when no rate covers the date (like rooms and safaris)", () => {
+  const road = { id: "T1", from_location_id: "JLR", to_location_id: "KL", vehicle_type: "Innova", capacity: 4, rate: 7000, drive_hours: 4, night_surcharge: 0, bidirectional: true, tax_pct: 0, active: true };
+  const withRoad = (valid_to: string | null): PricingData => ({
+    ...seasons,
+    transferRates: [{ ...road, valid_from: "2026-04-01", valid_to }],
+    settings: { ...seasons.settings, hike: { label: "2027-28", from: "2027-07-01", to: "2028-06-30", hotels_pct: 0, safaris_pct: 0, transfers_pct: 10 } },
+  });
+  const drive = (date: string): TripInput => ({ ...stay("2027-01-10"), stays: [], transfers: [{ date, from_location_id: "JLR", to_location_id: "KL" }] });
+  // the 2026-27 rate runs to 30 Sep 2027: August 2027 is covered, no hike
+  const covered = priceTrip(drive("2027-08-10"), withRoad("2027-09-30"));
+  assert.equal(covered.totals.transfer, 7000);
+  assert.ok(!covered.warnings.some((w) => w.includes("transfers +10%")));
+  // October 2027: no rate covers it, so last year's rate + 10%
+  const after = priceTrip(drive("2027-10-15"), withRoad("2027-09-30"));
+  assert.equal(after.totals.transfer, 7700);
+  assert.deepEqual(after.missing, []);
+  // a rate with no end date covers every later date: no hike
+  assert.equal(priceTrip(drive("2027-10-15"), withRoad(null)).totals.transfer, 7000);
+  // dates not fixed, next season: this season's rate + hike
+  assert.equal(priceTrip({ ...drive("2030-01-01"), rate_basis: { season: "high", safari_days: "weekday", year: "next" } }, withRoad("2027-09-30")).totals.transfer, 7700);
+});
+
 test("per jeep add-ons: one for each jeep that day, else enough jeeps for the group", () => {
   const withAddon: PricingData = { ...data, addons: [{ id: "BF", name: "Safari breakfast", property_id: null, pricing_unit: "per_vehicle", rate: 1000, tax_pct: 18, active: true }] };
   const line = (t: TripInput) => priceTrip(t, withAddon).lines.find((l) => l.kind === "addon")!;

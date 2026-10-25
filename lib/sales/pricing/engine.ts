@@ -376,13 +376,23 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     // round is used too (the same road). The chosen vehicle first; if it has no rate
     // here, the cheapest vehicle that fits, with a note.
     // dates not fixed: any rate that has not ended
-    const onRoute = data.transferRates.filter((r) => r.active && (basis ? !r.valid_to || r.valid_to >= trip.booking_date : inRange(t.date, r.valid_from, r.valid_to)));
-    const forward = onRoute.filter(
-      (r) =>
-        (r.from_location_id === t.from_location_id && r.to_location_id === t.to_location_id) ||
-        (r.bidirectional && r.from_location_id === t.to_location_id && r.to_location_id === t.from_location_id)
-    );
-    const route = forward.length ? forward : onRoute.filter((r) => r.from_location_id === t.to_location_id && r.to_location_id === t.from_location_id);
+    const routeOn = (date: ISODate) => {
+      const onRoute = data.transferRates.filter((r) => r.active && (basis ? !r.valid_to || r.valid_to >= trip.booking_date : inRange(date, r.valid_from, r.valid_to)));
+      const forward = onRoute.filter(
+        (r) =>
+          (r.from_location_id === t.from_location_id && r.to_location_id === t.to_location_id) ||
+          (r.bidirectional && r.from_location_id === t.to_location_id && r.to_location_id === t.from_location_id)
+      );
+      return forward.length ? forward : onRoute.filter((r) => r.from_location_id === t.to_location_id && r.to_location_id === t.from_location_id);
+    };
+    // Like rooms and safaris: no rate for the date but last year's exists and a
+    // yearly hike covers it -> last year's rate + hike. A rate that covers the date is used as it is.
+    let route = routeOn(t.date);
+    let lastYear = false;
+    if (!basis && !route.length && hike && inRange(t.date, hike.from, hike.to)) {
+      route = routeOn(addYears(t.date, -1));
+      lastYear = route.length > 0;
+    }
     const sameVehicle = route.filter((r) => !t.vehicle_type || r.vehicle_type.toLowerCase() === t.vehicle_type.toLowerCase());
     if (t.vehicle_type && route.length && !sameVehicle.length) {
       warnings.push(`No ${t.vehicle_type} rate for ${label}; the cheapest vehicle that fits is used.`);
@@ -407,9 +417,9 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
       lines.push({ kind: "transfer", date: t.date, description: label, quantity: 0, unit_price: 0, amount: 0, tax: 0, property_id: billTo, ref_id: null, missing: true, key });
       continue;
     }
-    // Yearly hike: a rate without an end date (or last year's) used for a date in the hike period.
-    const hikePct =
-      hike && (basis ? basis.year === "next" : inRange(t.date, hike.from, hike.to)) && !(priced.r.valid_from && priced.r.valid_from >= hike.from) ? hike.transfers_pct : 0;
+    // Yearly hike: last year's rate for a date in the hike period; dates not fixed,
+    // next season: a rate that started before the hike period.
+    const hikePct = !hike ? 0 : basis ? (basis.year === "next" && !(priced.r.valid_from && priced.r.valid_from >= hike.from) ? hike.transfers_pct : 0) : lastYear ? hike.transfers_pct : 0;
     if (hikePct) hikeUsed.transfers = true;
     const tBase = withHike(priced.base, hikePct);
     const { amount, tax } = withTax(tBase, priced.r.tax_pct, false);
