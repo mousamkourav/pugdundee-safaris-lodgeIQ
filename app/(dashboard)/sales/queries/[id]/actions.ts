@@ -2,7 +2,7 @@
 
 import { safe } from "@/lib/sales/safe";
 import { revalidatePath } from "next/cache";
-import { getCurrentUser, isSalesUser, isSalesAdmin } from "@/lib/auth";
+import { getCurrentUser, isInactive, isSalesUser, isSalesAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 export type StatusInput =
@@ -75,7 +75,8 @@ async function changeStatusUnsafe(queryId: string, input: StatusInput): Promise<
   }
 
   const supabase = await createClient();
-  const { data, error } = await supabase.from("sales_queries").update(update).eq("id", queryId).select("id").maybeSingle();
+  // a deleted query stays as it was deleted
+  const { data, error } = await supabase.from("sales_queries").update(update).eq("id", queryId).is("deleted_at", null).select("id").maybeSingle();
   if (error) return { error: error.message };
   if (!data) return { error: "This query is not assigned to you, so its status cannot be changed." };
 
@@ -88,12 +89,19 @@ async function reassignQueryUnsafe(queryId: string, memberId: string, remark: st
   const cu = await getCurrentUser();
   if (!cu?.user || !isSalesAdmin(cu.profile?.role)) return { error: "Only admins can reassign queries." };
   if (!memberId) return { error: "Choose a member." };
+  // only to someone who can work in Sales and is not deactivated (profiles RLS may
+  // hide other users, so this read uses the service role, server-side only)
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const { data: target } = await createAdminClient().from("profiles").select("role, status").eq("id", memberId).maybeSingle();
+  const t = target as { role: string | null; status: string | null } | null;
+  if (!t || !isSalesUser(t.role) || isInactive(t)) return { error: "Choose an active Sales member." };
 
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("sales_queries")
     .update({ assigned_to: memberId, status_remark: clean(remark) || null })
     .eq("id", queryId)
+    .is("deleted_at", null)
     .select("id")
     .maybeSingle();
   if (error) return { error: error.message };
@@ -140,7 +148,7 @@ export async function saveFlightBooking(
     if (!cu?.user || !isSalesUser(cu.profile?.role)) return { error: "You do not have access to Sales." };
     // the user's own client: RLS decides whether they may see this query
     const supabase = await createClient();
-    const { data: q } = await supabase.from("sales_queries").select("id, assigned_to").eq("id", queryId).maybeSingle();
+    const { data: q } = await supabase.from("sales_queries").select("id, assigned_to").eq("id", queryId).is("deleted_at", null).maybeSingle();
     if (!q) return { error: "Query not found, or it is not assigned to you." };
     if (!isSalesAdmin(cu.profile?.role) && (q as { assigned_to: string | null }).assigned_to !== cu.user.id) return { error: "Only the member this query is assigned to can change its flights." };
     const { data: v } = await supabase.from("sales_itinerary_versions").select("plan").eq("query_id", queryId).order("version_no", { ascending: false }).limit(1).maybeSingle();
