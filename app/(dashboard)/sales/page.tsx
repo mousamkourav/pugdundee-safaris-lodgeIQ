@@ -19,12 +19,13 @@ interface Totals {
   booked: number;
   lost: number;
   cancelled: number;
-  bookedValue: number;
+  bookedValue: number; // trip totals of the booked quotes
+  received: number; // money received when they were marked booked
   pendingValue: number;
 }
 
 function summarise(rows: QueryRow[]): Totals {
-  const t: Totals = { draft: 0, created: 0, open: 0, quoted: 0, booked: 0, lost: 0, cancelled: 0, bookedValue: 0, pendingValue: 0 };
+  const t: Totals = { draft: 0, created: 0, open: 0, quoted: 0, booked: 0, lost: 0, cancelled: 0, bookedValue: 0, received: 0, pendingValue: 0 };
   for (const r of rows) {
     // Drafts have not been quoted yet: counted on their own, not in created or conversion.
     if (r.status === "draft") {
@@ -33,7 +34,10 @@ function summarise(rows: QueryRow[]): Totals {
     }
     t.created += 1;
     t[r.status] += 1;
-    if (r.status === "booked") t.bookedValue += Number(r.booked_amount ?? r.total_amount ?? 0);
+    if (r.status === "booked") {
+      t.bookedValue += Number(r.total_amount ?? 0);
+      t.received += Number(r.booked_amount ?? 0);
+    }
     if (r.status === "open" || r.status === "quoted") t.pendingValue += Number(r.total_amount ?? 0);
   }
   return t;
@@ -118,7 +122,7 @@ export default async function SalesDashboard({
 
       {error && <p className={ui.alertError}>Could not load queries: {error.message}</p>}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <StatCard label="Created" value={t.created} />
         <StatCard label="Booked" value={t.booked} valueClass="!text-success" hint={`Conversion ${pct(t.booked, t.created)}%`} />
         <StatCard label="Open" value={t.open} valueClass="!text-warning" />
@@ -127,8 +131,11 @@ export default async function SalesDashboard({
         <Link href="/sales/queries?status=draft" className="block">
           <StatCard label="Drafts" value={t.draft} hint="Saved, not yet sent" />
         </Link>
-        <StatCard label="Booked value" value={rupees(t.bookedValue)} highlight />
-        <StatCard label="Pending value" value={rupees(t.pendingValue)} hint="Open queries in this period" />
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <StatCard label="Booked value" value={rupees(t.bookedValue)} hint="Trip totals of booked quotes" highlight />
+        <StatCard label="Received" value={rupees(t.received)} hint="Payments recorded at booking" />
+        <StatCard label="Pending value" value={rupees(t.pendingValue)} hint="Open and quoted in this period" />
       </div>
 
       {admin && (
@@ -156,6 +163,7 @@ export default async function SalesDashboard({
                       <th className="px-4 py-3 text-right">Cancelled</th>
                       <th className="px-4 py-3">Conversion</th>
                       <th className="px-4 py-3 text-right">Booked value</th>
+                      <th className="px-4 py-3 text-right">Received</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -182,6 +190,7 @@ export default async function SalesDashboard({
                             </div>
                           </td>
                           <td className="tabular px-4 py-3 text-right font-medium">{rupees(m.t.bookedValue)}</td>
+                          <td className="tabular px-4 py-3 text-right">{rupees(m.t.received)}</td>
                         </tr>
                       );
                     })}

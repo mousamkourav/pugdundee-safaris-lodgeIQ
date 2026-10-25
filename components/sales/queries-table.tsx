@@ -69,7 +69,8 @@ export function QueriesTable({
                     </td>
                   )}
                   <td className="tabular whitespace-nowrap px-4 py-3 text-right">
-                    {rupees(r.status === "booked" ? r.booked_amount ?? r.total_amount : r.total_amount)}
+                    {rupees(r.total_amount)}
+                    {r.status === "booked" && r.booked_amount != null && <p className="text-xs text-sand-500">Received {rupees(r.booked_amount)}</p>}
                   </td>
                   {showAge && (
                     <td className={"whitespace-nowrap px-4 py-3 " + (age > 5 ? "font-semibold text-warning" : "")}>
