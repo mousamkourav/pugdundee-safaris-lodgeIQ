@@ -326,3 +326,15 @@ test("vehicles on transfers: for the whole trip, for one road (0 = not needed), 
   // own vehicle: no transfers at all
   assert.equal(transfers({ ...p, own_vehicle: true }).length, 0);
 });
+
+test("'full-day safari' at a lodge: one day becomes a full-day safari, not an extra add-on on top", () => {
+  const p = sheetPlan();
+  p.stops[0] = { ...p.stops[0], want_extras: ["full-day safari"], want_naturalists: -1 };
+  p.days = buildDays(p, ctx);
+  const tadoba = p.days.filter((d) => d.park_id === "TADOBA");
+  const full = tadoba.filter((d) => d.safaris.some((s) => s.session === "full_day"));
+  assert.equal(full.length, 1);
+  assert.equal(full[0].safaris.length, 1); // in place of that day's morning and evening
+  assert.ok(full[0].safaris[0].naturalist);
+  assert.ok(!p.days.some((d) => d.items.some((i) => /full-day/i.test(i.title))));
+});

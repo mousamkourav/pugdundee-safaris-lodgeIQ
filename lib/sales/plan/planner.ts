@@ -238,9 +238,31 @@ function applyWants(plan: Plan, ctx: BuilderContext, days: PlanDay[]): PlanDay[]
         days[range[0]].notes = [...days[range[0]].notes, `${stop.want_safaris} safaris were asked for in ${park}, but only ${slots.length} fit in ${stop.nights} night${stop.nights === 1 ? "" : "s"}.`];
       }
     }
-    const specials = (stop.want_extras ?? []).includes("special") ? lodgeSpecials(ctx, stop.property_id, plan.guest.nationality) : [];
+    // "full-day safari": one day here becomes a full-day safari (in place of that day's morning
+    // and evening safaris; a day without safaris first), on a day the core zone is open
+    if ((stop.want_extras ?? []).includes("full-day safari")) {
+      const moveOut = s0 + stop.nights;
+      const full = range.filter((i) => i > s0 && i < moveOut && !closedAt(ctx, plan, stop.park_id, "core", "full_day", days[i].date));
+      const pick = full.filter((i) => !days[i].safaris.length).pop() ?? full[full.length - 1];
+      if (pick !== undefined) {
+        const naturalist = stop.want_naturalists != null && stop.want_naturalists !== 0;
+        const had = days[pick].safaris.length;
+        days[pick] = describe(
+          ctx,
+          {
+            ...days[pick],
+            kind: "safari",
+            safaris: [{ session: "full_day", zone: "core", ...(naturalist ? { naturalist: true } : {}) }],
+            notes: [...days[pick].notes, ...(had ? ["Full-day safari in place of the morning and evening safaris, as asked."] : [])],
+          },
+          plan.vehicle_type
+        );
+      }
+    }
+    const extrasHere = (stop.want_extras ?? []).filter((kw) => kw !== "full-day safari"); // the full day is a safari, not an add-on
+    const specials = extrasHere.includes("special") ? lodgeSpecials(ctx, stop.property_id, plan.guest.nationality) : [];
     const usedIds = new Set<string>();
-    for (const kw of stop.want_extras ?? []) {
+    for (const kw of extrasHere) {
       if (kw === "special") continue;
       const found = findAddon(ctx, stop.property_id, kw, plan.guest.nationality);
       if (found) usedIds.add(found.id);
@@ -250,7 +272,7 @@ function applyWants(plan: Plan, ctx: BuilderContext, days: PlanDay[]): PlanDay[]
       const item: PlanItem = { id: `auto-${k}-sp-${sp.id}`, type: "addon", title: sp.name, detail: "", price: null, addon_id: sp.id, qty: null, auto: `extra:${k}:special:${sp.id}` };
       days[lastNight] = { ...days[lastNight], items: [...days[lastNight].items, item] };
     }
-    for (const kw of stop.want_extras ?? []) {
+    for (const kw of extrasHere) {
       if (kw === "special") continue;
       const addon = findAddon(ctx, stop.property_id, kw, plan.guest.nationality);
       const item: PlanItem = addon
