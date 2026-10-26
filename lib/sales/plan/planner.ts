@@ -326,7 +326,12 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
           const p = prev.stay;
           const byAir = !!p.city && !!c.city && flew(p.city, c.city);
           title = p.city && c.city ? `${p.city} to ${c.city}` : place(c);
-          text = p.city && c.city ? `${byAir ? `Fly from ${p.city} to ${c.city}` : `Drive from ${p.city} to ${c.city}`}. Overnight at ${where(c)}.` : text;
+          text =
+            p.city && c.city
+              ? byAir
+                ? `After breakfast, check out and transfer to ${p.city} Airport for the flight to ${c.city}. On arrival, transfer to ${c.hotel || "the hotel"}. Overnight at ${where(c)}.`
+                : `After breakfast, drive from ${p.city} to ${c.city}. Overnight at ${where(c)}.`
+              : text;
           if (real && !p.blank && p.city) transfer = byAir ? cityTransfer(ctx, airportOf(ctx, c.city, hotelOf(ctx, c).id), hotelOf(ctx, c)) : cityTransfer(ctx, hotelOf(ctx, p), hotelOf(ctx, c));
         } else if (k === segs.length - 1 || !segs.slice(k + 1).some((s) => s.kind === "lodge")) {
           // the morning the guests leave the last lodge (that day is the lodge's departure day)
@@ -477,6 +482,13 @@ function addFlights(plan: Plan, days: PlanDay[]): PlanDay[] {
       const nxt = segs[a + 1];
       at = dayOf(nxt ? nxt.checkIn : segs[a].checkOut);
       cursor = a + 1;
+      // flying on to the lodges: the day starts in the city hotel
+      const left = segs[a];
+      if (at >= 0 && nxt?.kind === "lodge" && left.kind === "city") {
+        const hotel = left.stay.hotel || "the hotel";
+        const lead = `After breakfast, check out of ${hotel} and transfer to ${f.from} Airport for the flight to ${f.to}.`;
+        if (!out[at].text.startsWith("After breakfast, check out")) out[at] = { ...out[at], text: `${lead} ${out[at].text.replace(/^Arrive at ([^.]+?) and drive to /, "On arrival at $1, drive to ")}`.trim() };
+      }
     } else if (b >= 0) {
       at = dayOf(segs[b].checkIn);
       cursor = b;

@@ -63,10 +63,10 @@ export default async function SalesDashboard({
   const period = (periodData ?? []) as unknown as QueryRow[];
   const t = summarise(period);
 
-  // Follow-up list: every open query regardless of period, oldest first.
+  // Follow-up list: every open query regardless of period, newest first (up to 50, so older ones stay in view).
   let openQ = supabase.from("sales_queries").select(QUERY_LIST_COLUMNS).is("deleted_at", null).in("status", ["open", "quoted"]);
   if (!admin) openQ = openQ.eq("assigned_to", user.id);
-  const { data: openData } = await openQ.order("created_at", { ascending: true }).limit(10);
+  const { data: openData } = await openQ.order("created_at", { ascending: false }).limit(50);
   const openRows = (openData ?? []) as unknown as QueryRow[];
 
   // Admin: per-member performance.
@@ -205,7 +205,7 @@ export default async function SalesDashboard({
       <section>
         <div className="mb-3">
           <h2 className="text-lg">Open queries - follow up</h2>
-          <p className="text-sm text-sand-500">Oldest first. Anything open more than 5 days is highlighted.</p>
+          <p className="text-sm text-sand-500">Newest first. Anything open more than 5 days is highlighted.</p>
         </div>
         <QueriesTable
           rows={openRows}

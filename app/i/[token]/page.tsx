@@ -32,8 +32,15 @@ html[data-pdf] [data-pdf-block="cover"]{min-height:0!important;height:auto!impor
 details.park>summary::-webkit-details-marker{display:none}
 details.park[open] .plus{transform:rotate(45deg)}`;
 
-const fileNameFor = (guest: string, queryNo: string) =>
-  `Pugdundee Safaris - ${guest.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim() || "Itinerary"} - ${queryNo}.pdf`;
+// "Pugdundee Safaris - 15 Mar 2027 - Barney Smith.pdf" (the date the trip starts)
+const fileNameFor = (guest: string, start: string | null) =>
+  [
+    "Pugdundee Safaris",
+    start ? new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(start + "T00:00:00Z")) : "",
+    guest.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim() || "Itinerary",
+  ]
+    .filter(Boolean)
+    .join(" - ") + ".pdf";
 
 const LONG = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 const SHORT = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
@@ -67,6 +74,10 @@ function Line({ name, className = "h-4 w-4" }: { name: keyof typeof PATHS; class
 }
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
+
+// An email or phone number in one form, to spot the same contact written twice
+// ("Enquiry@..." and "enquiry@...", "+91 98102 53436" and "9810253436").
+const contactKey = (c: string) => (/@/.test(c) ? c.trim().toLowerCase() : c.replace(/\D/g, "").slice(-10));
 
 // Contacts one per line, but phone numbers next to each other share a line:
 // "+91-11-40146400, +91-11-40132103".
@@ -123,22 +134,67 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
       flightIn: seg.index === 0 && prev?.kind === "city" && !!prev.stay.city && flights.some((f) => sameCity(f.from, prev.stay.city)),
     };
   });
-  const lodgeNights = plan.stops.reduce((t, s) => t + s.nights, 0);
   const safaris = plan.days.reduce((t, d) => t + d.safaris.length, 0);
   const lodgeCount = new Set(plan.stops.map((s) => s.property_id)).size;
+  // At a glance: 17 D / 16 N, the safaris, and the places in travel order
+  // (Delhi - Jabalpur - Kanha - Bandhavgarh - Khajuraho - Delhi).
+  const dayCount = plan.days.length || view.nights + 1;
+  const cityOf = (place: string | undefined) => (place ?? "").replace(/\s*(international\s+)?(airport|railway station|station|junction)\b.*$/i, "").replace(/\s*\(.*\)\s*$/, "").trim();
+  const path: string[] = [];
+  const add = (x: string | undefined) => {
+    const v = (x ?? "").trim();
+    if (v && path[path.length - 1]?.toLowerCase() !== v.toLowerCase()) path.push(v);
+  };
+  const firstDay = plan.days.find((d) => d.kind !== "city");
+  segs.forEach((seg, k) => {
+    const prev = segs[k - 1];
+    if (seg.kind === "city") {
+      const inFlight = prev?.kind === "lodge" ? flights.find((f) => sameCity(f.to, seg.stay.city) && !segs.some((x) => x.kind === "city" && sameCity(x.stay.city, f.from))) : undefined;
+      if (inFlight) add(inFlight.from);
+      add(seg.stay.city || undefined);
+      return;
+    }
+    if (k === 0 || prev?.kind === "city") {
+      // reached by air (Delhi to Jabalpur) or from the arrival airport: that town first
+      const flown = prev?.kind === "city" ? flights.find((f) => sameCity(f.from, prev.stay.city)) : undefined;
+      if (flown) add(flown.to);
+      else if (k === 0 && firstDay?.transfer) add(cityOf(view.placeNames[firstDay.transfer.from_location_id]));
+    }
+    add(shortPark(view.parkNames[seg.stop.park_id] ?? ""));
+  });
+  if (segs[segs.length - 1]?.kind === "lodge") {
+    const lastDay = plan.days[plan.days.length - 1];
+    if (lastDay?.transfer) add(cityOf(view.placeNames[lastDay.transfer.to_location_id]));
+  }
   const facts = [
-    { n: plan.days.length || view.nights + 1, label: "days" },
-    { n: lodgeNights, label: "nights in the wild" },
-    { n: safaris, label: safaris === 1 ? "safari" : "safaris" },
-    { n: lodgeCount, label: lodgeCount === 1 ? "lodge" : "lodges" },
+    { n: `${dayCount}D / ${Math.max(0, dayCount - 1)}N`, label: "days / nights", wide: false },
+    { n: String(safaris), label: safaris === 1 ? "safari" : "safaris", wide: false },
+    ...(path.length > 1 ? [{ n: path.join(" \u2013 "), label: "your route", wide: true }] : [{ n: String(lodgeCount), label: lodgeCount === 1 ? "lodge" : "lodges", wide: false }]),
   ];
+
+  // The footer's contacts, each once: a phone number or email already shown for the consultant
+  // (or the teammate) is not repeated under Emergency contact.
+  const dedupedFooter = (() => {
+    const shown = new Set([view.consultant.email, view.consultant.phone].filter((x): x is string => !!x).map(contactKey));
+    const emergency = !view.domestic && view.emergency ? view.emergency : null;
+    const eEmail = emergency?.email && !shown.has(contactKey(emergency.email)) ? emergency.email : null;
+    const ePhone = emergency?.phone && !shown.has(contactKey(emergency.phone)) ? emergency.phone : null;
+    if (emergency) [emergency.email, emergency.phone].filter((x): x is string => !!x).forEach((x) => shown.add(contactKey(x)));
+    const direct = view.directContacts.filter((c) => {
+      const k = contactKey(c);
+      if (!k || shown.has(k)) return false;
+      shown.add(k);
+      return true;
+    });
+    return { emergency, eEmail, ePhone, direct };
+  })();
 
   return (
     <div className="min-h-screen bg-sand-100 text-[17px] leading-relaxed text-sand-700 sm:py-8 sm:text-base print:bg-white print:py-0">
       <style>{PDF_CSS}</style>
       <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-0 sm:pt-0 print:hidden">
         <ShareButtons title={`${view.routeLine || view.title} safari - Pugdundee Safaris`} text={`Safari itinerary for ${view.guestName} from ${view.company.name}`} />
-        <DownloadPdfButton fileName={fileNameFor(view.guestName, view.queryNo)} />
+        <DownloadPdfButton fileName={fileNameFor(view.guestName, view.dateless ? null : view.arrival)} />
       </div>
 
       <article id="itinerary" className="mx-auto max-w-4xl overflow-hidden bg-white shadow-card sm:rounded-2xl print:max-w-none print:shadow-none">
@@ -181,8 +237,8 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {facts.map((f) => (
-                <div key={f.label} className="rounded-2xl bg-sand-50 px-4 py-4 text-center ring-1 ring-sand-200">
-                  <p className="font-display text-4xl font-semibold text-olive-800">{f.n}</p>
+                <div key={f.label} className={`rounded-2xl bg-sand-50 px-4 py-4 text-center ring-1 ring-sand-200 ${f.wide ? "col-span-2 flex flex-col justify-center" : ""}`}>
+                  <p className={`font-display font-semibold text-olive-800 ${f.wide ? "text-lg leading-snug sm:text-xl" : "text-4xl"}`}>{f.n}</p>
                   <p className="mt-1 text-xs uppercase tracking-[0.15em] text-sand-500">{f.label}</p>
                 </div>
               ))}
@@ -226,40 +282,49 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
             <ol className="mt-8 space-y-10">
               {plan.days.map((d, i) => {
                 const lodge = d.property_id && firstDayAt.get(d.property_id) === i ? view.lodges.find((l) => l.id === d.property_id) : null;
-                // transfers in a city (airport to hotel, hotel to airport), unless the guests drive themselves
-                const cityTransfers = plan.own_vehicle
-                  ? []
-                  : (d.city_transfers ?? [])
-                      .filter((t) => plan.route_vehicles?.[routeOf(t.from_location_id, t.to_location_id)] !== 0)
-                      .map((t, k) => ({ id: `ct${i}-${k}`, type: "transfer" as const, title: `Transfer: ${t.from_label} to ${t.to_label}`, detail: "" }));
-                const items = [...cityTransfers, ...(d.items ?? []).filter((it) => it.type !== "flight" && (it.type !== "note" || it.title))];
-                // flights travel between the day before and this day: shown on their own, before the day
-                const flights = (d.items ?? []).filter((it) => it.type === "flight" && it.flight);
+                // The day in the order it happens: hotel to the airport, the flight, the airport to the
+                // lodge or hotel, then the rest (hotel night, experiences). Transfers are left out when
+                // the guests drive themselves or a road is set to no vehicles.
+                const keep = (from: string, to: string) => !plan.own_vehicle && plan.route_vehicles?.[routeOf(from, to)] !== 0;
+                type Step = { id: string; icon: "jeep" | "plane" | "bed" | "star" | "leaf"; title: string; detail?: string; flight?: boolean };
+                const cityTransfers = (d.city_transfers ?? []).filter((t) => keep(t.from_location_id, t.to_location_id));
+                const toAirport = cityTransfers.filter((t) => /airport/i.test(t.to_label));
+                const fromAirport = cityTransfers.filter((t) => !/airport/i.test(t.to_label));
+                const tStep = (t: { from_label: string; to_label: string }, k: string): Step => ({ id: k, icon: "jeep", title: `Transfer: ${t.from_label} to ${t.to_label}` });
+                const flightSteps: Step[] = (d.items ?? [])
+                  .filter((it) => it.type === "flight" && it.flight)
+                  .map((it) => ({
+                    id: it.id,
+                    icon: "plane",
+                    flight: true,
+                    title: `Flight ${it.flight!.from} to ${it.flight!.to}`,
+                    detail: [
+                      it.flight!.airline && it.flight!.number ? `${it.flight!.airline} ${it.flight!.number}` : it.flight!.airline || it.flight!.number,
+                      it.flight!.time && `departs ${it.flight!.time}`,
+                      it.flight!.arrive && `arrives ${it.flight!.arrive}`,
+                      it.flight!.pnr && `PNR ${it.flight!.pnr}`,
+                      it.detail,
+                    ]
+                      .filter(Boolean)
+                      .join(" \u00b7 "),
+                  }));
+                const hours = d.transfer ? view.driveHours[`${d.transfer.from_location_id}|${d.transfer.to_location_id}`] : undefined;
+                const roadStep: Step[] =
+                  d.transfer && keep(d.transfer.from_location_id, d.transfer.to_location_id) && view.placeNames[d.transfer.from_location_id] && view.placeNames[d.transfer.to_location_id]
+                    ? [{ id: "road", icon: "jeep", title: `Transfer: ${view.placeNames[d.transfer.from_location_id]} to ${view.placeNames[d.transfer.to_location_id]}`, ...(hours ? { detail: `Approx. ${hours} hrs drive` } : {}) }]
+                    : [];
+                const otherSteps: Step[] = (d.items ?? [])
+                  .filter((it) => it.type !== "flight" && (it.type !== "note" || it.title))
+                  .map((it) => ({ id: it.id, icon: it.type === "hotel" ? "bed" : it.type === "meal" ? "star" : it.type === "transfer" ? "jeep" : "leaf", title: it.title, detail: it.detail || undefined }));
+                const steps: Step[] = [
+                  ...toAirport.map((t, k) => tStep(t, `out${k}`)),
+                  ...flightSteps,
+                  ...roadStep,
+                  ...fromAirport.map((t, k) => tStep(t, `in${k}`)),
+                  ...otherSteps,
+                ];
                 return (
                   <li key={i} className="space-y-6">
-                    {flights.map((it) => (
-                      <div key={it.id} data-pdf-block="" className="flex items-start gap-4 rounded-2xl border border-dashed border-[var(--color-gold-400,#D2AD4C)] bg-[var(--color-gold-50,#FBF7E9)] px-4 py-3 sm:ml-[110px] sm:px-5">
-                        <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-olive-700 ring-1 ring-[var(--color-gold-300,#DDC277)]">
-                          <Line name="plane" className="h-5 w-5" />
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block font-display text-lg leading-snug text-olive-800">
-                            Flight {it.flight!.from} to {it.flight!.to}
-                          </span>
-                          <span className="block text-sm text-sand-600">
-                            {[
-                              it.flight!.airline && it.flight!.number ? `${it.flight!.airline} ${it.flight!.number}` : it.flight!.airline || it.flight!.number,
-                              it.flight!.time && `departs ${it.flight!.time}`,
-                              it.flight!.arrive && `arrives ${it.flight!.arrive}`,
-                              it.flight!.pnr && `PNR ${it.flight!.pnr}`,
-                            ]
-                              .filter(Boolean)
-                              .join(" \u00b7 ")}
-                          </span>
-                          {it.detail && <span className="block text-sm text-sand-600">{it.detail}</span>}
-                        </span>
-                      </div>
-                    ))}
                     <div data-pdf-block="" className="grid gap-4 sm:grid-cols-[110px_1fr]">
                       <div className="flex items-baseline gap-3 sm:block">
                         <p className="font-display text-5xl font-semibold leading-none text-[var(--color-gold-500,#C9A227)]">{pad2(i + 1)}</p>
@@ -272,7 +337,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                       <div>
                         <h3 className="font-display text-2xl leading-snug text-olive-800">{d.title}</h3>
                         <p className="mt-2 whitespace-pre-line">{d.text}</p>
-                        {(d.safaris.length > 0 || (d.transfer && view.driveHours[`${d.transfer.from_location_id}|${d.transfer.to_location_id}`])) && (
+                        {d.safaris.length > 0 && (
                           <div className="mt-3 flex flex-wrap gap-2">
                             {d.safaris.map((sf, k) => (
                               <span key={k} className="inline-flex items-center gap-1.5 rounded-full bg-olive-50 px-3 py-1 text-sm text-olive-800 ring-1 ring-olive-100">
@@ -281,24 +346,18 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                                 {(sf.jeeps ?? 0) > 1 && <> &middot; {sf.jeeps} jeeps</>}
                               </span>
                             ))}
-                            {d.transfer && view.driveHours[`${d.transfer.from_location_id}|${d.transfer.to_location_id}`] && (
-                              <span className="inline-flex items-center gap-1.5 rounded-full bg-sand-50 px-3 py-1 text-sm text-sand-700 ring-1 ring-sand-200">
-                                <Line name="jeep" className="h-4 w-4 text-sand-500" />
-                                Approx. {view.driveHours[`${d.transfer.from_location_id}|${d.transfer.to_location_id}`]} hrs drive
-                              </span>
-                            )}
                           </div>
                         )}
-                        {items.length > 0 && (
+                        {steps.length > 0 && (
                           <ul className="mt-3 space-y-2">
-                            {items.map((it) => (
-                              <li key={it.id} className="flex gap-3">
-                                <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-sand-100 text-olive-700">
-                                  <Line name={it.type === "flight" ? "plane" : it.type === "hotel" ? "bed" : it.type === "meal" ? "star" : it.type === "transfer" ? "jeep" : "leaf"} className="h-4 w-4" />
+                            {steps.map((st) => (
+                              <li key={st.id} className={`flex gap-3 ${st.flight ? "rounded-xl bg-[var(--color-gold-50,#FBF7E9)] px-2 py-1.5 ring-1 ring-[var(--color-gold-300,#DDC277)]" : ""}`}>
+                                <span className={`mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-olive-700 ${st.flight ? "bg-white" : "bg-sand-100"}`}>
+                                  <Line name={st.icon} className="h-4 w-4" />
                                 </span>
                                 <span className="min-w-0">
-                                  <span className="font-medium text-olive-800">{it.title}</span>
-                                  {it.detail && <span className="block text-sm text-sand-600">{it.detail}</span>}
+                                  <span className="font-medium text-olive-800">{st.title}</span>
+                                  {st.detail && <span className="block text-sm text-sand-600">{st.detail}</span>}
                                 </span>
                               </li>
                             ))}
@@ -587,19 +646,21 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
             </div>
           )}
 
-          {/* 2. emergency contact: our contacts for every guest (foreign guests also see a teammate, when one is set) */}
-          {(view.directContacts.length > 0 || (!view.domestic && view.emergency)) && (
+          {/* 2. emergency contact: our contacts for every guest (foreign guests also see a teammate, when one is set).
+              A phone number or email already shown above is not repeated. */}
+
+          {(dedupedFooter.direct.length > 0 || dedupedFooter.emergency) && (
             <div className="mt-6 border-t border-white/15 pt-6 text-sm">
               <p className="text-xs uppercase tracking-[0.18em] text-white/50">Emergency contact</p>
-              {!view.domestic && view.emergency && (
+              {dedupedFooter.emergency && (
                 <div className="mt-1">
-                  <p className="font-semibold text-white">{view.emergency.name}</p>
-                  {view.emergency.phone && <p className="text-white/80"><a href={`tel:${view.emergency.phone.replace(/\s+/g, "")}`}>{view.emergency.phone}</a></p>}
-                  {view.emergency.email && <p className="text-white/80"><a href={`mailto:${view.emergency.email}`}>{view.emergency.email}</a></p>}
+                  <p className="font-semibold text-white">{dedupedFooter.emergency.name}</p>
+                  {dedupedFooter.ePhone && <p className="text-white/80"><a href={`tel:${dedupedFooter.ePhone.replace(/\s+/g, "")}`}>{dedupedFooter.ePhone}</a></p>}
+                  {dedupedFooter.eEmail && <p className="text-white/80"><a href={`mailto:${dedupedFooter.eEmail}`}>{dedupedFooter.eEmail}</a></p>}
                 </div>
               )}
               <ul className="mt-2 space-y-1 text-white/85">
-                {contactLines(view.directContacts).map((line, k) => (
+                {contactLines(dedupedFooter.direct).map((line, k) => (
                   <li key={k}>
                     {line.map((c, j) => (
                       <span key={c}>

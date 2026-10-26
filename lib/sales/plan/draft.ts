@@ -279,7 +279,10 @@ export function defaultDraft(plan: Plan, inp: DraftInputs): DraftSections {
   const masterInc = textsFor("inclusions").flatMap(lines);
   const masterExc = textsFor("exclusions").flatMap(lines);
   const inclusions = phoneRuleFirst(dedupeLines(masterInc.length ? [...masterInc, ...standard.itineraryInc] : standard.inc));
-  const exclusions = phoneRuleFirst(dedupeLines(masterExc.length ? [...masterExc, ...standard.itineraryExc] : standard.exc));
+  // "Flights and train tickets unless mentioned in inclusions": only when the trip has no flight
+  const hasFlights = !!flightsLine(plan) || (plan.flights ?? []).length > 0 || plan.days.some((d) => (d.items ?? []).some((it) => it.type === "flight"));
+  const noFlightLine = (x: string) => !(hasFlights && /\bflights?\b/i.test(x));
+  const exclusions = phoneRuleFirst(dedupeLines((masterExc.length ? [...masterExc, ...standard.itineraryExc] : standard.exc).filter(noFlightLine)));
   const cancellation = phoneRuleFirst(dedupeLines(textsFor("cancellation_terms").flatMap(lines)));
 
   return {

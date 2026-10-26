@@ -346,6 +346,22 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     if (hikePct) hikeUsed.safaris = true;
     const billTo = stayOn(s.date)?.property_id ?? null;
     if (s.naturalist) priceNaturalist(s, rate, billTo, where);
+    // A full-day safari with no safari rate: the lodges keep it as an add-on ("Full-day safari
+    // (up to 3 guests)", per jeep). That lodge's own first, then one in the same park, then a general one.
+    if (!rate && s.session === "full_day") {
+      const fd = data.addons.filter((a) => a.active && /full[\s-]?day\s+safari/i.test(a.name));
+      const inPark = new Set(data.properties.filter((p) => p.park_id === s.park_id).map((p) => p.id));
+      const addon = fd.find((a) => billTo && a.property_id === billTo) ?? fd.find((a) => a.property_id && inPark.has(a.property_id)) ?? fd.find((a) => !a.property_id);
+      if (addon) {
+        const foreign = trip.nationality === "foreign";
+        const unitRate = foreign && addon.rate_foreign != null ? addon.rate_foreign : addon.rate;
+        const perJeep = addon.max_guests ?? (Number(addon.name.match(/up to (\d+)/i)?.[1]) || 6);
+        const vehicles = s.vehicles ?? Math.max(1, Math.ceil(guests / Math.max(1, perJeep)));
+        const { amount, tax } = withTax(unitRate * vehicles, addon.tax_pct, false);
+        lines.push({ kind: "safari", date: s.date, description: `${where}${vehicles > 1 ? ` (${vehicles} jeeps)` : ""}`, quantity: vehicles, unit_price: unitRate, amount, tax, tax_pct: addon.tax_pct, property_id: billTo, ref_id: addon.id });
+        continue;
+      }
+    }
     if (!rate) {
       const key = `safari|${s.park_id}|${s.zone}|${s.session}|${s.vehicle_type ?? "exclusive_jeep"}`;
       const safariMissing: MissingPrice = { key, kind: "safari", label: `${where}`, unit: "per safari, all jeeps, incl. tax", date: basis ? null : s.date };

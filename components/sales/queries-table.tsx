@@ -35,7 +35,7 @@ export function QueriesTable({
               <th className="px-4 py-3">Parks</th>
               {showMember && <th className="px-4 py-3">Member</th>}
               <th className="px-4 py-3 text-right">Value</th>
-              {showAge && <th className="whitespace-nowrap px-4 py-3">Open for</th>}
+              <th className="whitespace-nowrap px-4 py-3">Created</th>
               {remarks && <th className="px-4 py-3">Reason / remark</th>}
               {!showAge && <th className="px-4 py-3">Updated</th>}
               <th className="px-4 py-3">Status</th>
@@ -72,11 +72,15 @@ export function QueriesTable({
                     {rupees(r.total_amount)}
                     {r.status === "booked" && r.booked_amount != null && <p className="text-xs text-sand-500">Received {rupees(r.booked_amount)}</p>}
                   </td>
-                  {showAge && (
-                    <td className={"whitespace-nowrap px-4 py-3 " + (age > 5 ? "font-semibold text-warning" : "")}>
-                      {age} {age === 1 ? "day" : "days"}
-                    </td>
-                  )}
+                  <td className="whitespace-nowrap px-4 py-3">
+                    {fmtDate(r.created_at)}
+                    {/* on the follow-up list: how long it has been open, highlighted after 5 days */}
+                    {showAge && (
+                      <p className={"text-xs " + (age > 5 ? "font-semibold text-warning" : "text-sand-500")}>
+                        {age} {age === 1 ? "day" : "days"} open
+                      </p>
+                    )}
+                  </td>
                   {remarks && (
                     <td className="max-w-xs px-4 py-3">
                       {r.lost_reason && <p className="font-medium text-sand-700">{r.lost_reason}</p>}

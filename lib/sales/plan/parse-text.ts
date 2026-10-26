@@ -474,15 +474,17 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     new RegExp(`\\b(?:stay(?:ing)?|overnight|spend(?:ing)?)\\s+(?:in\\s+|at\\s+)?(?<city>${CITY_RE}|there)\\s+(?:for\\s+)?(?<n>${NUM.slice(1, -1)})\\s*nights?\\b`, "g"),
     // "stay one night at Delhi", "spend 2 nights in Delhi"
     new RegExp(`\\b(?:stay(?:ing)?|spend(?:ing)?)\\s+(?:for\\s+)?(?<n>${NUM.slice(1, -1)})\\s*nights?\\s+(?:in|at)\\s+(?<city>${CITY_RE}|there)\\b`, "g"),
-    // "1 night in Delhi", "1 nights stay at delhi"
-    new RegExp(`\\b(?<n>${NUM.slice(1, -1)})\\s*nights?\\s+(?:stay\\s+|halt\\s+)?(?:in|at)\\s+(?<city>${CITY_RE})\\b`, "g"),
+    // "1 night in Delhi", "1 nights stay at delhi", "1 night khajuraho"
+    new RegExp(`\\b(?<n>${NUM.slice(1, -1)})\\s*nights?\\s+(?:stay\\s+|halt\\s+)?(?:(?:in|at)\\s+)?(?<city>${CITY_RE})\\b`, "g"),
     // "Delhi 1 nights stay", "transfer to Khajuraho 2 nights", "Delhi - 1 night"
     new RegExp(`\\b(?<city>${CITY_RE})\\s*(?:[-:(]\\s*|for\\s+)?(?<n>${NUM.slice(1, -1)})\\s*(?:nights?|n|raat(?:ein|en|e)?)\\b`, "g"),
   ];
-  const seen = new Set<number>();
+  // text already read as a city stay (start, end): a second pattern on the same words is skipped
+  const seen: [number, number][] = [];
+  const taken = (m: RegExpMatchArray) => seen.some(([a, b]) => m.index! < b && m.index! + m[0].length > a);
   for (const re of stayPatterns) {
     for (const m of low.matchAll(re)) {
-      if ([...seen].some((x) => Math.abs(x - m.index!) < 25)) continue;
+      if (taken(m)) continue;
       let city: string | undefined;
       if (m.groups!.city === "there") {
         // "there" is the nearest place mentioned before: if that is a park, this is not a city stay
@@ -494,7 +496,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
       const when = m.index! < firstPark ? "before" : m.index! > lastPark ? "after" : null;
       // several cities are fine (Khajuraho, then Delhi at the end); the same city twice on one side is not
       if (!when || stays.some((x) => x.when === when && x.city === city)) continue;
-      seen.add(m.index!);
+      seen.push([m.index!, m.index! + m[0].length]);
       stays.push({ when, city, nights: toNum(m.groups!.n), at: m.index! } as (typeof stays)[number] & { at: number });
     }
   }
@@ -512,10 +514,10 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     ];
     for (const re of res) {
       for (const m of low.matchAll(re)) {
-        if ([...seen].some((x) => Math.abs(x - m.index!) < 25)) continue;
+        if (taken(m)) continue;
         const when = m.index! < firstPark ? "before" : m.index! > lastPark ? "after" : null;
         if (!when || stays.some((x) => x.when === when && x.city === city)) continue;
-        seen.add(m.index!);
+        seen.push([m.index!, m.index! + m[0].length]);
         stays.push({ when, city, nights: toNum(m.groups!.n), hotel: h.name, at: m.index! } as (typeof stays)[number] & { at: number });
       }
     }
@@ -584,7 +586,16 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     else if (/^\s*(in|arrival|pick ?up)\b/i.test(after)) out.arrival_place ??= h.name;
     else unclassified.push(h.name);
   }
+  // a place that is only named as a city stay ("1 night khajuraho" at the end) is not where they
+  // arrive: the first city after the lodges is where the drive from the last lodge goes
+  const stayCity = (name: string) => (out.cityStays ?? []).find((c) => name.toLowerCase().startsWith(c.city.toLowerCase()));
+  const firstAfter = out.cityStays?.find((c) => c.when === "after");
   for (const name of unclassified) {
+    const c = stayCity(name);
+    if (c) {
+      if (c === firstAfter && !out.departure_place && /airport/i.test(name)) out.departure_place = name;
+      continue;
+    }
     if (!out.arrival_place) out.arrival_place = name;
     else if (!out.departure_place) out.departure_place = name;
   }

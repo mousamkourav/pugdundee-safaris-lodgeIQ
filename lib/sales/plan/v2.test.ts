@@ -267,3 +267,13 @@ test("the mobile-phone rule is the first point, however it is worded", () => {
   // also after the notes were edited on the Final draft step
   assert.ok(isPhoneRule(withEdits(defaultDraft(p, inputs), { notes: ["Check-in is at 13:30.", "No mobile phones on safari."] }).notes[0]));
 });
+
+test("the Master data exclusion about flights goes when the trip has a flight, stays when it does not", () => {
+  const p = twoLodges();
+  const blocks = [{ kind: "exclusions", body: "Flights and train tickets unless mentioned in inclusions.\nPersonal expenses.", park_id: null, property_id: null, is_default: true }];
+  assert.ok(defaultDraft(p, { ...inputs, blocks }).exclusions.some((x) => /flights and train/i.test(x)));
+  p.flights = [{ from: "Delhi", to: "Jabalpur" }];
+  const d = defaultDraft(p, { ...inputs, blocks });
+  assert.ok(!d.exclusions.some((x) => /flights/i.test(x)), d.exclusions.join(" | "));
+  assert.ok(d.exclusions.includes("Personal expenses."));
+});

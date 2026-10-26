@@ -51,6 +51,7 @@ export interface ClientView {
   // Know about the parks: the short text, the main image, the wildlife photos and the "Read more" link
   parks: { id: string; name: string; description: string; hero: string | null; photos: string[]; website: string | null }[];
   driveHours: Record<string, number>; // "from|to" location ids -> hours
+  placeNames: Record<string, string>; // location id -> name (the transfers of the day)
   heroUrl: string | null;
   lodges: { id: string; name: string; description: string; photos: string[]; website: string | null }[];
   parkNames: Record<string, string>;
@@ -102,7 +103,7 @@ async function loadClientViewUncached(link: string): Promise<ClientView | null> 
 
   const roomIds = [...new Set(plan.stops.map((s) => s.room_category_id).filter(Boolean))];
   const locIds = [...new Set(plan.days.flatMap((d) => (d.transfer ? [d.transfer.from_location_id, d.transfer.to_location_id] : [])))];
-  const [props, parks, media, brand, blocks, settings, consultant, rooms, parkMedia, closures, roads] = await Promise.all([
+  const [props, parks, media, brand, blocks, settings, consultant, rooms, parkMedia, closures, roads, places] = await Promise.all([
     db.from("sales_properties").select("id, name, short_desc, long_desc, website").in("id", propertyIds),
     db.from("sales_parks").select("*").in("id", parkIds), // "*": the website column is new (sales_v3_flights_parks.sql)
     db.from("sales_media").select("owner_id, storage_path, is_cover, sort").eq("owner_type", "property").in("owner_id", propertyIds).order("sort"),
@@ -114,6 +115,7 @@ async function loadClientViewUncached(link: string): Promise<ClientView | null> 
     db.from("sales_media").select("owner_id, storage_path, is_cover, sort").eq("owner_type", "park").in("owner_id", parkIds).order("sort"),
     db.from("sales_park_closures").select("*").in("park_id", parkIds),
     locIds.length ? db.from("sales_transfer_rates").select("from_location_id, to_location_id, drive_hours").eq("active", true).not("drive_hours", "is", null).in("from_location_id", locIds) : Promise.resolve({ data: [] }),
+    locIds.length ? db.from("sales_locations").select("id, name").in("id", locIds) : Promise.resolve({ data: [] }),
   ]);
 
   const bucket = db.storage.from(MEDIA_BUCKET);
@@ -244,6 +246,7 @@ async function loadClientViewUncached(link: string): Promise<ClientView | null> 
     stays,
     parks: parkList,
     driveHours,
+    placeNames: Object.fromEntries(rows(places).map((r) => [String(r.id), String(r.name)])),
     heroUrl,
     lodges,
     parkNames,

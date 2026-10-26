@@ -218,7 +218,8 @@ test("Delhi, the lodges, Khajuraho, Delhi: days in order, city transfers and fli
   // Khajuraho to Delhi by air: hotel > airport, flight, airport > hotel
   const fly = p.days[10];
   assert.equal(fly.title, "Khajuraho to Delhi");
-  assert.match(fly.text, /^Fly from Khajuraho to Delhi/);
+  assert.match(fly.text, /^After breakfast, check out and transfer to Khajuraho Airport for the flight to Delhi\. On arrival, transfer to Roseate House\./);
+  assert.match(p.days[1].text, /^After breakfast, check out of Roseate House and transfer to Delhi Airport for the flight to Nagpur\. On arrival at Nagpur Airport, drive to /);
   assert.deepEqual(fly.city_transfers!.map((t) => `${t.from_label} > ${t.to_label}`), ["Radisson > Khajuraho Airport", "Delhi Airport > Roseate House"]);
   assert.ok(fly.items.some((i) => i.title === "Flight Khajuraho to Delhi"));
   const last = p.days[11];

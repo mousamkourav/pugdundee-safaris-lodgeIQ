@@ -244,3 +244,22 @@ test("price per guest: adults, the extra adult, a child and an infant; the share
   // "per person" is now per adult, not the total divided by the children too
   assert.equal(r.perPerson, s.adult);
 });
+
+test("a full-day safari with no safari rate is priced from the lodge's full-day add-on (any lodge in the park)", () => {
+  const fd: PricingData = {
+    ...data,
+    properties: [...data.properties, { id: "TH", name: "Tree House Hideaway", park_id: "TADOBA" }],
+    addons: [{ id: "FD", name: "Full-day safari (up to 3 guests)", property_id: data.properties[0].id, pricing_unit: "per_vehicle", rate: 125000, tax_pct: 5, active: true }],
+    safariRates: data.safariRates.filter((r) => r.session !== "full_day"),
+  };
+  const park = data.properties[0].park_id!;
+  const r = priceTrip({ ...trip, adults: 2, safaris: [{ date: "2027-01-18", park_id: park, zone: "core", session: "full_day" }] }, fd);
+  const l = r.lines.find((x) => x.kind === "safari")!;
+  assert.ok(!l.missing);
+  assert.equal(l.ref_id, "FD");
+  assert.equal(l.amount, 131250); // 1,25,000 + 5% GST, one jeep for 2 guests
+  assert.ok(!r.missing.some((m) => m.kind === "safari"));
+  // 4 guests: 2 jeeps (up to 3 per jeep)
+  const four = priceTrip({ ...trip, adults: 4, stays: trip.stays.map((s) => ({ ...s, rooms: 2 })), safaris: [{ date: "2027-01-18", park_id: park, zone: "core", session: "full_day" }] }, fd);
+  assert.equal(four.lines.find((x) => x.kind === "safari")!.quantity, 2);
+});

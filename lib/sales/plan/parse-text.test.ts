@@ -162,3 +162,11 @@ test("a night at a city hotel from Master data, without the city's name, is a ni
   assert.equal(p.cityStays![2].hotel, "Roseate House");
   assert.equal(p.arrival_date, "2027-03-16");
 });
+
+test("'1 night khajuraho and 1 night delhi' without 'in': two city nights at the end, not the arrival", () => {
+  const withAir: BuilderContext = { ...ctx, locations: [...ctx.locations, { id: "KHJ", name: "Khajuraho Airport", type: "airport", property_id: null }] };
+  const p = extractTrip("3 nights tadoba, 1 night khajuraho and 1 night delhi for 1 double", withAir, "2026-10-26");
+  assert.deepEqual(p.cityStays!.map((c) => `${c.when} ${c.city} ${c.nights}`), ["after Khajuraho 1", "after Delhi 1"]);
+  assert.notEqual(p.arrival_place, "Khajuraho Airport");
+  assert.equal(p.departure_place, "Khajuraho Airport");
+});
