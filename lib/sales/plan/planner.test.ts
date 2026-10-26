@@ -338,3 +338,16 @@ test("'full-day safari' at a lodge: one day becomes a full-day safari, not an ex
   assert.ok(full[0].safaris[0].naturalist);
   assert.ok(!p.days.some((d) => d.items.some((i) => /full-day/i.test(i.title))));
 });
+
+test("flights take the airline, times and fare from Master data > Flight routes", () => {
+  const p = sheetPlan();
+  p.city_stays = [{ when: "before", city: "Delhi", nights: 1 }];
+  p.flights = [{ from: "Delhi", to: "Nagpur" }];
+  const withRoutes: BuilderContext = { ...ctx, flightRoutes: [{ id: "R1", from_city: "Delhi", to_city: "Nagpur", airline: "IndiGo", flight_no: "6E 123", depart_time: "08:30", arrive_time: "10:10", fare: 9500, cabin: "Economy" }] };
+  p.days = buildDays(p, withRoutes);
+  const f = p.days.flatMap((d) => d.items).find((i) => i.type === "flight")!;
+  assert.deepEqual([f.flight!.airline, f.flight!.number, f.flight!.time, f.flight!.arrive, f.flight!.fare_pp, f.flight!.route_id], ["IndiGo", "6E 123", "08:30", "10:10", 9500, "R1"]);
+  // priced: fare x guests
+  const t = planToTrip(p, "2026-10-05");
+  assert.ok(t.custom_items!.some((c) => c.group === "flight" && c.amount === 9500 * p.guest.adults));
+});

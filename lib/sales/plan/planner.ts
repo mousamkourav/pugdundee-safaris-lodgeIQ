@@ -147,7 +147,7 @@ function carryItems(oldDays: PlanDay[], days: PlanDay[]): PlanDay[] {
 export function buildDays(plan: Plan, ctx: BuilderContext): PlanDay[] {
   const fresh = buildDaysFresh(plan, ctx).map((d) => ({ ...d, items: [] as PlanItem[] }));
   if (!fresh.length) return fresh;
-  return carryItems(plan.days ?? [], addFlights(plan, addCityDays(plan, applyWants(plan, ctx, fresh), ctx)));
+  return carryItems(plan.days ?? [], addFlights(plan, addCityDays(plan, applyWants(plan, ctx, fresh), ctx), ctx));
 }
 
 // The add-on at this lodge (else a general one) whose name has all the words, cheapest first.
@@ -486,7 +486,7 @@ function hotelOf(ctx: BuilderContext, c: CityStay): { id: string; label: string 
 // Flights go on the day they are taken, in trip order: leaving a city, on the first day
 // of what comes next (or the last day); arriving in a city, on its first day. Other
 // flights: the first into the first lodge's day, the rest out on the last lodge day.
-function addFlights(plan: Plan, days: PlanDay[]): PlanDay[] {
+function addFlights(plan: Plan, days: PlanDay[], ctx?: BuilderContext): PlanDay[] {
   const flights = plan.flights ?? [];
   if (!flights.length) return days;
   const segs = segments(plan);
@@ -516,6 +516,8 @@ function addFlights(plan: Plan, days: PlanDay[]): PlanDay[] {
       cursor = b;
     } else at = i === 0 ? firstLodge : lastLodge;
     if (at < 0) return;
+    // the route from Master data > Flight routes (airline, times, fare per person), when there is one
+    const route = (ctx?.flightRoutes ?? []).find((r) => sameCity(r.from_city, f.from) && sameCity(r.to_city, f.to));
     const item: PlanItem = {
       id: `auto-flight-${i}`,
       type: "flight",
@@ -524,7 +526,9 @@ function addFlights(plan: Plan, days: PlanDay[]): PlanDay[] {
       price: null,
       addon_id: null,
       qty: null,
-      flight: { from: f.from, to: f.to, airline: "", number: "", time: f.time ?? "", pnr: "" },
+      flight: route
+        ? { from: f.from, to: f.to, airline: route.airline, number: route.flight_no, time: f.time || route.depart_time, arrive: route.arrive_time, pnr: "", fare_pp: route.fare || null, cabin: route.cabin || "Economy", route_id: route.id }
+        : { from: f.from, to: f.to, airline: "", number: "", time: f.time ?? "", pnr: "" },
       auto: `flight:${i}:${f.from}>${f.to}`,
     };
     out[at] = { ...out[at], items: [...out[at].items, item] };

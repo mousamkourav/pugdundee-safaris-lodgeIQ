@@ -211,9 +211,9 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
           </div>
           <div className="relative px-6 pb-10 sm:px-12 sm:pb-14">
             <p className="text-xs uppercase tracking-[0.3em] text-[var(--color-gold-200,#EBD9A0)]">A private safari prepared for</p>
-            <p className="mt-1 font-display text-3xl font-semibold leading-tight !text-white sm:text-[2.6rem]">{view.guestName}</p>
-            <h1 className="mt-5 max-w-3xl font-display text-[2.6rem] font-semibold leading-[1.05] !text-white sm:text-6xl">{view.title}</h1>
-            {view.routeLine && <p className="mt-4 font-display text-xl italic text-[var(--color-gold-200,#EBD9A0)] sm:text-2xl">{view.routeLine}</p>}
+            <p className="mt-1 font-display text-2xl font-semibold leading-tight !text-white sm:text-3xl">{view.guestName}</p>
+            <h1 className="mt-5 max-w-3xl font-display text-[2.1rem] font-semibold leading-[1.1] !text-white sm:text-5xl">{view.title}</h1>
+            {view.routeLine && <p className="mt-4 font-display text-xl italic text-[var(--color-gold-200,#EBD9A0)] sm:text-xl">{view.routeLine}</p>}
             <div className="mt-6 h-px w-24 bg-[var(--color-gold-300,#DDC277)]" />
             <p className="mt-5 text-base text-white/90 sm:text-lg">
               {view.dateless ? "Travel dates to be confirmed" : <>{long(view.arrival)} &ndash; {long(view.departure)}</>}
@@ -233,12 +233,12 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
           <section data-pdf-block="" className="space-y-6">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--color-gold-600,#A8851C)]">Your journey at a glance</p>
-              <h2 className="mt-2 font-display text-3xl text-olive-800">The route</h2>
+              <h2 className="mt-2 font-display text-2xl text-olive-800">The route</h2>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {facts.map((f) => (
                 <div key={f.label} className={`rounded-2xl bg-sand-50 px-4 py-4 text-center ring-1 ring-sand-200 ${f.wide ? "col-span-2 flex flex-col justify-center" : ""}`}>
-                  <p className={`font-display font-semibold text-olive-800 ${f.wide ? "text-lg leading-snug sm:text-xl" : "text-4xl"}`}>{f.n}</p>
+                  <p className={`font-display font-semibold text-olive-800 ${f.wide ? "text-lg leading-snug sm:text-xl" : "text-3xl"}`}>{f.n}</p>
                   <p className="mt-1 text-xs uppercase tracking-[0.15em] text-sand-500">{f.label}</p>
                 </div>
               ))}
@@ -269,7 +269,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
           {/* ---------------- about ---------------- */}
           {view.sections.about && (
             <section data-pdf-block="">
-              <p className="border-l-2 border-[var(--color-gold-400,#D2AD4C)] pl-5 font-display text-xl italic leading-relaxed text-olive-800 sm:text-2xl">{view.sections.about}</p>
+              <p className="border-l-2 border-[var(--color-gold-400,#D2AD4C)] pl-5 font-display text-xl italic leading-relaxed text-olive-800 sm:text-xl">{view.sections.about}</p>
             </section>
           )}
 
@@ -277,7 +277,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
           <section>
             <div data-pdf-block="">
               <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--color-gold-600,#A8851C)]">Day by day</p>
-              <h2 className="mt-2 font-display text-3xl text-olive-800">Your itinerary</h2>
+              <h2 className="mt-2 font-display text-2xl text-olive-800">Your itinerary</h2>
             </div>
             <ol className="mt-8 space-y-10">
               {plan.days.map((d, i) => {
@@ -327,7 +327,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                   <li key={i} className="space-y-6">
                     <div data-pdf-block="" className="grid gap-4 sm:grid-cols-[110px_1fr]">
                       <div className="flex items-baseline gap-3 sm:block">
-                        <p className="font-display text-5xl font-semibold leading-none text-[var(--color-gold-500,#C9A227)]">{pad2(i + 1)}</p>
+                        <p className="font-display text-3xl font-semibold leading-none text-[var(--color-gold-500,#C9A227)]">{pad2(i + 1)}</p>
                         {!view.dateless && (
                           <p className="text-xs uppercase tracking-[0.15em] text-sand-500 sm:mt-2">
                             {dayName(d.date)} {short(d.date)}
@@ -335,7 +335,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                         )}
                       </div>
                       <div>
-                        <h3 className="font-display text-2xl leading-snug text-olive-800">{d.title}</h3>
+                        <h3 className="font-display text-xl leading-snug text-olive-800">{d.title}</h3>
                         <p className="mt-2 whitespace-pre-line">{d.text}</p>
                         {d.safaris.length > 0 && (
                           <div className="mt-3 flex flex-wrap gap-2">
@@ -369,7 +369,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                     {lodge && (
                       <div data-pdf-block="" className="-mx-5 bg-sand-50 px-5 py-6 sm:mx-0 sm:rounded-2xl sm:px-8 sm:py-8">
                         <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--color-gold-600,#A8851C)]">Where you stay</p>
-                        <h3 className="mt-1 font-display text-3xl text-olive-800">{lodge.name}</h3>
+                        <h3 className="mt-1 font-display text-2xl text-olive-800">{lodge.name}</h3>
                         {d.park_id && <p className="text-sm text-sand-500">{view.parkNames[d.park_id]}</p>}
                         {(() => {
                           const st = view.stays.find((x) => x.property_id === lodge.id);
@@ -407,7 +407,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
             <section className="space-y-4">
               <div data-pdf-block="">
                 <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--color-gold-600,#A8851C)]">The wilderness</p>
-                <h2 className="mt-2 font-display text-3xl text-olive-800">Know about the parks</h2>
+                <h2 className="mt-2 font-display text-2xl text-olive-800">Know about the parks</h2>
               </div>
               <div className="-mx-5 divide-y divide-sand-200 bg-sand-50 sm:mx-0 sm:rounded-2xl sm:ring-1 sm:ring-sand-200">
                 {view.parks
@@ -422,7 +422,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                             <img src={p.hero} alt="" className="h-12 w-16 shrink-0 rounded-lg object-cover" />
                           )}
                           <span className="min-w-0 flex-1 font-display text-xl text-olive-800">{p.name}</span>
-                          <span className="plus grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-2xl leading-none text-olive-700 ring-1 ring-sand-300 transition" aria-hidden="true">+</span>
+                          <span className="plus grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-xl leading-none text-olive-700 ring-1 ring-sand-300 transition" aria-hidden="true">+</span>
                           <span className="sr-only">Show more about {p.name}</span>
                         </summary>
                         <div className="space-y-4 px-5 pb-7 sm:px-8">
@@ -446,7 +446,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                       </details>
                       {/* in the PDF: open, with three wildlife photos */}
                       <div data-pdf-block="" className="pdf-only gap-4 px-5 py-6 sm:px-8">
-                        <h3 className="font-display text-2xl text-olive-800">{p.name}</h3>
+                        <h3 className="font-display text-xl text-olive-800">{p.name}</h3>
                         {p.hero && (
                           // eslint-disable-next-line @next/next/no-img-element -- public storage URL
                           <img src={p.hero} alt="" className="aspect-[16/9] w-full rounded-2xl object-cover" />
@@ -482,7 +482,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                     const [first, ...rest] = paxLines(view.perPerson, view.split, (n) => money(n, view.currency));
                     return (
                       <>
-                        <p className="font-display text-5xl font-semibold text-[var(--color-gold-200,#EBD9A0)]">{first.amount}</p>
+                        <p className="font-display text-4xl font-semibold text-[var(--color-gold-200,#EBD9A0)]">{first.amount}</p>
                         <p className="mt-1 text-white/75">
                           {first.label} &middot; {view.guests} guest{view.guests === 1 ? "" : "s"}
                         </p>
@@ -501,7 +501,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                 </div>
                 <div className="sm:text-right">
                   <p className="text-sm uppercase tracking-[0.15em] text-white/60">Total</p>
-                  <p className="font-display text-3xl font-semibold">{money(view.total, view.currency)}</p>
+                  <p className="font-display text-2xl font-semibold">{money(view.total, view.currency)}</p>
                   <p className="text-sm text-white/60">Valid until {long(view.validUntil)}</p>
                 </div>
               </div>
@@ -562,7 +562,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
           {/* ---------------- what is included ---------------- */}
           <section data-pdf-block="" className="grid gap-8 sm:grid-cols-2">
             <div>
-              <h3 className="font-display text-2xl text-olive-800">Included</h3>
+              <h3 className="font-display text-xl text-olive-800">Included</h3>
               <ul className="mt-4 space-y-2.5">
                 {view.sections.inclusions.map((t, i) => (
                   <li key={i} className="flex gap-3">
@@ -573,7 +573,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
               </ul>
             </div>
             <div>
-              <h3 className="font-display text-2xl text-olive-800">Not included</h3>
+              <h3 className="font-display text-xl text-olive-800">Not included</h3>
               <ul className="mt-4 space-y-2.5 text-sand-600">
                 {view.sections.exclusions.map((t, i) => (
                   <li key={i} className="flex gap-3">
@@ -587,7 +587,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
 
           {/* ---------------- payments ---------------- */}
           <section data-pdf-block="" className="border-t border-sand-200 pt-10">
-            <h3 className="font-display text-2xl text-olive-800">Payment schedule</h3>
+            <h3 className="font-display text-xl text-olive-800">Payment schedule</h3>
             <div className="mt-5 divide-y divide-sand-200 rounded-2xl ring-1 ring-sand-200">
               {view.payments.map((p, i) => (
                 <div key={i} className="flex items-center justify-between gap-4 px-5 py-4">
@@ -604,7 +604,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
 
           {view.sections.cancellation.length > 0 && (
             <section data-pdf-block="" className="border-t border-sand-200 pt-10">
-              <h3 className="font-display text-2xl text-olive-800">Cancellation policy</h3>
+              <h3 className="font-display text-xl text-olive-800">Cancellation policy</h3>
               <ul className="mt-5 space-y-3 text-[15px] leading-relaxed text-sand-600">
                 {view.sections.cancellation.map((t, i) => (
                   <li key={i} className="flex gap-3">
@@ -618,7 +618,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
 
           {view.sections.notes.length > 0 && (
             <section data-pdf-block="" className="border-t border-sand-200 pt-10">
-              <h3 className="font-display text-2xl text-olive-800">Good to know</h3>
+              <h3 className="font-display text-xl text-olive-800">Good to know</h3>
               <ul className="mt-5 space-y-3 text-[15px] leading-relaxed text-sand-600">
                 {/* the mobile-phone rule is already first (lib/sales/plan/draft.ts) */}
                 {view.sections.notes.map((t, i) => (
@@ -634,7 +634,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
 
         {/* ---------------- footer ---------------- */}
         <footer data-pdf-block="" className="bg-[var(--color-olive-900,#2B3318)] px-6 py-10 text-white sm:px-12">
-          <p className="font-display text-2xl text-[var(--color-gold-200,#EBD9A0)]">We look forward to welcoming you to the wild.</p>
+          <p className="font-display text-xl text-[var(--color-gold-200,#EBD9A0)]">We look forward to welcoming you to the wild.</p>
 
           {/* 1. your safari consultant */}
           {view.consultant.name && (

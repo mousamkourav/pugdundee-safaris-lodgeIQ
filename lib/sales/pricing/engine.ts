@@ -349,7 +349,8 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     // A full-day safari with no safari rate: the lodges keep it as an add-on ("Full-day safari
     // (up to 3 guests)", per jeep). That lodge's own first, then one in the same park, then a general one.
     if (!rate && s.session === "full_day") {
-      const fd = data.addons.filter((a) => a.active && /full[\s-]?day\s+safari/i.test(a.name));
+      // the safari itself ("Full-day safari (up to 3 guests)"), not "Safari lunch, full-day safari"
+      const fd = data.addons.filter((a) => a.active && /^\s*full[\s-]?day\s+(?:jeep\s+)?safari/i.test(a.name) && !/lunch|breakfast|meal|picnic/i.test(a.name));
       const inPark = new Set(data.properties.filter((p) => p.park_id === s.park_id).map((p) => p.id));
       const addon = fd.find((a) => billTo && a.property_id === billTo) ?? fd.find((a) => a.property_id && inPark.has(a.property_id)) ?? fd.find((a) => !a.property_id);
       if (addon) {

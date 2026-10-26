@@ -263,3 +263,22 @@ test("a full-day safari with no safari rate is priced from the lodge's full-day 
   const four = priceTrip({ ...trip, adults: 4, stays: trip.stays.map((s) => ({ ...s, rooms: 2 })), safaris: [{ date: "2027-01-18", park_id: park, zone: "core", session: "full_day" }] }, fd);
   assert.equal(four.lines.find((x) => x.kind === "safari")!.quantity, 2);
 });
+
+test("full-day safari: 'Safari lunch, full-day safari' is not the safari itself", () => {
+  const park = data.properties[0].park_id!;
+  const lodge = data.properties[0].id;
+  const fd: PricingData = {
+    ...data,
+    addons: [
+      { id: "LUNCH", name: "Safari lunch, full-day safari (outside jeeps)", property_id: null, pricing_unit: "per_vehicle", rate: 4000, tax_pct: 18, active: true },
+      { id: "FD", name: "Full-day safari (up to 3 guests)", property_id: lodge, pricing_unit: "per_vehicle", rate: 125000, tax_pct: 5, active: true },
+    ],
+    safariRates: data.safariRates.filter((r) => r.session !== "full_day"),
+  };
+  const l = priceTrip({ ...trip, adults: 2, safaris: [{ date: "2027-01-18", park_id: park, zone: "core", session: "full_day" }] }, fd).lines.find((x) => x.kind === "safari")!;
+  assert.equal(l.ref_id, "FD");
+  assert.equal(l.amount, 131250);
+  // only the lunch add-on: no price from it (the safari is a price to type)
+  const onlyLunch = priceTrip({ ...trip, adults: 2, safaris: [{ date: "2027-01-18", park_id: park, zone: "core", session: "full_day" }] }, { ...fd, addons: [fd.addons[0]] });
+  assert.ok(onlyLunch.lines.find((x) => x.kind === "safari")!.missing);
+});

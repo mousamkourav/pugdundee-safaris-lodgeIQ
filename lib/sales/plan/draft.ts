@@ -239,20 +239,11 @@ export const shortPark = (name: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-const HEADLINES = [
-  "Into the Heart of Tiger Country",
-  "On the Trail of the Tiger",
-  "Where the Wild Tigers Roam",
-  "Journey Through Tiger Country",
-  "Footprints in the Sal Forest",
-  "Tigers, Forests and Starlit Nights",
-];
 
-// The same headline every time for a given route (it can be changed on Final draft).
-export function headlineFor(seed: string) {
-  let h = 0;
-  for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return HEADLINES[h % HEADLINES.length];
+// One headline for every itinerary (it can still be changed on Final draft).
+export const HEADLINE = "Into the Heart of Tiger Country";
+export function headlineFor(_seed: string) {
+  return HEADLINE;
 }
 
 export function defaultDraft(plan: Plan, inp: DraftInputs): DraftSections {
