@@ -966,6 +966,11 @@ const KNOWN_WORDS = new Set(
 // Names are left out: a word written with a capital letter (not a code like "THH") is
 // taken to be a name, and so are words after Mr / Mrs.
 export function unknownWords(text: string, ctx: BuilderContext, hotels: { name: string }[] = []): string[] {
+  return [...new Set(unknownWordsAt(text, ctx, hotels).map((u) => u.phrase))].slice(0, 12);
+}
+
+// The same, with where each phrase starts in the text (to pair it with a correction).
+export function unknownWordsAt(text: string, ctx: BuilderContext, hotels: { name: string }[] = []): { phrase: string; at: number }[] {
   const known = new Set(KNOWN_WORDS);
   const names = [
     ...ctx.pricing.parks.map((p) => p.name),
@@ -980,11 +985,13 @@ export function unknownWords(text: string, ctx: BuilderContext, hotels: { name: 
     ...(ctx.readerRules ?? []).map((r) => r.phrase),
   ];
   for (const n of names) for (const w of n.toLowerCase().split(/[^a-z]+/)) if (w) known.add(w);
-  const clean = text.replace(/\b(?:mr|mrs|ms|miss|dr)\.?\s+[A-Za-z][a-zA-Z'-]*(?:\s+[A-Z][a-zA-Z'-]*)?/gi, " ");
-  const out: string[] = [];
+  // blanked to the same length, so positions stay those of the text
+  const clean = text.replace(/\b(?:mr|mrs|ms|miss|dr)\.?\s+[A-Za-z][a-zA-Z'-]*(?:\s+[A-Z][a-zA-Z'-]*)?/gi, (m) => " ".repeat(m.length));
+  const out: { phrase: string; at: number }[] = [];
   let run: string[] = [];
+  let runAt = 0;
   const flush = () => {
-    if (run.length) out.push(run.join(" "));
+    if (run.length) out.push({ phrase: run.join(" "), at: runAt });
     run = [];
   };
   for (const m of clean.matchAll(/[A-Za-z]+(?:'[a-z]+)?|[^A-Za-z\s]+/g)) {
@@ -1000,11 +1007,12 @@ export function unknownWords(text: string, ctx: BuilderContext, hotels: { name: 
       flush();
       continue;
     }
+    if (!run.length) runAt = m.index!;
     run.push(w);
     if (run.length === 3) flush();
   }
   flush();
-  return [...new Set(out)].slice(0, 12);
+  return out;
 }
 
 // ---------------------------------------------------------------- apply

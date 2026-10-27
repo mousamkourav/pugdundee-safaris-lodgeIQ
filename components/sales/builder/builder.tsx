@@ -354,7 +354,9 @@ export function Builder({
       try {
         // the first enquiry typed in this session teaches the AI assistant once the quote is saved
         const enquiry = messages.find((m) => m.role === "user" && m.text.trim().length > 15)?.text;
-        const res = await saveItinerary(JSON.stringify(plan), currentId, mode, enquiry);
+        // everything typed in this session: the reader logs the words it could not place
+        const typed = messages.filter((m) => m.role === "user").map((m) => m.text);
+        const res = await saveItinerary(JSON.stringify(plan), currentId, mode, enquiry, typed);
         if (res.error) setSaveError(res.error);
         else if (res.problems?.length) setSaveProblems(res.problems);
         else if (res.id) {

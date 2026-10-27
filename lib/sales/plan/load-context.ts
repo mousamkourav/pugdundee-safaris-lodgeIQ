@@ -10,7 +10,7 @@ const n = (v: unknown, f = 0) => (v === null || v === undefined || v === "" ? f 
 
 export async function loadBuilderContext(): Promise<{ ctx: BuilderContext; error: string | null }> {
   const supabase = await createClient();
-  const [{ data: pricing, error: pricingError }, props, locs, rooms, tpl, content, settings, flights] = await Promise.all([
+  const [{ data: pricing, error: pricingError }, props, locs, rooms, tpl, content, settings, flights, rules, glossary] = await Promise.all([
     loadPricingData(),
     supabase.from("sales_properties").select("*").eq("active", true),
     supabase.from("sales_locations").select("id, name, type, property_id, code").eq("active", true).order("name"),
@@ -30,6 +30,9 @@ export async function loadBuilderContext(): Promise<{ ctx: BuilderContext; error
     supabase.from("sales_settings").select("data").eq("id", 1).maybeSingle(),
     // Master data > Flight routes (the table may not exist yet: then none)
     supabase.from("sales_flight_routes").select("id, from_city, to_city, airline, flight_no, depart_time, arrive_time, fare, cabin").eq("active", true).order("from_city").order("to_city").order("sort"),
+    // what the reader was taught: approved rules, and short glossary terms (tables may not exist yet: then none)
+    supabase.from("sales_reader_rules").select("phrase, meaning").eq("status", "approved").limit(500),
+    supabase.from("sales_glossary").select("term, meaning").eq("active", true).limit(300),
   ]);
   const err = pricingError ?? [props, locs, rooms, tpl, content, settings].find((r) => r.error)?.error?.message ?? null;
   const slabs = ((settings.data as { data?: { cancellation_slabs?: unknown } } | null)?.data?.cancellation_slabs ?? []) as Row[];
@@ -78,6 +81,12 @@ export async function loadBuilderContext(): Promise<{ ctx: BuilderContext; error
             fare: n(r.fare, 15000),
             cabin: s(r.cabin) || "Economy",
           })),
+      readerRules: [
+        ...(rules.error ? [] : rows(rules).map((r) => ({ phrase: s(r.phrase), meaning: s(r.meaning) }))),
+        // a glossary meaning the reader can read in place of the term ("THH" = "Tree House Hideaway (Bandhavgarh)"),
+        // not an explanation ("core zone, where the tigers are")
+        ...(glossary.error ? [] : rows(glossary).map((r) => ({ phrase: s(r.term), meaning: s(r.meaning) })).filter((g) => g.meaning.length <= 40 && !/[,;:=]/.test(g.meaning))),
+      ].filter((r) => r.phrase && r.meaning),
       cancellation: (Array.isArray(slabs) ? slabs : []).map((c) => ({
         min_days: n(c.min_days),
         max_days: c.max_days === null || c.max_days === undefined || c.max_days === "" ? null : n(c.max_days),

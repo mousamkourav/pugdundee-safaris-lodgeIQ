@@ -3,7 +3,8 @@
 import { safe } from "@/lib/sales/safe";
 import { makeShareSlug } from "@/lib/sales/share-slug";
 import { planToExample } from "@/lib/sales/plan/ai";
-import { scrubForAI } from "@/lib/sales/plan/parse-text";
+import { scrubForAI, unknownWords } from "@/lib/sales/plan/parse-text";
+import { readerRows, suggestRules } from "@/lib/sales/plan/learn";
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, isSalesUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -38,7 +39,7 @@ async function insertVersion(
 // mode "final": the full checks, then the query is Open with a client link.
 // The price is always recalculated here from current master data and the
 // prices the sales person typed; the browser's numbers are never trusted.
-async function saveItineraryUnsafe(planJson: string, queryId: string | null, mode: SaveMode = "final", enquiry?: string): Promise<SaveResult> {
+async function saveItineraryUnsafe(planJson: string, queryId: string | null, mode: SaveMode = "final", enquiry?: string, typed?: unknown): Promise<SaveResult> {
   const cu = await getCurrentUser();
   if (!cu?.user || !isSalesUser(cu.profile?.role)) return { error: "You do not have access to Sales." };
 
@@ -113,6 +114,7 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
       if (fin.error) return { error: "Saved, but the draft could not be finalised: " + fin.error.message };
     }
     if (mode === "final") await learnFrom(supabase, enquiry, plan, ctx, queryId, cu.user.id);
+    await teachReader(typed, enquiry, plan, ctx, today, cu.user.id, mode);
     revalidatePath(`/sales/queries/${queryId}`);
     revalidatePath("/sales", "layout");
     return { id: queryId };
@@ -133,6 +135,7 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
     return { error: "Could not save the itinerary: " + ins.error.message };
   }
   if (mode === "final") await learnFrom(supabase, enquiry, plan, ctx, id, cu.user.id);
+  await teachReader(typed, enquiry, plan, ctx, today, cu.user.id, mode);
   revalidatePath("/sales", "layout");
   return { id };
 }
@@ -155,7 +158,40 @@ async function learnFrom(
     .then(() => undefined, () => undefined); // the table may not exist yet: never block a save
 }
 
+// Teaching the built-in reader (Master data > Reader rules / Unknown words): the words it
+// could not place in the messages typed, and, for a quote saved for the guest, rules
+// suggested from what the sales person changed. Names and contacts are removed first.
+// Written with the service key (members cannot change rules); only a Sales admin approves.
+async function teachReader(
+  typed: unknown,
+  enquiry: string | undefined,
+  plan: Plan,
+  ctx: Awaited<ReturnType<typeof loadBuilderContext>>["ctx"],
+  today: string,
+  userId: string,
+  mode: SaveMode
+) {
+  try {
+    const clean = (t: string) => scrubForAI(t.slice(0, 2000), [plan.guest.name]).trim();
+    const messages = (Array.isArray(typed) ? typed : []).filter((t): t is string => typeof t === "string").slice(-20).map(clean);
+    const first = clean(enquiry ?? "");
+    const unknown = [...new Set(messages.flatMap((m) => unknownWords(m, ctx)))].slice(0, 20);
+    const suggestions = mode === "final" && first ? suggestRules(first, plan, ctx, today) : [];
+    const rows = readerRows(suggestions, unknown, first || messages[0] || "");
+    if (!rows.length) return;
+    const admin = createAdminClient();
+    for (const r of rows) {
+      const { data: found, error } = await admin.from("sales_reader_rules").select("id, seen").eq("source", r.source).ilike("phrase", r.phrase).maybeSingle();
+      if (error) return; // the table is not there yet (sales_reader_rules.sql not run)
+      if (found) await admin.from("sales_reader_rules").update({ seen: Number((found as { seen: number }).seen) + 1 }).eq("id", (found as { id: string }).id);
+      else await admin.from("sales_reader_rules").insert({ ...r, status: "suggested", created_by: userId });
+    }
+  } catch {
+    // never block a save
+  }
+}
+
 // Public actions: same as above, but failures come back as { error } instead of crashing.
-export async function saveItinerary(planJson: string, queryId: string | null, mode: SaveMode = "final", enquiry?: string): Promise<SaveResult> {
-  return safe("saveItinerary", () => saveItineraryUnsafe(planJson, queryId, mode, enquiry));
+export async function saveItinerary(planJson: string, queryId: string | null, mode: SaveMode = "final", enquiry?: string, typed?: string[]): Promise<SaveResult> {
+  return safe("saveItinerary", () => saveItineraryUnsafe(planJson, queryId, mode, enquiry, typed));
 }
