@@ -29,6 +29,9 @@ export interface PlanStop {
   want_safaris?: number | null; // jeep safaris in total here; null = as many as fit
   want_naturalists?: number | null; // how many with a naturalist; -1 = all of them
   want_extras?: string[]; // experience keywords, e.g. "bush dinner", "boat safari"
+  want_sessions?: "morning" | "afternoon"; // only morning (or only evening) safaris
+  want_jeeps?: number; // jeeps on every safari here ("2 jeeps per safari")
+  want_qty?: Record<string, number>; // how many of an experience, by keyword ("camera": 1)
 }
 
 // Nights outside our lodges: a city (Delhi before the safari, Khajuraho and Delhi
@@ -159,7 +162,15 @@ export interface Plan {
   own_vehicle?: boolean; // the guests travel in their own vehicle: no transfers are planned or charged
   transfer_vehicles?: number | null; // vehicles on every transfer; null = enough for the group
   route_vehicles?: Record<string, number>; // vehicles on one road ("from>to" place ids); 0 = not needed
+  arrival_mode?: TravelMode; // how the guests reach the first lodge (or the first city)
+  departure_mode?: TravelMode; // how they leave at the end
+  between_lodges?: "ours" | "own"; // lodge to lodge: our car, or their own vehicle (no charge)
+  requests?: string[]; // special requests: "honeymoon", "vegetarian", "photographers"...
 }
+
+// flight / train: to or from that airport or station (with our transfer to the lodge);
+// own: their own vehicle, no transfer; transfer: our car from a place in the city.
+export type TravelMode = "flight" | "train" | "own" | "transfer";
 
 export interface ContentBlock {
   kind: string;
@@ -185,6 +196,9 @@ export interface BuilderContext {
   content: ContentBlock[]; // guest-facing text blocks (inclusions, notes, terms)
   cancellation: CancellationSlab[];
   flightRoutes?: FlightRoute[]; // Master data > Flight routes (empty before sales_v3_flights_parks.sql)
+  // Phrases the reader was taught (approved reader rules, the AI glossary): the phrase is
+  // read as its meaning, e.g. "tadoba core" -> "Waghoba Eco Lodge".
+  readerRules?: { phrase: string; meaning: string }[];
 }
 
 export interface FlightRoute {
