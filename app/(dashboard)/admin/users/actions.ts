@@ -61,3 +61,43 @@ export async function inviteUser(formData: FormData) {
   revalidatePath("/admin/users");
   redirect("/admin/users?ok=1");
 }
+
+// A password the user can use straight away (the same rule as for Sales members).
+function passwordProblem(pw: string): string | null {
+  if (pw.length < 8) return "The password needs at least 8 characters.";
+  if (!/[A-Za-z]/.test(pw) || !/\d/.test(pw)) return "The password needs at least one letter and one number.";
+  return null;
+}
+
+// The super admin sets a new password for a member (when the reset link does not reach them).
+// The member signs in with it at once; tell them to change it under My account.
+export async function setUserPassword(formData: FormData) {
+  const cu = await getCurrentUser();
+  if (!cu?.user || !isSuperAdmin(cu.profile?.role)) redirect("/admin/users?pwerror=" + encodeURIComponent("Only a super admin can set passwords."));
+
+  const userId = String(formData.get("user_id") ?? "").trim();
+  const password = String(formData.get("password") ?? "");
+  const back = (msg: string, ok = false) => redirect(`/admin/users?${ok ? "pw" : "pwerror"}=${encodeURIComponent(msg)}`);
+  if (!/^[0-9a-f-]{36}$/i.test(userId)) back("Choose a user.");
+  const problem = passwordProblem(password);
+  if (problem) back(problem);
+
+  const admin = createAdminClient();
+  const { data: target } = await admin.from("profiles").select("id, full_name, role").eq("id", userId).maybeSingle();
+  if (!target) back("That user no longer exists.");
+  const t = target as { full_name: string | null; role: string | null };
+  // only a super admin may change another super admin's password
+  if (t.role === "super_admin" && cu.profile?.role !== "super_admin") back("Only a super admin can change a super admin's password.");
+
+  const { error } = await admin.auth.admin.updateUserById(userId, { password });
+  if (error) back("The password could not be changed: " + error.message);
+
+  // for the record: who changed whose password, never the password itself
+  await admin
+    .from("audit_log")
+    .insert({ actor: cu.user.id, action: "password_set_by_admin", table_name: "profiles", record_id: userId, diff: { user: t.full_name, at: new Date().toISOString() } })
+    .then(() => undefined, () => undefined);
+
+  revalidatePath("/admin/users");
+  back(`New password saved for ${t.full_name || "the user"}. They can sign in with it now.`, true);
+}

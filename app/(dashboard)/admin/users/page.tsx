@@ -5,16 +5,17 @@ import { requireUser, isAdmin, isSuperAdmin } from "@/lib/auth";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table";
 import { Field } from "@/components/field";
-import { inviteUser } from "./actions";
+import { inviteUser, setUserPassword } from "./actions";
 
 export default async function UsersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; ok?: string }>;
+  searchParams: Promise<{ error?: string; ok?: string; pw?: string; pwerror?: string }>;
 }) {
   const { profile } = await requireUser();
   if (!isAdmin(profile?.role)) redirect("/dashboard");
-  const { error, ok } = await searchParams;
+  const { error, ok, pw, pwerror } = await searchParams;
+  const canSetPasswords = isSuperAdmin(profile?.role);
 
   // Service-role read so admins can see all profiles (RLS would hide others).
   const admin = createAdminClient();
@@ -29,8 +30,36 @@ export default async function UsersPage({
     .select("id,name")
     .order("name");
 
+  // sign-in emails (they live in Supabase Auth, not in profiles)
+  const emails = new Map<string, string>();
+  if (canSetPasswords) {
+    const { data: list } = await admin.auth.admin.listUsers({ perPage: 1000 });
+    for (const u of list?.users ?? []) emails.set(u.id, u.email ?? "");
+  }
+
   const rows = (profiles ?? []).map((p) => ({
     name: p.full_name ?? "—",
+    email: emails.get(p.id) ?? "",
+    password:
+      canSetPasswords && (p.role !== "super_admin" || profile?.role === "super_admin") ? (
+        <details className="group">
+          <summary className="cursor-pointer list-none text-sm font-medium text-olive-700 hover:underline">Set password</summary>
+          <form action={setUserPassword} className="mt-2 flex flex-wrap items-center gap-2">
+            <input type="hidden" name="user_id" value={p.id} />
+            <input
+              name="password"
+              type="text"
+              required
+              minLength={8}
+              autoComplete="off"
+              placeholder="New password"
+              aria-label={`New password for ${p.full_name ?? "this user"}`}
+              className="w-40 rounded-lg border border-sand-300 bg-white px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-gold-500"
+            />
+            <button className="rounded-lg bg-olive-600 px-3 py-1 text-sm font-medium text-white transition hover:bg-olive-700">Save</button>
+          </form>
+        </details>
+      ) : null,
     role: (
       <span className="capitalize">{(p.role ?? "").replace("_", " ")}</span>
     ),
@@ -49,11 +78,20 @@ export default async function UsersPage({
             User created.
           </p>
         )}
+        {pw && <p className="mb-4 rounded-lg bg-success-bg px-3 py-2 text-sm text-success">{pw}</p>}
+        {pwerror && <p className="mb-4 rounded-lg bg-error-bg px-3 py-2 text-sm text-error">{pwerror}</p>}
+        {canSetPasswords && (
+          <p className="mb-3 text-sm text-sand-500">
+            Set password: for when the reset link does not reach someone. At least 8 characters with a letter and a number; they can sign in with it at once and change it under My account.
+          </p>
+        )}
         <DataTable
           columns={[
             { key: "name", label: "Name" },
+            ...(canSetPasswords ? [{ key: "email", label: "Email" }] : []),
             { key: "role", label: "Role" },
             { key: "status", label: "Status" },
+            ...(canSetPasswords ? [{ key: "password", label: "Password" }] : []),
           ]}
           rows={rows}
         />
