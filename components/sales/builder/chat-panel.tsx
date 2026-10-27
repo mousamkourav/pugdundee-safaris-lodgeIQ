@@ -82,6 +82,23 @@ export function ChatPanel({
                     ))}
                   </ul>
                 )}
+                {m === last && m.checklist && m.checklist.length > 0 && (
+                  <details open className="rounded-lg border border-sand-200 bg-white px-3 py-2 text-xs">
+                    <summary className="cursor-pointer font-semibold text-olive-800">
+                      Trip checklist: {m.checklist.filter((c) => c.ok).length} of {m.checklist.length} clear
+                    </summary>
+                    <ul className="mt-1.5 space-y-1">
+                      {m.checklist.map((c) => (
+                        <li key={c.key} className={`flex gap-1.5 ${c.ok ? "text-sand-700" : "text-warning"}`}>
+                          <Icon name={c.ok ? "check" : "alert"} className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${c.ok ? "text-success" : ""}`} />
+                          <span>
+                            <span className="font-medium">{c.label}:</span> {c.text}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
                 {m === last && m.quick && m.quick.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
                     {m.quick.map((q, k) => (

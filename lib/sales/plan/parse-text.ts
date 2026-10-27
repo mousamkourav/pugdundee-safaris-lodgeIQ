@@ -466,7 +466,8 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   // A month without a day: "1st week of Feb", "mid March", "in July". Asked, never guessed.
   if (!out.arrival_date) {
     const vague = low.match(new RegExp(`\\b((?:1st|first|2nd|second|3rd|third|4th|fourth|last)\\s+week|early|mid|middle|end|beginning|start)\\s+(?:of\\s+)?${MONTH}\\b`));
-    const inMonth = low.match(new RegExp(`\\b(?:in|during|for|month of|around)\\s+${MONTH}\\b(?!\\s*\\d)`));
+    // "in july 2 nights" is a month; "in july 2nd" would have been a date
+    const inMonth = low.match(new RegExp(`\\b(?:in|during|for|month of|around)\\s+${MONTH}\\b(?!\\s*\\d{1,2}(?:st|nd|rd|th)?\\b(?!\\s*(?:${UNIT_AFTER})\\b))`));
     const mo = vague ? monthOf(vague[2]) : inMonth ? monthOf(inMonth[1]) : undefined;
     if (mo) {
       out.month = mo;

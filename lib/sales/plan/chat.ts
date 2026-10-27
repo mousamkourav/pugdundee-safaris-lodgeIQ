@@ -12,10 +12,11 @@ import { countryName, findPhone } from "@/lib/sales/countries";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 import type { ISODate } from "@/lib/sales/pricing/types";
 import { mergePrimary } from "./ai";
-import { ROOM_MATCH, aliasesOf, extractTrip, lodgeNamedIn, locationAliases, matchByName, mergeParsed, roomWishIn, type ParsedTrip, type RoomWish } from "./parse-text";
+import { ROOM_MATCH, aliasesOf, extractTrip, lodgeNamedIn, locationAliases, matchByName, mergeParsed, roomWishIn, type Ask, type ParsedTrip, type RoomWish } from "./parse-text";
 import { buildDays, defaultStop, defaultVehicle, emptyPlan, lodgesInPark, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems } from "./planner";
 import type { BuilderContext, Plan, PlanStop } from "./types";
 import { cityHotelNamed, cityHotels, safariOnly, sameCity } from "./cities";
+import { tripChecklist, type CheckItem } from "./checklist";
 
 export interface ChatFlags {
   dateSet: boolean;
@@ -29,7 +30,11 @@ export interface ChatFlags {
   roomFor?: string | null; // the park the last Cottage / Tree House question was about
   hotelAsked?: string[]; // city stays ("before:Delhi") whose hotel has been asked
   hotelFor?: string | null;
-  pending: "parks" | "nights" | "date" | "adults" | "arrival" | "departure" | "lodge" | "room" | "hotel" | "name" | null;
+  nationalitySet?: boolean; // Indian / foreign (or the country) was said
+  legAsked?: boolean; // "our car or own vehicle between the lodges?" has been answered
+  asks?: Ask[]; // what the reader found unclear, asked one by one before the price
+  askFor?: string | null; // the ask the last question was
+  pending: "parks" | "nights" | "date" | "adults" | "arrival" | "departure" | "lodge" | "room" | "hotel" | "name" | "leg" | "ask" | null;
 }
 
 export interface QuickReply {
@@ -45,6 +50,7 @@ export interface ChatMessage {
   warnings?: string[]; // assumptions and problems (amber)
   quick?: QuickReply[];
   action?: "review";
+  checklist?: CheckItem[]; // the whole trip: ticks and questions
 }
 
 export interface ChatResult {
@@ -76,6 +82,9 @@ export function initialFlags(plan: Plan): ChatFlags {
     roomDecided: editing ? plan.stops.map((s) => s.park_id) : [],
     lodgeDecided: editing ? plan.stops.map((s) => s.park_id) : [],
     roomFor: null,
+    nationalitySet: editing,
+    legAsked: editing,
+    asks: [],
     pending: editing ? null : "parks",
   };
 }
@@ -126,7 +135,14 @@ export function chatTurn(
   }
 
   const next: Plan = JSON.parse(JSON.stringify(plan));
-  const f: ChatFlags = { ...flags, nightsUnknown: [...flags.nightsUnknown], roomDecided: [...(flags.roomDecided ?? [])], lodgeDecided: [...(flags.lodgeDecided ?? [])], hotelAsked: [...(flags.hotelAsked ?? [])] };
+  const f: ChatFlags = {
+    ...flags,
+    nightsUnknown: [...flags.nightsUnknown],
+    roomDecided: [...(flags.roomDecided ?? [])],
+    lodgeDecided: [...(flags.lodgeDecided ?? [])],
+    hotelAsked: [...(flags.hotelAsked ?? [])],
+    asks: [...(flags.asks ?? [])],
+  };
   const chips: string[] = [];
   const warnings: string[] = [];
   const parkName = (id: string) => ctx.pricing.parks.find((p) => p.id === id)?.name ?? "the park";
@@ -146,20 +162,16 @@ export function chatTurn(
   const nameM =
     msg.match(/\b(?:guest(?:'s)?\s+name|name)\s*(?:is|:|-)\s*([^,.;\n]{2,60})/i) ??
     msg.match(/\bfor\s+((?:mr|mrs|ms|miss|dr)\.?\s+[A-Za-z][^,.;\n]{1,50})/i) ??
-    msg.match(/^((?:mr|mrs|ms|miss|dr)\.?\s+[A-Za-z][A-Za-z&' -]{1,40}?)\s*(?=[,;\n]|$)/i); // "Mr Shah, 2 adults..."
+    msg.match(/^((?:mr|mrs|ms|miss|dr)\.?\s+[A-Za-z][A-Za-z&' -]{1,40}?)\s*(?=[,;\n]|$)/i) ?? // "Mr Shah, 2 adults..."
+    msg.match(/^((?:mr|mrs|ms|miss|dr)\.?\s+[A-Za-z][a-zA-Z'-]+)\s+(?:group|family|party|and family|ji)\b/i); // "Mrs Sharma group of 8"
   if (nameM) {
     // "Mr Shah from UK" -> name "Mr Shah" (the country goes to Nationality)
     next.guest.name = nameM[1].replace(/\s+(from|of|ex)\s+.*$/i, "").trim();
     chips.push(`guest ${next.guest.name}`);
   }
 
-  // ---- travelling in their own vehicle: no transfers at all
-  if (/\b(own (?:car|vehicle|cab|transport)|self[- ]?drive|apni (?:gaadi|gadi|car)|their (?:own )?car)\b/.test(low) && !next.own_vehicle) {
-    next.own_vehicle = true;
-    chips.push("own vehicle: no transfers");
-  }
-  // ---- "on their own": no pick-up or drop
-  if (/\b(on (their|his|her) own|self[- ]?drive|own (car|vehicle|transport)|no (pick ?up|drop|transfers?|airport))\b/.test(low)) {
+  // ---- "on their own": no pick-up or drop (their own vehicle is read with the trip, below)
+  if (/\b(on (their|his|her) own|no (pick ?up|drop|transfers?|airport))\b/.test(low)) {
     if (f.pending === "departure" || /\b(leav\w*|depart\w*|drop)\b/.test(low)) {
       next.departure_location_id = null; // only the way out
       f.departureAsked = true;
@@ -177,8 +189,11 @@ export function chatTurn(
   const removed = new Set<string>();
   for (const park of ctx.pricing.parks) {
     for (const a of aliasesOf(park.name)) {
-      const re = new RegExp(`\\b(remove|drop|skip|without|delete|cancel|exclude|no|instead of|replace)\\s+(the\\s+)?${a.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
-      if (re.test(msg) && next.stops.some((s) => s.park_id === park.id)) {
+      const name = a.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp(`\\b(remove|drop|skip|without|delete|cancel|exclude|no|instead of|replace)\\s+(the\\s+)?${name}\\b`, "i");
+      // Hindi, after the name: "pench hata do", "pench nikal do", "pench nahi"
+      const hindi = new RegExp(`\\b${name}\\s+(?:ko\\s+)?(?:hata\\s*(?:do|de|dijiye)|hatao|nikal\\s*(?:do|de)|nikalo|remove(?:\\s+karo)?|cancel(?:\\s+karo)?|nahi(?:\\s+chahiye)?)\\b`, "i");
+      if ((re.test(msg) || hindi.test(msg)) && next.stops.some((s) => s.park_id === park.id)) {
         next.stops = next.stops.filter((s) => s.park_id !== park.id);
         f.nightsUnknown = f.nightsUnknown.filter((x) => x !== park.id);
         removed.add(park.name);
@@ -222,6 +237,94 @@ export function chatTurn(
   parsed.parks = parsed.parks.filter((p) => !removed.has(p.name));
   warnings.push(...parsed.notes.filter((n) => !n.startsWith("Assumed the guest also leaves")));
 
+  // ---- a reply to "our car or their own vehicle between the lodges?" / "how do they leave?"
+  if (f.pending === "leg" && !parsed.parks.length) {
+    const own = /\b(own|apni|apna|khud|self|themselves|their)\b/.test(low);
+    const ours = !own && /\b(our|ours|we|us|car|transfer|arrange|yes)\b/.test(low);
+    if (own || ours) {
+      next.between_lodges = own ? "own" : "ours";
+      f.legAsked = true;
+      chips.push(own ? "between the lodges: their own vehicle" : "between the lodges: our car");
+      parsed = { ...parsed, own_all: false, between: undefined, arrival_mode: undefined, departure_mode: undefined };
+    }
+  }
+  if (f.pending === "departure" && parsed.own_all && !parsed.parks.length) {
+    parsed = { ...parsed, own_all: false, between: undefined, arrival_mode: undefined, departure_mode: "own" };
+  }
+
+  // ---- how they travel (their own vehicle, train, flight, our car)
+  if (parsed.own_all) {
+    if (!next.own_vehicle) chips.push("own vehicle all the way: no transfers");
+    next.own_vehicle = true;
+    next.arrival_mode = next.departure_mode = "own";
+    next.arrival_location_id = next.departure_location_id = null;
+    f.arrivalAsked = f.departureAsked = f.legAsked = true;
+  } else {
+    if (parsed.arrival_mode === "own") {
+      next.arrival_mode = "own";
+      next.arrival_location_id = null;
+      f.arrivalAsked = true;
+      chips.push("arriving in their own vehicle (no transfer)");
+    } else if (parsed.arrival_mode) next.arrival_mode = parsed.arrival_mode;
+    if (parsed.departure_mode === "own") {
+      next.departure_mode = "own";
+      next.departure_location_id = null;
+      f.departureAsked = true;
+      chips.push("leaving in their own vehicle (no transfer)");
+    } else if (parsed.departure_mode) next.departure_mode = parsed.departure_mode;
+    if (parsed.between) {
+      next.between_lodges = parsed.between;
+      f.legAsked = true;
+      chips.push(parsed.between === "own" ? "between the lodges: their own vehicle" : "between the lodges: our car");
+    }
+  }
+
+  // ---- special requests
+  if (parsed.requests?.length) {
+    const fresh = parsed.requests.filter((r) => !(next.requests ?? []).includes(r));
+    next.requests = [...(next.requests ?? []), ...fresh];
+    if (fresh.length) chips.push(`special request${fresh.length === 1 ? "" : "s"}: ${fresh.join(", ")}`);
+  }
+
+  // ---- parks that are not ours: say so, never make up a lodge
+  for (const n of parsed.notOurs ?? []) {
+    const ours = ctx.pricing.parks.filter((p) => lodgesInPark(ctx, p.id).length).map((p) => shortName(p.name));
+    warnings.push(`${n} is not one of our parks, so it cannot be quoted here. Our parks: ${ours.join(", ")}.`);
+  }
+
+  // ---- the answer to the reader's own question (fishing, flight time, ages...)
+  const answering = f.pending === "ask" ? f.asks?.find((a) => a.key === f.askFor) : undefined;
+  if (answering) {
+    f.asks = (f.asks ?? []).filter((a) => a !== answering);
+    const before = chips.length;
+    if (answering.key.startsWith("fishing:")) {
+      const len = /\bfull\b/.test(low) ? "full" : /\bhalf\b/.test(low) ? "half" : null;
+      const park = ctx.pricing.parks.find((p) => p.name === answering.key.slice(8));
+      if (len && park) {
+        next.stops = next.stops.map((s) => (s.park_id === park.id ? { ...s, want_extras: (s.want_extras ?? []).map((x) => (x === "fishing" ? `${len} day fishing` : x)) } : s));
+        chips.push(`${len}-day fishing`);
+      }
+    } else if (answering.key === "flight-time" && next.flights?.length === 1) {
+      const fl = next.flights[0];
+      if (/\b(depart\w*|home|return\w*|out\w*|back|last|leav\w*|going)\b/.test(low) && fl.time) {
+        next.flights = [{ from: fl.from, to: fl.to }, { from: fl.to, to: fl.from, time: fl.time }];
+        chips.push(`flight ${fl.to} to ${fl.from} at ${fl.time}`);
+      } else if (/\b(arriv\w*|in|first|incoming|coming)\b/.test(low)) chips.push(`flight ${fl.from} to ${fl.to} at ${fl.time}`);
+    } else if (answering.key === "ages" && next.guest.children.length) {
+      const ages = (msg.match(/\d{1,2}/g) ?? []).map(Number).filter((n) => n < 18);
+      if (ages.length === next.guest.children.length) {
+        next.guest.children = ages;
+        chips.push(`children aged ${ages.join(", ")}`);
+      }
+    }
+    // anything else is kept word for word with the trip, so nothing said is lost
+    if (chips.length === before && !parsed.adults && !parsed.parks.length && !parsed.arrival_date) {
+      next.guest.notes = [next.guest.notes.trim(), `${answering.text} Answer: ${msg}`].filter(Boolean).join("\n").slice(0, 2000);
+      chips.push("noted with the trip");
+    }
+  }
+  for (const a of parsed.asks ?? []) if (!(f.asks ?? []).some((x) => x.key === a.key)) f.asks = [...(f.asks ?? []), a];
+
   // A bare answer to the last question: "4", "3 nights", "2 adults"
   const bare = low.match(/^\s*(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten)\s*(nights?|n|adults?|pax|people|guests)?\s*\.?$/);
   if (bare) {
@@ -260,9 +363,11 @@ export function chatTurn(
     next.guest.country = parsed.country;
     next.guest.nationality = parsed.country === "IN" ? "indian" : "foreign";
     if (!next.guest.phone) next.guest.phone_country = parsed.country;
+    f.nationalitySet = true;
     chips.push(`guests from ${countryName(parsed.country)}`);
   } else if (parsed.nationality) {
     next.guest.nationality = parsed.nationality;
+    f.nationalitySet = true;
     chips.push(parsed.nationality === "indian" ? "Indian guests" : "foreign guests");
   }
 
@@ -272,6 +377,10 @@ export function chatTurn(
     next.arrival_date = parsed.arrival_date;
     f.dateSet = true;
     chips.push(`arriving ${parsed.arrival_date}`);
+  } else if (/\bdates?\s+not\s+fixed\b|\bno\s+fixed\s+dates?\b|\bdateless\b/.test(low) && !f.dateSet) {
+    next.dateless = true;
+    f.dateSet = true;
+    chips.push("dates not fixed: priced by season");
   } else if (f.pending === "date" && !chips.length && !parsed.parks.length) {
     warnings.push('I could not read a date there. Try "16 Jan 2027" or "16/01/2027".');
   }
@@ -285,13 +394,15 @@ export function chatTurn(
   const answersDeparture = f.pending === "departure" && !!arr && (!dep || assumedSame) && !!plan.arrival_location_id;
   if (arr && !answersDeparture) {
     next.arrival_location_id = arr.id;
+    if (next.arrival_mode === "own") delete next.arrival_mode;
     f.arrivalAsked = true;
-    chips.push(`arriving via ${arr.name}`);
+    chips.push(`arriving via ${arr.name}${parsed.arrival_mode === "train" ? " (train)" : ""}`);
   }
-  if (dep && !assumedSame && !answersDeparture) {
+  if (dep && (!assumedSame || parsed.same_out) && !answersDeparture) {
     next.departure_location_id = dep.id;
+    if (next.departure_mode === "own") delete next.departure_mode;
     f.departureAsked = true;
-    chips.push(`leaving via ${dep.name}`);
+    chips.push(`leaving via ${dep.name}${parsed.departure_mode === "train" ? " (train)" : parsed.departure_mode === "flight" ? " (flight)" : ""}`);
   } else if (f.pending === "departure" && /^(same|yes|yep|same airport|same place|same as arrival)\b/i.test(low) && next.arrival_location_id) {
     next.departure_location_id = next.arrival_location_id;
     f.departureAsked = true;
@@ -347,8 +458,13 @@ export function chatTurn(
     if (p.safaris != null) wish.want_safaris = p.safaris;
     if (p.naturalists != null) wish.want_naturalists = p.naturalists;
     if (p.extras?.length) wish.want_extras = [...new Set([...(next.stops[i].want_extras ?? []), ...p.extras])];
-    if (p.room) {
-      const want = pickRoom(roomsOf(ctx, next.stops[i].property_id), p.room);
+    if (p.sessions) wish.want_sessions = p.sessions;
+    if (p.jeeps) wish.want_jeeps = p.jeeps;
+    if (p.qty) wish.want_qty = { ...(next.stops[i].want_qty ?? {}), ...p.qty };
+    if (p.room || p.roomName) {
+      // a room named by its own word first ("stilted"), else the kind of room ("cottage")
+      const rooms = roomsOf(ctx, next.stops[i].property_id);
+      const want = rooms.find((r) => r.name === p.roomName) ?? (p.room ? pickRoom(rooms, p.room) : undefined);
       if (want) {
         const meals = mealPlansOf(ctx, want.id);
         wish.room_category_id = want.id;
@@ -358,19 +474,19 @@ export function chatTurn(
     }
     next.stops[i] = { ...next.stops[i], ...wish };
     const stop = next.stops[i];
-    // a lodge already in the trip, only named (e.g. "Kanha first"): nothing new to report
-    if (idx >= 0 && !p.nights && !p.lodge && !Object.keys(wish).length) continue;
+    // a lodge already in the trip, only named (e.g. "Kanha first"): nothing new to report    if (idx >= 0 && !p.nights && !p.lodge && !Object.keys(wish).length) continue;
     const lodgeName = ctx.properties.find((x) => x.id === stop.property_id)?.name;
-    const roomName = p.room ? ctx.rooms.find((r) => r.id === stop.room_category_id)?.name : null;
+    const roomName = p.room || p.roomName ? ctx.rooms.find((r) => r.id === stop.room_category_id)?.name : null;
     chips.push(
       `${park.name} ${p.nights ? `${stop.nights} night${stop.nights === 1 ? "" : "s"}${p.nightsFromDays ? ` (from "${p.nights} days")` : ""}` : "(nights to confirm)"}${lodgeName ? ` at ${lodgeName}` : ""}${roomName ? `, ${roomName}` : ""}`
     );
-    if (p.safaris != null || p.naturalists != null) {
+    if (p.safaris != null || p.naturalists != null || p.sessions || p.jeeps) {
       const n = p.safaris;
       const nat = p.naturalists === -1 ? "all with a naturalist" : p.naturalists ? `${p.naturalists} with a naturalist` : p.naturalists === 0 ? "no naturalist" : "";
-      chips.push(`${n != null ? `${n} safari${n === 1 ? "" : "s"}` : "safaris"}${nat ? `, ${nat}` : ""} in ${park.name.split(/[ -]/)[0]}`);
+      const more = [p.sessions ? `${p.sessions === "morning" ? "mornings" : "evenings"} only` : "", p.jeeps ? `${p.jeeps} jeeps each` : ""].filter(Boolean).join(", ");
+      chips.push(`${n != null ? `${n} safari${n === 1 ? "" : "s"}` : "safaris"}${nat ? `, ${nat}` : ""}${more ? `, ${more}` : ""} in ${park.name.split(/[ -]/)[0]}`);
     }
-    for (const x of p.extras ?? []) chips.push(`${x === "special" ? "the lodge's own experiences" : x} at ${lodgeName ?? park.name}`);
+    for (const x of p.extras ?? []) chips.push(`${x === "special" ? "the lodge's own experiences" : `${x}${p.qty?.[x] ? ` x${p.qty[x]}` : ""}`} at ${lodgeName ?? park.name}`);
   }
 
   // ---- with flights, the airports are where they fly in and out: "fly to Bhopal ... leave from Nagpur to Delhi"
@@ -398,11 +514,13 @@ export function chatTurn(
       f.arrivalAsked = true;
       chips.push(`arriving via ${inAirport.name} (flight from ${inbound!.from})`);
     }
+    if (inAirport) next.arrival_mode = "flight";
     if (outAirport && next.departure_location_id !== outAirport.id) {
       next.departure_location_id = outAirport.id;
       f.departureAsked = true;
       chips.push(`leaving via ${outAirport.name} (flight to ${outbound!.to})`);
     }
+    if (outAirport) next.departure_mode = "flight";
   }
 
   // ---- the hotel for a city stay (answer to "Which hotel in Delhi?")
@@ -478,7 +596,7 @@ export function chatTurn(
       [next.arrival_location_id, next.departure_location_id] = [next.departure_location_id, next.arrival_location_id];
     }
     chips.push(`route reversed: ${next.stops.map((st) => parkName(st.park_id).split(/[ -]/)[0]).join(" then ")}`);
-  } else if (parsed.parks.length && parsed.parks.every((p) => !p.nights) && next.stops.length > 1 && /\b(first|start|begin|before|then|after|last|end|order|instead)\b/.test(low)) {
+  } else if (parsed.parks.length && parsed.parks.every((p) => !p.nights) && next.stops.length > 1 && /\b(first|start|begin|before|then|after|last|end|order|instead|pehle|phir|baad)\b/.test(low)) {
     const ids = parsed.parks.map((p) => matchByName(ctx.pricing.parks, p.name, aliasesOf)?.id).filter((x): x is string => !!x && next.stops.some((s) => s.park_id === x));
     if (ids.length === 1 && /\b(last|end)\b/.test(low)) {
       next.stops = [...next.stops.filter((s) => s.park_id !== ids[0]), next.stops.find((s) => s.park_id === ids[0])!];
@@ -549,10 +667,14 @@ export function chatTurn(
     next.days = next.stops.length && !routeProblems(next, ctx).length ? buildDays(next, full) : [];
   }
 
+  // questions that close on their own once the plan has the answer
+  f.asks = (f.asks ?? []).filter((a) => !(a.until === "date" && (f.dateSet || next.dateless)) && !(a.until === "nights" && !f.nightsUnknown.length && next.stops.length) && !(a.until === "adults" && f.adultsSet));
+
   const step = nextQuestion(next, f, full, today);
   f.pending = step.pending;
   f.roomFor = step.roomFor ?? null;
   f.hotelFor = step.hotelFor ?? null;
+  f.askFor = step.askFor ?? null;
 
   let text = step.text;
   if (!understood) {
@@ -565,7 +687,7 @@ export function chatTurn(
   return {
     plan: next,
     flags: f,
-    reply: { role: "assistant", text, chips, warnings: [...warnings, ...step.warnings], quick: step.quick, action },
+    reply: { role: "assistant", text, chips, warnings: [...warnings, ...step.warnings], quick: step.quick, action, checklist: tripChecklist(next, f, full) },
     understood,
     routeChanged,
   };
@@ -577,7 +699,7 @@ export function nextQuestion(
   f: ChatFlags,
   full: BuilderContext,
   today: ISODate
-): { text: string; pending: ChatFlags["pending"]; quick?: QuickReply[]; warnings: string[]; ready: boolean; roomFor?: string; hotelFor?: string } {
+): { text: string; pending: ChatFlags["pending"]; quick?: QuickReply[]; warnings: string[]; ready: boolean; roomFor?: string; hotelFor?: string; askFor?: string } {
   const ctx = safariOnly(full);
   const parks = ctx.pricing.parks.filter((p) => lodgesInPark(ctx, p.id).length);
   if (!plan.stops.length) {
@@ -591,11 +713,28 @@ export function nextQuestion(
   }
   const problems = routeProblems(plan, ctx);
   if (problems.length) return { text: `I cannot plan this yet: ${problems.join(" ")}`, pending: null, warnings: [], ready: false };
+  const askOf = (key: string) => (f.asks ?? []).find((a) => a.key === key);
   if (f.nightsUnknown.length) {
     const n = ctx.pricing.parks.find((p) => p.id === f.nightsUnknown[0])?.name ?? "the park";
-    return { text: `How many nights in ${n}? (2 for now)`, pending: "nights", quick: [1, 2, 3, 4].map((x) => ({ label: `${x} night${x === 1 ? "" : "s"}`, text: String(x) })), warnings: [], ready: false };
+    const split = askOf("split");
+    return {
+      text: `${split ? `${split.text} ` : ""}How many nights in ${n}? (2 for now)`,
+      pending: "nights",
+      quick: [1, 2, 3, 4].map((x) => ({ label: `${x} night${x === 1 ? "" : "s"}`, text: String(x) })),
+      warnings: [],
+      ready: false,
+    };
   }
-  if (!f.dateSet) return { text: "When do they arrive? For example 16 Jan 2027.", pending: "date", warnings: [], ready: false };
+  if (!f.dateSet) {
+    const vague = askOf("date");
+    return {
+      text: vague ? vague.text : "When do they arrive? For example 16 Jan 2027.",
+      pending: "date",
+      quick: vague ? [{ label: "Dates not fixed", text: "dates not fixed" }] : undefined,
+      warnings: [],
+      ready: false,
+    };
+  }
   if (!f.adultsSet) {
     return {
       text: 'How many guests? Adults, and children with their ages, for example "2 adults and a child aged 8".',
@@ -625,6 +764,27 @@ export function nextQuestion(
         ...placesOf(ctx).filter((l) => l.id !== plan.arrival_location_id).slice(0, 4).map((l) => ({ label: l.name, text: `leaving from ${l.name}` })),
         { label: "On their own", text: "leaving on their own" },
       ],
+      warnings: [],
+      ready: false,
+    };
+  }
+  // Came in their own vehicle: how do they leave (never assumed when there are several lodges)?
+  if (!f.departureAsked && plan.arrival_mode === "own" && !plan.own_vehicle && !plan.departure_location_id && !plan.departure_mode) {
+    return {
+      text: "How do they leave at the end: in their own vehicle, or do we drop them at an airport or station?",
+      pending: "departure",
+      quick: [{ label: "Own vehicle", text: "leaving in their own vehicle" }, ...placesOf(ctx).slice(0, 4).map((l) => ({ label: l.name, text: `leaving from ${l.name}` }))],
+      warnings: [],
+      ready: false,
+    };
+  }
+  // Their own vehicle on the way in or out: between the lodges too? Asked, not assumed.
+  if (plan.stops.length > 1 && !plan.own_vehicle && !plan.between_lodges && !f.legAsked && (plan.arrival_mode === "own" || plan.departure_mode === "own")) {
+    const route = plan.stops.map((s) => shortName(ctx.pricing.parks.find((p) => p.id === s.park_id)?.name ?? "")).join(" to ");
+    return {
+      text: `Between the lodges (${route}): our car, or their own vehicle?`,
+      pending: "leg",
+      quick: [{ label: "Our car", text: "our car" }, { label: "Their own vehicle", text: "their own vehicle" }],
       warnings: [],
       ready: false,
     };
@@ -679,6 +839,19 @@ export function nextQuestion(
           .map((h) => ({ label: h.name, text: h.name })),
         { label: "To be confirmed", text: "to be confirmed" },
       ],
+      warnings: [],
+      ready: false,
+    };
+  }
+
+  // What the reader found unclear (fishing half or full day, which flight, a touring package...): one at a time.
+  const open = (f.asks ?? []).find((a) => !a.until);
+  if (open) {
+    return {
+      text: open.text,
+      pending: "ask",
+      askFor: open.key,
+      quick: open.quick?.map((q) => ({ label: q, text: q })),
       warnings: [],
       ready: false,
     };
