@@ -19,6 +19,7 @@ async function requireSuper(): Promise<string | null> {
 function explain(message: string): string {
   if (/duplicate key/i.test(message)) return "This already exists (a record with the same name or key is already saved).";
   if (/violates foreign key/i.test(message)) return "This record is still used elsewhere, so it cannot be deleted. Mark it inactive instead.";
+  if (/meaning_when_approved/i.test(message)) return "Write what the phrase means (Read it as) before approving it.";
   if (/violates check constraint/i.test(message)) return "Some values are not allowed together. Check dates (To must not be before From), and that weekly closures have a day of week and dated closures have both dates.";
   return message;
 }
@@ -102,6 +103,27 @@ async function saveSettingsUnsafe(fd: FormData): Promise<ActionResult> {
   return { ok: true };
 }
 
+// Approve or reject a row waiting for a decision (Reader rules, Unknown words).
+async function reviewRecordUnsafe(entityKey: string, id: string, decision: "approve" | "reject"): Promise<ActionResult> {
+  const denied = await requireSuper();
+  if (denied) return { error: denied };
+  const entity = getEntity(entityKey);
+  const r = entity?.review;
+  if (!entity || !r) return { error: "There is nothing to approve here." };
+  const supabase = await createClient();
+  if (decision === "approve" && r.requires) {
+    const { data } = await supabase.from(entity.table).select(r.requires).eq("id", id).maybeSingle();
+    const v = (data as Record<string, unknown> | null)?.[r.requires];
+    if (v === null || v === undefined || !String(v).trim()) return { error: "Fill in what it means before approving it." };
+  }
+  const cu = await getCurrentUser();
+  const row = decision === "approve" ? { [r.field]: r.approve, ...(r.stamp ? { approved_by: cu?.user?.id ?? null, approved_at: new Date().toISOString() } : {}) } : { [r.field]: r.reject };
+  const { error } = await supabase.from(entity.table).update(row).eq("id", id);
+  if (error) return { error: explain(error.message) };
+  revalidatePath(`/sales/admin/${entity.key}`);
+  return { ok: true };
+}
+
 // Public actions: same as above, but failures come back as { error } instead of crashing.
 export async function saveRecord(entityKey: string, id: string | null, fd: FormData): Promise<ActionResult> {
   return safe("saveRecord", () => saveRecordUnsafe(entityKey, id, fd));
@@ -109,6 +131,10 @@ export async function saveRecord(entityKey: string, id: string | null, fd: FormD
 
 export async function deleteRecord(entityKey: string, id: string): Promise<ActionResult> {
   return safe("deleteRecord", () => deleteRecordUnsafe(entityKey, id));
+}
+
+export async function reviewRecord(entityKey: string, id: string, decision: "approve" | "reject"): Promise<ActionResult> {
+  return safe("reviewRecord", () => reviewRecordUnsafe(entityKey, id, decision));
 }
 
 export async function saveSettings(fd: FormData): Promise<ActionResult> {

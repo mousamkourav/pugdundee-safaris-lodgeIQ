@@ -37,6 +37,16 @@ const RATE_CATEGORY: RefSpec = { table: "sales_rate_categories", select: "id, na
 const NATIONALITY = opts([["indian", "Indian nationals"], ["foreign", "Foreign nationals"], ["all", "All guests"]]);
 const TARIFF_SEASON = opts([["all", "All year (one rate)"], ["shoulder", "Shoulder"], ["high", "High"], ["peak", "Peak (incl. long weekends)"]]);
 
+// The built-in reader's rules (sales_reader_rules.sql); two lists share the table.
+const READER_FIELDS: FieldDef[] = [
+  { name: "phrase", label: "Phrase as typed", type: "text", required: true, placeholder: "e.g. tadoba core, gaddi, ratri" },
+  { name: "meaning", label: "Read it as", type: "text", wide: true, placeholder: "e.g. Waghoba Eco Lodge, own vehicle, nights", help: "Words the reader already understands: a lodge or park name, \"own vehicle\", \"nights\", \"safaris\", an airport. Needed to approve." },
+  { name: "kind", label: "About", type: "select", required: true, initial: "word", options: opts([["word", "A word"], ["park", "Park"], ["lodge", "Lodge"], ["nights", "Nights"], ["safaris", "Safaris"], ["transport", "Transport"], ["place", "Airport / station"], ["room", "Room"]]) },
+  { name: "status", label: "Status", type: "select", required: true, initial: "approved", options: opts([["suggested", "Waiting for approval"], ["approved", "Approved: the reader uses it"], ["rejected", "Rejected"]]) },
+  { name: "seen", label: "Times seen", type: "int", empty: 1, initial: 1 },
+  { name: "example", label: "Example enquiry (names removed)", type: "textarea", wide: true },
+];
+
 export const ENTITIES: EntityDef[] = [
   // ---------------------------- Pugdundee tariff ----------------------------
   {
@@ -557,6 +567,38 @@ export const ENTITIES: EntityDef[] = [
     ],
     list: ["message", "active"],
     order: [{ column: "created_at", ascending: false }],
+  },
+  {
+    key: "reader-rules",
+    table: "sales_reader_rules",
+    title: "Reader rules",
+    singular: "rule",
+    group: "AI assistant",
+    icon: "list",
+    description:
+      "What the built-in reader has learnt: a phrase the team types and what it means. Suggested automatically when a sales person corrects what the reader filled in; approved rules are used by the reader straight away.",
+    fields: [...READER_FIELDS, { name: "source", label: "Came from", type: "select", required: true, initial: "admin", options: opts([["admin", "Typed here"], ["correction", "A correction in a quote"], ["unknown", "An unknown word"]]) }],
+    list: ["phrase", "meaning", "kind", "status", "seen"],
+    filters: ["status"],
+    listFilter: { column: "source", op: "neq", value: "unknown" },
+    order: [{ column: "status", ascending: false }, { column: "seen", ascending: false }],
+    review: { field: "status", pending: "suggested", approve: "approved", reject: "rejected", requires: "meaning", stamp: true, show: ["phrase", "meaning", "kind", "seen", "example"] },
+  },
+  {
+    key: "reader-unknown",
+    table: "sales_reader_rules",
+    title: "Unknown words",
+    singular: "word",
+    group: "AI assistant",
+    icon: "alert",
+    description:
+      "Words in enquiries the built-in reader could not place (names are left out). Teach one: open it, write what it means (e.g. \"own vehicle\", \"Tree House Hideaway\", \"nights\") and approve it.",
+    fields: [...READER_FIELDS, { name: "source", label: "Came from", type: "select", required: true, initial: "unknown", options: opts([["unknown", "An unknown word"], ["admin", "Typed here"], ["correction", "A correction in a quote"]]) }],
+    list: ["phrase", "meaning", "status", "seen"],
+    filters: ["status"],
+    listFilter: { column: "source", op: "eq", value: "unknown" },
+    order: [{ column: "seen", ascending: false }],
+    review: { field: "status", pending: "suggested", approve: "approved", reject: "rejected", requires: "meaning", stamp: true, show: ["phrase", "meaning", "seen", "example"] },
   },
 ];
 

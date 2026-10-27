@@ -6,6 +6,7 @@ import { MasterSearchTable, type SearchRow } from "@/components/sales/master-sea
 import { normaliseSearch } from "@/lib/sales/master/search";
 import { getEntity } from "@/lib/sales/master/entities";
 import { withOptions, formatCell } from "@/lib/sales/master/load";
+import { ReviewPanel, type ReviewRow } from "@/components/sales/review-panel";
 
 // Rows loaded per list; the search box covers all of them.
 const LIMIT = 2000;
@@ -56,6 +57,21 @@ export default async function EntityListPage({
   const columns = entity.list.map((name) => ({ label: byName[name]?.label ?? name, money: byName[name]?.type === "money" }));
   const hint = columns.filter((c) => !c.money).slice(0, 3).map((c) => c.label.toLowerCase()).join(", ");
 
+  // rows waiting for a decision (Reader rules, Unknown words)
+  const review = entity.review;
+  const reviewRows: ReviewRow[] = review
+    ? rows
+        .filter((r) => r[review.field] === review.pending)
+        .map((r) => ({
+          id: String(r.id),
+          cells: review.show.map((name) => {
+            const f = entity.fields.find((x) => x.name === name);
+            return { label: f?.label ?? name, text: f ? formatCell(f, r[name]) : String(r[name] ?? "") };
+          }),
+          canApprove: !review.requires || !!String(r[review.requires] ?? "").trim(),
+        }))
+    : [];
+
   const filterQs = new URLSearchParams(Object.entries(active).map(([k, v]) => [`f_${k}`, v])).toString();
   const newHref = `/sales/admin/${entity.key}/new${filterQs ? "?" + filterQs : ""}`;
 
@@ -101,6 +117,8 @@ export default async function EntityListPage({
       )}
 
       {error && <p className={ui.alertError}>Could not load: {error.message}</p>}
+
+      {reviewRows.length > 0 && <ReviewPanel entityKey={entity.key} rows={reviewRows} needs={review?.requires ? "A row needs its meaning written in (Teach it) before it can be approved." : undefined} />}
 
       {rows.length === 0 ? (
         <div className={ui.empty}>
