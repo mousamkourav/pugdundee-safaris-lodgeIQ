@@ -111,6 +111,7 @@ export interface PlanDay {
   transfer: { from_location_id: string; to_location_id: string } | null;
   city_transfers?: CityTransfer[]; // transfers in a city stay (airport to hotel, hotel to airport)
   stay_index?: number; // the night is part of plan.city_stays[stay_index]
+  own_vehicle?: boolean; // this day's drive is in the guests' own vehicle: no transfer is charged
   // a city hotel from Master data with rates (and no price typed): the night is priced from its rates
   city_hotel?: { property_id: string; room_category_id: string; meal_plan: string };
   title: string;

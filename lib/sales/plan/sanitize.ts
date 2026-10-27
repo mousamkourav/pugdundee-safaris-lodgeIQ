@@ -1,6 +1,8 @@
 // Rebuilds a plan from untrusted JSON (the browser) keeping only known keys
 // with the right types. Anything malformed becomes a safe default.
-import type { DaySafari, Plan, PlanDay, PlanDraft, PlanItem, PlanStop } from "./types";
+import type { DaySafari, Plan, PlanDay, PlanDraft, PlanItem, PlanStop, TravelMode } from "./types";
+
+const MODES: TravelMode[] = ["flight", "train", "own", "transfer"];
 
 const str = (v: unknown, max = 500) => (typeof v === "string" ? v.slice(0, max) : "");
 const strOrNull = (v: unknown) => (typeof v === "string" && v ? v.slice(0, 100) : null);
@@ -27,6 +29,15 @@ export function sanitizePlan(input: unknown): Plan | null {
       ...(Number.isInteger(Number(s.want_safaris)) && s.want_safaris !== null && s.want_safaris !== undefined ? { want_safaris: Math.max(0, Math.min(20, Number(s.want_safaris))) } : {}),
       ...(Number.isInteger(Number(s.want_naturalists)) && s.want_naturalists !== null && s.want_naturalists !== undefined ? { want_naturalists: Math.max(-1, Math.min(20, Number(s.want_naturalists))) } : {}),
       ...(Array.isArray(s.want_extras) ? { want_extras: s.want_extras.map((x) => str(x, 40)).filter(Boolean).slice(0, 10) } : {}),
+      ...(s.want_sessions === "morning" || s.want_sessions === "afternoon" ? { want_sessions: s.want_sessions } : {}),
+      ...(Number.isInteger(Number(s.want_jeeps)) && Number(s.want_jeeps) >= 1 ? { want_jeeps: Math.min(10, Number(s.want_jeeps)) } : {}),
+      ...(() => {
+        const q = Object.entries(obj(s.want_qty))
+          .filter(([k, v]) => k.length <= 40 && Number.isInteger(Number(v)) && Number(v) >= 1)
+          .slice(0, 10)
+          .map(([k, v]) => [k, Math.min(100, Number(v))] as const);
+        return q.length ? { want_qty: Object.fromEntries(q) } : {};
+      })(),
     };
   });
 
@@ -65,6 +76,7 @@ export function sanitizePlan(input: unknown): Plan | null {
         return h.property_id && h.room_category_id ? { city_hotel: { property_id: str(h.property_id, 100), room_category_id: str(h.room_category_id, 100), meal_plan: ["EP", "CP", "MAP", "AP"].includes(String(h.meal_plan)) ? String(h.meal_plan) : "CP" } } : {};
       })(),
       ...(Number.isInteger(Number(d.stay_index)) && d.stay_index !== null && d.stay_index !== undefined ? { stay_index: Math.max(0, Math.min(20, Number(d.stay_index))) } : {}),
+      ...(d.own_vehicle === true ? { own_vehicle: true } : {}),
       title: str(d.title, 200),
       text: str(d.text, 4000),
       notes: (Array.isArray(d.notes) ? d.notes : []).map((z) => str(z, 300)).slice(0, 10),
@@ -149,6 +161,10 @@ export function sanitizePlan(input: unknown): Plan | null {
     adjustment: Number.isFinite(adjAmount) && adjAmount !== 0 ? { amount: Math.round(adjAmount), reason: str(adj.reason, 300).trim() } : null,
     currency: (["USD", "EUR", "GBP", "AUD"] as const).find((c) => c === p.currency) ?? "INR",
     ...(p.own_vehicle === true ? { own_vehicle: true } : {}),
+    ...(MODES.includes(p.arrival_mode as TravelMode) ? { arrival_mode: p.arrival_mode as TravelMode } : {}),
+    ...(MODES.includes(p.departure_mode as TravelMode) ? { departure_mode: p.departure_mode as TravelMode } : {}),
+    ...(p.between_lodges === "ours" || p.between_lodges === "own" ? { between_lodges: p.between_lodges } : {}),
+    ...(Array.isArray(p.requests) && p.requests.length ? { requests: [...new Set(p.requests.map((x) => str(x, 60).trim()).filter(Boolean))].slice(0, 12) } : {}),
     ...(Number.isInteger(Number(p.transfer_vehicles)) && p.transfer_vehicles !== null && p.transfer_vehicles !== undefined && Number(p.transfer_vehicles) >= 1 ? { transfer_vehicles: Math.min(20, Number(p.transfer_vehicles)) } : {}),
     ...(p.route_vehicles && typeof p.route_vehicles === "object"
       ? {

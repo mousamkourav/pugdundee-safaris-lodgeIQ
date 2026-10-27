@@ -192,20 +192,29 @@ function applyWants(plan: Plan, ctx: BuilderContext, days: PlanDay[]): PlanDay[]
     const range = days.map((_, i) => i).filter((i) => i >= start && i <= start + stop.nights && days[i].park_id === stop.park_id);
     const lastNight = Math.min(days.length - 1, start + Math.max(0, stop.nights - 1));
     start += stop.nights;
+    // On a day shared with the previous / next stop (moving lodges), this stop owns
+    // the evening of its first day and the morning of its last day.
+    // The arrival day is shared with the journey in (evening only); the moving-on day
+    // with the next stop (morning only); the days in between are this stop's.
+    const moveOut = s0 + stop.nights;
+    const owns = (i: number, session: DaySafari["session"]) =>
+      (i === s0 && session === "afternoon") || (i === moveOut && session === "morning") || (i > s0 && i < moveOut);
+    // "morning safaris only": this stop's other sessions go (a full day stays)
+    if (stop.want_sessions) {
+      for (const i of range) {
+        const safaris = days[i].safaris.filter((s) => !owns(i, s.session) || s.session === stop.want_sessions || s.session === "full_day");
+        if (safaris.length === days[i].safaris.length) continue;
+        days[i] = describe(ctx, { ...days[i], safaris, kind: days[i].kind === "safari" && !safaris.length ? "leisure" : days[i].kind }, plan.vehicle_type);
+      }
+    }
     if (stop.want_safaris != null || stop.want_naturalists != null) {
-      // On a day shared with the previous / next stop (moving lodges), this stop owns
-      // the evening of its first day and the morning of its last day.
-      // The arrival day is shared with the journey in (evening only); the moving-on day
-      // with the next stop (morning only); the days in between are this stop's.
-      const moveOut = s0 + stop.nights;
-      const owns = (i: number, session: DaySafari["session"]) =>
-        (i === s0 && session === "afternoon") || (i === moveOut && session === "morning") || (i > s0 && i < moveOut);
       // Short stays have no full day: if more safaris were asked for than planned, use the
       // evening of the arrival day and the morning before leaving (open times only).
       if (stop.want_safaris != null) {
         let planned = range.reduce((t, i) => t + days[i].safaris.filter((s) => owns(i, s.session)).length, 0);
         for (const x of [{ i: moveOut, session: "morning" as const }, { i: s0, session: "afternoon" as const }]) {
           if (planned >= stop.want_safaris) break;
+          if (stop.want_sessions && x.session !== stop.want_sessions) continue;
           if (!range.includes(x.i)) continue; // a moving-on morning only when the next lodge is in the same park
           if (days[x.i].safaris.some((s) => s.session === x.session)) continue;
           const zone: DaySafari["zone"] | null = !closedAt(ctx, plan, stop.park_id, "core", x.session, days[x.i].date)
@@ -241,7 +250,6 @@ function applyWants(plan: Plan, ctx: BuilderContext, days: PlanDay[]): PlanDay[]
     // "full-day safari": one day here becomes a full-day safari (in place of that day's morning
     // and evening safaris; a day without safaris first), on a day the core zone is open
     if ((stop.want_extras ?? []).includes("full-day safari")) {
-      const moveOut = s0 + stop.nights;
       const full = range.filter((i) => i > s0 && i < moveOut && !closedAt(ctx, plan, stop.park_id, "core", "full_day", days[i].date));
       const pick = full.filter((i) => !days[i].safaris.length).pop() ?? full[full.length - 1];
       if (pick !== undefined) {
@@ -276,9 +284,15 @@ function applyWants(plan: Plan, ctx: BuilderContext, days: PlanDay[]): PlanDay[]
       if (kw === "special") continue;
       const addon = findAddon(ctx, stop.property_id, kw, plan.guest.nationality);
       const item: PlanItem = addon
-        ? { id: `auto-${k}-${kw}`, type: "addon", title: addon.name, detail: "", price: null, addon_id: addon.id, qty: null, auto: `extra:${k}:${kw}` }
+        ? { id: `auto-${k}-${kw}`, type: "addon", title: addon.name, detail: "", price: null, addon_id: addon.id, qty: stop.want_qty?.[kw] ?? null, auto: `extra:${k}:${kw}` }
         : { id: `auto-${k}-${kw}`, type: "activity", title: kw.replace(/\b\w/g, (c) => c.toUpperCase()), detail: "", price: null, addon_id: null, qty: null, auto: `extra:${k}:${kw}` };
       days[lastNight] = { ...days[lastNight], items: [...days[lastNight].items, item] };
+    }
+    // "2 jeeps per safari": on every safari of this stop
+    if (stop.want_jeeps && stop.want_jeeps > 0) {
+      for (const i of range) {
+        if (days[i].safaris.some((s) => owns(i, s.session))) days[i] = { ...days[i], safaris: days[i].safaris.map((s) => (owns(i, s.session) ? { ...s, jeeps: stop.want_jeeps } : s)) };
+      }
     }
   });
   return days;
@@ -548,6 +562,8 @@ function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
     // a morning safari first, then the short drive.
     const samePark = i > 0 && legs[i - 1].stop.park_id === stop.park_id;
     const morning = samePark ? autoSafaris(ctx, stop.park_id, checkIn, plan.dateless).safaris.filter((x) => x.session === "morning") : [];
+    // in their own vehicle: all the way, on the way in, or between the lodges
+    const own = !!plan.own_vehicle || (i === 0 ? plan.arrival_mode === "own" : plan.between_lodges === "own");
     days.push(
       describe(ctx, {
         date: checkIn,
@@ -560,6 +576,7 @@ function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
         text: "",
         notes: [],
         items: [],
+        ...(own ? { own_vehicle: true } : {}),
       }, vehicle)
     );
     for (let n = 1; n < stop.nights; n++) {
@@ -597,6 +614,7 @@ function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
         text: "",
         notes: [],
         items: [],
+        ...(plan.own_vehicle || plan.departure_mode === "own" ? { own_vehicle: true } : {}),
       }, vehicle)
     );
   }
@@ -622,6 +640,13 @@ const DEFAULT_TEXT: Record<PlanDay["kind"], string> = {
   leisure: "A day at leisure at {lodge}.",
   departure: "After breakfast, drive to {to}{hours} for your onward journey.",
   city: "",
+};
+
+// Days the guests drive themselves: no transfer, and the text says so.
+const OWN_TEXT: Partial<Record<PlanDay["kind"], string>> = {
+  arrival: "Drive in your own vehicle to {lodge}{hours}. Evening at leisure.",
+  transfer: "After breakfast, drive in your own vehicle to {lodge} in {park}{hours}. Evening at leisure.",
+  departure: "After breakfast, check out and continue your journey in your own vehicle.",
 };
 
 function pickTemplate(ctx: BuilderContext, kind: string, parkId: string | null, propertyId: string | null) {
@@ -659,15 +684,15 @@ export function describe(ctx: BuilderContext, day: PlanDay, vehicle: string | nu
   const hours = h ? ` (about ${h} hours)` : "";
 
   const titles: Record<PlanDay["kind"], string> = {
-    arrival: from ? `Arrive ${from}, on to ${lodge}` : `Arrive at ${lodge}`,
+    arrival: from && !day.own_vehicle ? `Arrive ${from}, on to ${lodge}` : `Arrive at ${lodge}`,
     transfer: from ? `${from} to ${lodge}` : `On to ${lodge}`,
     safari: `Safaris in ${park}`,
     leisure: `At leisure in ${park}`,
-    departure: to ? `Depart via ${to}` : "Departure",
+    departure: to && !day.own_vehicle ? `Depart via ${to}` : "Departure",
     city: day.title,
   };
 
-  const template = pickTemplate(ctx, day.kind, day.park_id, day.property_id)?.body ?? DEFAULT_TEXT[day.kind];
+  const template = (day.own_vehicle ? OWN_TEXT[day.kind] : undefined) ?? pickTemplate(ctx, day.kind, day.park_id, day.property_id)?.body ?? DEFAULT_TEXT[day.kind];
   const text = template
     .replaceAll("{lodge}", lodge)
     .replaceAll("{park}", park)
@@ -740,7 +765,7 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
     // own vehicle: no transfers. Otherwise vehicles as set for that road, else for every transfer,
     // else enough for the group; 0 on a road = not needed (the guests make their own way)
     const vehiclesFor = (from: string, to: string) => plan.route_vehicles?.[routeOf(from, to)] ?? plan.transfer_vehicles ?? undefined;
-    if (d.transfer && !plan.own_vehicle) {
+    if (d.transfer && !plan.own_vehicle && !d.own_vehicle) {
       const v = vehiclesFor(d.transfer.from_location_id, d.transfer.to_location_id);
       if (v !== 0) transfers.push({ date: d.date, ...d.transfer, vehicle_type: plan.vehicle_type ?? undefined, ...(v ? { vehicles: v } : {}) });
     }
@@ -788,7 +813,7 @@ export const DEFAULT_BASIS: RateBasis = { season: "high", safari_days: "weekday"
 
 // Everything that changes the day plan. If this changes, the days are rebuilt.
 export const routeKey = (p: Plan) =>
-  JSON.stringify([p.arrival_date, p.arrival_location_id, p.departure_location_id, p.stops, p.vehicle_type, p.guest.rooms, p.city_stays ?? [], p.flights ?? [], !!p.dateless]);
+  JSON.stringify([p.arrival_date, p.arrival_location_id, p.departure_location_id, p.stops, p.vehicle_type, p.guest.rooms, p.city_stays ?? [], p.flights ?? [], !!p.dateless, !!p.own_vehicle, p.arrival_mode ?? null, p.departure_mode ?? null, p.between_lodges ?? null]);
 
 // Problems with the route itself (before pricing).
 export function routeProblems(plan: Plan, ctx: BuilderContext): string[] {
