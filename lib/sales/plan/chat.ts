@@ -570,7 +570,15 @@ export function chatTurn(
   if (parsed.cityStays?.length) {
     const keep = (next.city_stays ?? []).filter((c) => !parsed.cityStays!.some((x) => x.when === c.when));
     next.city_stays = [...keep, ...parsed.cityStays];
-    for (const c of parsed.cityStays) chips.push(`${c.nights} night${c.nights === 1 ? "" : "s"} in ${c.city} ${c.when === "before" ? "before the safari" : "at the end"}${c.want_extras?.length ? ` with ${c.want_extras.join(", ")}` : ""}`);
+    const parkAt = (k: number) => ctx.pricing.parks.find((p) => p.id === next.stops[k]?.park_id)?.name.split(/[ -]/)[0] ?? "";
+    for (const c of parsed.cityStays) {
+      const where = c.when === "before" ? "before the safari" : c.at !== undefined ? `between ${parkAt(c.at - 1)} and ${parkAt(c.at)}` : "at the end";
+      chips.push(`${c.nights} night${c.nights === 1 ? "" : "s"} in ${c.city} ${where}${c.want_extras?.length ? ` with ${c.want_extras.join(", ")}` : ""}`);
+    }
+  }
+  if (parsed.endCity) {
+    next.end_city = parsed.endCity;
+    chips.push(`at the end, drive to ${parsed.endCity} for the flight`);
   }
   // a city hotel from Master data named in the message: "1 night in Delhi at Roseate House"
   if (f.pending !== "hotel") {

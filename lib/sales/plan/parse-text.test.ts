@@ -170,3 +170,22 @@ test("'1 night khajuraho and 1 night delhi' without 'in': two city nights at the
   assert.notEqual(p.arrival_place, "Khajuraho Airport");
   assert.equal(p.departure_place, "Khajuraho Airport");
 });
+
+test("a multi-region trip: Delhi first, Delhi again between parks, a connecting flight, Agra and the drive back", () => {
+  const p = read(
+    "1 guest arriving delhi stay for 2 nights, fly to jabalpur transfer to bandhavgarh for 4 nights with 6 safaris, transfer to jabalpur fly to delhi for 1 nights stay, transfer to delhi airport fly to nagpur transfer to pench for 3 nights; transfer to tadoba for 4 nights; transfer to nagpur for delhi flight drive direct to Agra for 2 nights stay with Agra sighseeing; drive back to delhi for homebound flight"
+  );
+  assert.deepEqual(p.cityStays, [
+    { when: "before", city: "Delhi", nights: 2 },
+    { when: "after", city: "Delhi", nights: 1, at: 1 },
+    { when: "after", city: "Agra", nights: 2, want_extras: ["sightseeing"] },
+  ]);
+  // in the order written; "drive direct to Agra" is not a flight
+  assert.deepEqual(p.flights, [
+    { from: "Delhi", to: "Jabalpur" },
+    { from: "Jabalpur", to: "Delhi" },
+    { from: "Delhi", to: "Nagpur" },
+    { from: "Nagpur", to: "Delhi" },
+  ]);
+  assert.equal(p.endCity, "Delhi");
+});

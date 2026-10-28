@@ -351,3 +351,28 @@ test("flights take the airline, times and fare from Master data > Flight routes"
   const t = planToTrip(p, "2026-10-05");
   assert.ok(t.custom_items!.some((c) => c.group === "flight" && c.amount === 9500 * p.guest.adults));
 });
+
+test("a night in Delhi between two parks, a connecting flight to Agra, and the drive back to Delhi", () => {
+  const p = sheetPlan();
+  p.stops = [defaultStop(ctx, "PENCH", 2), defaultStop(ctx, "TADOBA", 2)];
+  p.city_stays = [
+    { when: "before", city: "Delhi", nights: 1 },
+    { when: "after", city: "Delhi", nights: 1, at: 1 },
+    { when: "after", city: "Agra", nights: 2 },
+  ];
+  p.flights = [{ from: "Delhi", to: "Nagpur" }, { from: "Nagpur", to: "Delhi" }, { from: "Delhi", to: "Nagpur" }, { from: "Nagpur", to: "Delhi" }];
+  p.end_city = "Delhi";
+  p.days = buildDays(p, ctx);
+  const titles = p.days.map((d) => d.title);
+  // Delhi 1, Pench 2, Delhi 1, Tadoba 2, Agra 2, then the last day
+  assert.equal(p.days.length, 9);
+  assert.equal(titles[3], "Fly to Delhi");
+  assert.match(p.days[3].text, /transfer to Nagpur Airport for the flight to Delhi/);
+  // the second Delhi stay leaves on the second flight out of Delhi: into Nagpur, then the lodge
+  assert.equal(p.days[4].kind, "arrival");
+  assert.equal(p.days[4].transfer?.from_location_id, "NAG");
+  assert.equal(titles[6], "Fly to Delhi, drive to Agra");
+  assert.match(p.days[6].text, /On arrival, drive to Agra/);
+  assert.equal(titles[8], "Drive to Delhi");
+  assert.match(p.days[8].text, /drive back to Delhi for your homebound flight/);
+});

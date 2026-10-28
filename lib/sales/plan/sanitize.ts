@@ -161,6 +161,7 @@ export function sanitizePlan(input: unknown): Plan | null {
     adjustment: Number.isFinite(adjAmount) && adjAmount !== 0 ? { amount: Math.round(adjAmount), reason: str(adj.reason, 300).trim() } : null,
     currency: (["USD", "EUR", "GBP", "AUD"] as const).find((c) => c === p.currency) ?? "INR",
     ...(p.own_vehicle === true ? { own_vehicle: true } : {}),
+    ...(typeof p.end_city === "string" && p.end_city.trim() ? { end_city: str(p.end_city, 60).trim() } : {}),
     ...(MODES.includes(p.arrival_mode as TravelMode) ? { arrival_mode: p.arrival_mode as TravelMode } : {}),
     ...(MODES.includes(p.departure_mode as TravelMode) ? { departure_mode: p.departure_mode as TravelMode } : {}),
     ...(p.between_lodges === "ours" || p.between_lodges === "own" ? { between_lodges: p.between_lodges } : {}),

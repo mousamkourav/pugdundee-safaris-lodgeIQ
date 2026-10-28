@@ -329,7 +329,15 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
     if (i >= 0) out[i] = edit(out[i]);
     else out.push(edit(make()));
   };
-  const withTransfer = (d: PlanDay, t: CityTransfer | null): PlanDay => (t ? { ...d, city_transfers: [...(d.city_transfers ?? []), t] } : d);
+  const withTransfer = (d: PlanDay, t: CityTransfer | null | (CityTransfer | null)[]): PlanDay => {
+    const list = (Array.isArray(t) ? t : [t]).filter((x): x is CityTransfer => !!x);
+    return list.length ? { ...d, city_transfers: [...(d.city_transfers ?? []), ...list] } : d;
+  };
+  const isStayCity = (name: string) => segs.some((s) => s.kind === "city" && !!s.stay.city && sameCity(s.stay.city, name));
+  const lodgePlace = (propertyId: string) => {
+    const id = locationOfProperty(ctx, propertyId);
+    return id ? { id, label: lodgeName(propertyId) } : null;
+  };
 
   segs.forEach((seg, k) => {
     if (seg.kind !== "city") return;
@@ -351,7 +359,7 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
         : [];
       let title = place(c);
       let text = c.city ? `A day in ${c.city}. Overnight at ${where(c)}.` : `A free day. Overnight at ${where(c)}.`;
-      let transfer: CityTransfer | null = null;
+      let transfer: CityTransfer | null | (CityTransfer | null)[] = null;
       let roadToHotel = false; // the last lodge's drive goes straight to this hotel
       if (j === 0) {
         if (!prev) {
@@ -375,16 +383,30 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
           text = c.city ? `After breakfast, drive to ${c.city}{hours}. Overnight at ${where(c)}.` : `After breakfast, check out of ${lodgeName(prev.stop.property_id)}. Overnight at ${where(c)}.`;
           // flown in from the lodges' airport (Nagpur to Delhi): the lodge's departure transfer goes to that airport
           const inFlight = flights.find((f) => sameCity(f.to, c.city) && !segs.slice(0, k).some((s) => s.kind === "city" && sameCity(s.stay.city, f.from)));
-          roadToHotel = real && !inFlight;
+          // a connecting flight to another city, then the drive (Nagpur to Delhi, then by road to Agra)
+          const last = flights[flights.length - 1];
+          const transit = !inFlight && last && !sameCity(last.to, c.city) && !isStayCity(last.from) ? last : undefined;
+          roadToHotel = real && !inFlight && !transit;
           if (real && inFlight) {
             transfer = cityTransfer(ctx, airportOf(ctx, c.city, hotelOf(ctx, c).id), hotelOf(ctx, c));
             title = `Fly to ${c.city}`;
             text = `After breakfast, transfer to the airport and fly to ${c.city}. Overnight at ${where(c)}.`;
+          } else if (real && transit) {
+            transfer = cityTransfer(ctx, airportOf(ctx, transit.to, hotelOf(ctx, c).id), hotelOf(ctx, c));
+            title = `Fly to ${transit.to}, drive to ${c.city}`;
+            text = `After breakfast, transfer to ${transit.from} Airport for the flight to ${transit.to}. On arrival, drive to ${c.city}. Overnight at ${where(c)}.`;
           }
         } else {
-          // between two lodges
+          // between two lodges: flown in from the lodge's airport (Iora Retreat > Guwahati > Delhi), else by road
           title = c.city ? `${lodgeName(prev.stop.property_id)} to ${c.city}` : "Free day";
           text = c.city ? `After breakfast, drive to ${c.city}. Overnight at ${where(c)}.` : `A free day. Overnight at ${where(c)}.`;
+          const inFlight = real ? flights.find((f) => sameCity(f.to, c.city) && !isStayCity(f.from)) : undefined;
+          const lodge = lodgePlace(prev.stop.property_id);
+          if (real && inFlight) {
+            title = `Fly to ${c.city}`;
+            text = `After breakfast, transfer to ${inFlight.from} Airport for the flight to ${c.city}. On arrival, transfer to ${c.hotel || "the hotel"}. Overnight at ${where(c)}.`;
+            transfer = [lodge ? cityTransfer(ctx, lodge, airportOf(ctx, inFlight.from)) : null, cityTransfer(ctx, airportOf(ctx, c.city, hotelOf(ctx, c).id), hotelOf(ctx, c))];
+          } else if (real && lodge) transfer = cityTransfer(ctx, lodge, hotelOf(ctx, c));
         }
       }
       add(
@@ -411,10 +433,14 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
     // leaving this stay
     const leave = seg.checkOut;
     if (!next) {
+      const end = plan.end_city && real && !sameCity(plan.end_city, c.city) ? plan.end_city : null;
       add(
         leave,
-        () => cityDay(leave, c.city ? `Depart from ${c.city}` : "Departure", c.city ? "Transfer to the airport for your onward journey." : "Departure for your onward journey."),
-        (d) => withTransfer(d, real ? cityTransfer(ctx, hotelOf(ctx, c), airportOf(ctx, c.city, hotelOf(ctx, c).id)) : null)
+        () =>
+          end
+            ? cityDay(leave, `Drive to ${end}`, `After breakfast, drive back to ${end} for your homebound flight.`)
+            : cityDay(leave, c.city ? `Depart from ${c.city}` : "Departure", c.city ? "Transfer to the airport for your onward journey." : "Departure for your onward journey."),
+        (d) => withTransfer(d, real ? cityTransfer(ctx, hotelOf(ctx, c), end ? airportOf(ctx, end) : airportOf(ctx, c.city, hotelOf(ctx, c).id)) : null)
       );
     } else if (real && next.kind === "city" && next.stay.city && !next.stay.blank && flew(c.city, next.stay.city)) {
       add(leave, () => cityDay(leave, "", ""), (d) => withTransfer(d, cityTransfer(ctx, hotelOf(ctx, c), airportOf(ctx, c.city, hotelOf(ctx, c).id))));
@@ -554,10 +580,30 @@ function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
   const days: PlanDay[] = [];
   const legs = stopDates(plan);
   const vehicle = plan.vehicle_type;
+  const segs = segments(plan);
+  // A city stay between two lodges (Kaziranga, Delhi 1 night, then Bandhavgarh): the next lodge is
+  // reached from the airport the guests fly into (Jabalpur), or by road from the city hotel.
+  const arrivalAfterCity = (i: number): { loc: string | null; flown: boolean } | null => {
+    const k = segs.findIndex((s) => s.kind === "lodge" && s.index === i);
+    const prev = segs[k - 1];
+    if (!prev || prev.kind !== "city") return null;
+    const c = prev.stay;
+    // the nth stay in a city leaves on the nth flight out of it (Delhi > Guwahati, later Delhi > Jabalpur)
+    const nth = segs.slice(0, k - 1).filter((s) => s.kind === "city" && !!c.city && !!s.stay.city && sameCity(s.stay.city, c.city)).length;
+    const outs = c.city ? (plan.flights ?? []).filter((f) => sameCity(f.from, c.city)) : [];
+    const flight = outs[Math.min(nth, outs.length - 1)];
+    if (flight) {
+      const ap = airportOf(ctx, flight.to);
+      return { loc: ap.id.startsWith("@") ? null : ap.id, flown: true };
+    }
+    const h = c.city && !c.blank ? hotelOf(ctx, c) : null;
+    return { loc: h && !h.id.startsWith("@") ? h.id : null, flown: false };
+  };
 
   legs.forEach(({ stop, checkIn }, i) => {
     const toLoc = locationOfProperty(ctx, stop.property_id);
-    const fromLoc = i === 0 ? plan.arrival_location_id : locationOfProperty(ctx, legs[i - 1].stop.property_id);
+    const viaCity = i > 0 ? arrivalAfterCity(i) : null;
+    const fromLoc = i === 0 ? plan.arrival_location_id : viaCity ? viaCity.loc : locationOfProperty(ctx, legs[i - 1].stop.property_id);
     // Moving between two lodges in the same park (Tree House Hideaway to Kings Lodge):
     // a morning safari first, then the short drive.
     const samePark = i > 0 && legs[i - 1].stop.park_id === stop.park_id;
@@ -567,7 +613,7 @@ function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
     days.push(
       describe(ctx, {
         date: checkIn,
-        kind: i === 0 ? "arrival" : "transfer",
+        kind: i === 0 || viaCity?.flown ? "arrival" : "transfer",
         property_id: stop.property_id,
         park_id: stop.park_id,
         safaris: morning,
@@ -813,7 +859,7 @@ export const DEFAULT_BASIS: RateBasis = { season: "high", safari_days: "weekday"
 
 // Everything that changes the day plan. If this changes, the days are rebuilt.
 export const routeKey = (p: Plan) =>
-  JSON.stringify([p.arrival_date, p.arrival_location_id, p.departure_location_id, p.stops, p.vehicle_type, p.guest.rooms, p.city_stays ?? [], p.flights ?? [], !!p.dateless, !!p.own_vehicle, p.arrival_mode ?? null, p.departure_mode ?? null, p.between_lodges ?? null]);
+  JSON.stringify([p.arrival_date, p.arrival_location_id, p.departure_location_id, p.stops, p.vehicle_type, p.guest.rooms, p.city_stays ?? [], p.flights ?? [], !!p.dateless, !!p.own_vehicle, p.end_city ?? null, p.arrival_mode ?? null, p.departure_mode ?? null, p.between_lodges ?? null]);
 
 // Problems with the route itself (before pricing).
 export function routeProblems(plan: Plan, ctx: BuilderContext): string[] {

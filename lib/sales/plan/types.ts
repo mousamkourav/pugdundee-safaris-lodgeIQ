@@ -161,6 +161,7 @@ export interface Plan {
   city_stays?: CityStay[];
   flights?: PlanFlight[];
   own_vehicle?: boolean; // the guests travel in their own vehicle: no transfers are planned or charged
+  end_city?: string | null; // after the last city stay, drive to this city's airport (Agra, then "drive back to Delhi for the flight")
   transfer_vehicles?: number | null; // vehicles on every transfer; null = enough for the group
   route_vehicles?: Record<string, number>; // vehicles on one road ("from>to" place ids); 0 = not needed
   arrival_mode?: TravelMode; // how the guests reach the first lodge (or the first city)
