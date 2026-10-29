@@ -15,7 +15,7 @@ import { mergePrimary } from "./ai";
 import { ROOM_MATCH, aliasesOf, extractTrip, lodgeNamedIn, locationAliases, matchByName, mergeParsed, roomWishIn, type Ask, type ParsedTrip, type RoomWish } from "./parse-text";
 import { buildDays, defaultStop, defaultVehicle, emptyPlan, lodgesInPark, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems } from "./planner";
 import type { BuilderContext, Plan, PlanStop } from "./types";
-import { cityHotelNamed, cityHotels, safariOnly, sameCity } from "./cities";
+import { cityHotelNamed, cityHotels, safariOnly, sameCity, stayKey, stayWhere } from "./cities";
 import { tripChecklist, type CheckItem } from "./checklist";
 
 export interface ChatFlags {
@@ -525,7 +525,7 @@ export function chatTurn(
 
   // ---- the hotel for a city stay (answer to "Which hotel in Delhi?")
   if (f.pending === "hotel" && f.hotelFor && !parsed.parks.length) {
-    const stay = (next.city_stays ?? []).find((c) => `${c.when}:${c.city}` === f.hotelFor);
+    const stay = (next.city_stays ?? []).find((c) => stayKey(c) === f.hotelFor);
     if (stay) {
       const tbc = /\b(tbc|to be confirmed|later|not sure|skip|no idea|none|own|their own)\b/.test(low);
       // "same" / "same hotel": copy the other stay in this city
@@ -570,9 +570,8 @@ export function chatTurn(
   if (parsed.cityStays?.length) {
     const keep = (next.city_stays ?? []).filter((c) => !parsed.cityStays!.some((x) => x.when === c.when));
     next.city_stays = [...keep, ...parsed.cityStays];
-    const parkAt = (k: number) => ctx.pricing.parks.find((p) => p.id === next.stops[k]?.park_id)?.name.split(/[ -]/)[0] ?? "";
     for (const c of parsed.cityStays) {
-      const where = c.when === "before" ? "before the safari" : c.at !== undefined ? `between ${parkAt(c.at - 1)} and ${parkAt(c.at)}` : "at the end";
+      const where = stayWhere(c, next.stops, ctx.pricing.parks);
       chips.push(`${c.nights} night${c.nights === 1 ? "" : "s"} in ${c.city} ${where}${c.want_extras?.length ? ` with ${c.want_extras.join(", ")}` : ""}`);
     }
   }
@@ -831,13 +830,13 @@ export function nextQuestion(
   // The hotel for nights in a city (Delhi) before or after the safari.
   const hotelStay = [...(plan.city_stays ?? [])]
     .sort((a, b) => (a.when === b.when ? 0 : a.when === "before" ? -1 : 1))
-    .find((c) => !c.hotel && !(f.hotelAsked ?? []).includes(`${c.when}:${c.city}`));
+    .find((c) => !c.hotel && !(f.hotelAsked ?? []).includes(stayKey(c)));
   if (hotelStay) {
     const other = (plan.city_stays ?? []).find((c) => c !== hotelStay && c.city === hotelStay.city && c.hotel);
     return {
-      text: `Which hotel in ${hotelStay.city} (${hotelStay.nights} night${hotelStay.nights === 1 ? "" : "s"} ${hotelStay.when === "before" ? "before the safari" : "at the end"})? Give the name and the price per night for all rooms, e.g. "The Imperial, 18000", or say "to be confirmed".`,
+      text: `Which hotel in ${hotelStay.city} (${hotelStay.nights} night${hotelStay.nights === 1 ? "" : "s"} ${stayWhere(hotelStay, plan.stops, ctx.pricing.parks)})? Give the name and the price per night for all rooms, e.g. "The Imperial, 18000", or say "to be confirmed".`,
       pending: "hotel",
-      hotelFor: `${hotelStay.when}:${hotelStay.city}`,
+      hotelFor: stayKey(hotelStay),
       quick: [
         ...(other ? [{ label: `Same: ${other.hotel}`, text: `${other.hotel}${other.price ? `, ${other.price}` : ""}` }] : []),
         // the hotels in this city from Master data

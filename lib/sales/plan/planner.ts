@@ -591,7 +591,8 @@ function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
     // the nth stay in a city leaves on the nth flight out of it (Delhi > Guwahati, later Delhi > Jabalpur)
     const nth = segs.slice(0, k - 1).filter((s) => s.kind === "city" && !!c.city && !!s.stay.city && sameCity(s.stay.city, c.city)).length;
     const outs = c.city ? (plan.flights ?? []).filter((f) => sameCity(f.from, c.city)) : [];
-    const flight = outs[Math.min(nth, outs.length - 1)];
+    // never an earlier stay's flight: with no flight of its own, it is a drive from the hotel
+    const flight = outs[nth];
     if (flight) {
       const ap = airportOf(ctx, flight.to);
       return { loc: ap.id.startsWith("@") ? null : ap.id, flown: true };

@@ -189,3 +189,51 @@ test("a multi-region trip: Delhi first, Delhi again between parks, a connecting 
   ]);
   assert.equal(p.endCity, "Delhi");
 });
+
+// The sales enquiry of 29 Oct 2026, with a park in place of Kaziranga and an airport that is
+// only in Master data (Tezpur is in no built-in list).
+test("multi-region trip: lodge named next to its park, nights before the park, flights decide the airports", () => {
+  const withTezpur: BuilderContext = { ...ctx, locations: [...ctx.locations, { id: "TEZ", name: "Tezpur Airport", type: "airport", property_id: null }] };
+  const p = extractTrip(
+    "starting 1st april - 1 night delhi, next day fly to Jabalpur then transfer to Bandhavgarh, 3 nights Tree House Bandhavgarh, 3 nights Kanha, 2 nights Pench, transfer to nagpur for delhi flight 1 night delhi, next day flight to Tezpur and then 3 nights Tadoba and then flight to delhi.",
+    withTezpur,
+    TODAY
+  );
+  // cause 1: "Tree House Bandhavgarh" is the lodge, not Kings Lodge by default
+  // cause 2: "Bandhavgarh, 3 nights Kanha": the comma ends Bandhavgarh, so the 3 nights are Kanha's
+  assert.deepEqual(
+    p.parks.map((x) => [x.name, x.nights, x.lodge]),
+    [
+      ["Bandhavgarh National Park", 3, "Tree House Hideaway"],
+      ["Kanha National Park", 3, undefined],
+      ["Pench National Park", 2, undefined],
+      ["Tadoba-Andhari Tiger Reserve", 3, undefined],
+    ]
+  );
+  // cause 3: a city from Master data is read
+  assert.deepEqual(p.flights, [
+    { from: "Delhi", to: "Jabalpur" },
+    { from: "Nagpur", to: "Delhi" },
+    { from: "Delhi", to: "Tezpur" },
+    { from: "Tezpur", to: "Delhi" },
+  ]);
+  // cause 4: the trip leaves from where the last flight goes, not the first place after the arrival
+  assert.equal(p.arrival_place, "Jabalpur Airport");
+  assert.equal(p.departure_place, "Tezpur Airport");
+  assert.deepEqual(p.cityStays, [
+    { when: "before", city: "Delhi", nights: 1 },
+    { when: "after", city: "Delhi", nights: 1, at: 3 },
+  ]);
+});
+
+test("an airport missing from Master data is not replaced by a wrong one", () => {
+  const p = read("1 night delhi, fly to jabalpur, 3 nights Kanha, 2 nights Pench, transfer to nagpur for delhi flight 1 night delhi, next day flight to Jorhat and then 3 nights Tadoba and then flight to delhi.");
+  assert.notEqual(p.departure_place, "Nagpur Airport");
+  assert.ok(p.notes.some((n) => n.includes("Jorhat Airport is not in Master data")));
+});
+
+test("a short lodge name needs its park: 'tree house' alone is not Tree House Hideaway", () => {
+  assert.equal(read("Bandhavgarh 3 nights at Tree House Bandhavgarh").parks[0].lodge, "Tree House Hideaway");
+  assert.equal(read("Bandhavgarh Kings 2 nights").parks[0].lodge, "Kings Lodge");
+  assert.equal(read("Pench 2 nights in a tree house room").parks[0].lodge, undefined);
+});

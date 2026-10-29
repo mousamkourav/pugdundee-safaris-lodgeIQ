@@ -376,3 +376,14 @@ test("a night in Delhi between two parks, a connecting flight to Agra, and the d
   assert.equal(titles[8], "Drive to Delhi");
   assert.match(p.days[8].text, /drive back to Delhi for your homebound flight/);
 });
+
+test("a second city stay with no flight of its own never reuses the first stay's flight", () => {
+  const p = sheetPlan();
+  p.stops = [defaultStop(ctx, "PENCH", 2), defaultStop(ctx, "TADOBA", 2)];
+  p.city_stays = [{ when: "before", city: "Delhi", nights: 1 }, { when: "after", city: "Delhi", nights: 1, at: 1 }];
+  // only the flight out of the first Delhi stay is known
+  p.flights = [{ from: "Delhi", to: "Nagpur" }, { from: "Nagpur", to: "Delhi" }];
+  p.days = buildDays(p, ctx);
+  const tadoba = p.days.find((d) => d.property_id === "WEL")!;
+  assert.notEqual(tadoba.kind, "arrival"); // not "flown in" on the Delhi to Nagpur flight again
+});

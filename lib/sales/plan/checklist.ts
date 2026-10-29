@@ -4,7 +4,7 @@
 import { countryName } from "@/lib/sales/countries";
 import { fmtDate } from "@/lib/sales/format";
 import { lodgesInPark, roomsOf } from "./planner";
-import { safariOnly } from "./cities";
+import { safariOnly, stayKey, stayWhere } from "./cities";
 import type { BuilderContext, Plan, PlanStop, TravelMode } from "./types";
 import type { ChatFlags } from "./chat";
 
@@ -88,8 +88,8 @@ export function tripChecklist(plan: Plan, f: ChatFlags, full: BuilderContext): C
 
   // nights in a city, with the hotel
   (plan.city_stays ?? []).forEach((c, i) => {
-    const where = `${c.city || "Added day"}, ${plural(c.nights, "night")} ${c.when === "before" ? "before the safari" : "at the end"}`;
-    const asked = (f.hotelAsked ?? []).includes(`${c.when}:${c.city}`);
+    const where = `${c.city || "Added day"}, ${plural(c.nights, "night")} ${stayWhere(c, plan.stops, full.pricing.parks)}`;
+    const asked = (f.hotelAsked ?? []).includes(stayKey(c));
     items.push(
       c.hotel || asked
         ? { key: `city:${i}`, label: "City nights", ok: true, text: `${where}: ${c.hotel || "hotel to be confirmed"}` }

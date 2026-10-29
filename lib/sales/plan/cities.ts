@@ -69,3 +69,20 @@ export function cityHotelNamed(msg: string, ctx: Ctx, city?: string): { name: st
       return !!first && low.includes(` ${first} `);
     });
 }
+
+// Where a city stay sits in the trip, in words: "before the safari", "between Pench and
+// Kaziranga" (a stay with `at` lodges before it), or "at the end".
+export function stayWhere(
+  c: { when: "before" | "after"; at?: number | null },
+  stops: { park_id: string }[],
+  parks: { id: string; name: string }[]
+): string {
+  if (c.when === "before") return "before the safari";
+  const parkAt = (k: number) => parks.find((p) => p.id === stops[k]?.park_id)?.name.split(/[ -]/)[0] ?? "";
+  if (c.at !== undefined && c.at !== null && c.at > 0 && c.at < stops.length) return `between ${parkAt(c.at - 1)} and ${parkAt(c.at)}`;
+  return "at the end";
+}
+
+// One key per city stay ("before:Delhi", "after:Delhi@3" for a stay between parks), so two
+// stays in the same city do not share the hotel question.
+export const stayKey = (c: { when: string; city: string; at?: number | null }) => `${c.when}:${c.city}${c.at ? `@${c.at}` : ""}`;

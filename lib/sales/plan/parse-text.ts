@@ -112,8 +112,23 @@ export const EXTRA_WORDS: [RegExp, string][] = [
 ];
 
 // Cities guests fly in and out of, or stay in, outside our lodges.
-const CITIES = ["delhi", "new delhi", "mumbai", "bombay", "bengaluru", "bangalore", "kolkata", "calcutta", "chennai", "hyderabad", "jabalpur", "nagpur", "bhopal", "raipur", "khajuraho", "bagdogra", "varanasi", "agra", "jaipur", "udaipur", "indore", "goa", "kathmandu", "jhansi", "satna", "katni", "umaria", "chandrapur", "lucknow", "ahmedabad", "pune", "guwahati"];
-const INDIAN_CITIES = CITIES.filter((c) => c !== "kathmandu");
+const CITIES = ["delhi", "new delhi", "mumbai", "bombay", "bengaluru", "bangalore", "kolkata", "calcutta", "chennai", "hyderabad", "jabalpur", "nagpur", "bhopal", "raipur", "khajuraho", "bagdogra", "varanasi", "agra", "jaipur", "udaipur", "indore", "goa", "kathmandu", "jhansi", "satna", "katni", "umaria", "chandrapur", "lucknow", "ahmedabad", "pune", "guwahati", "jorhat", "dibrugarh", "siliguri", "gangtok", "darjeeling", "jodhpur", "jaisalmer", "amritsar", "dehradun", "bhubaneswar", "srinagar", "kochi", "cochin", "orchha", "gwalior"];
+// The cities a message can name: the list above, plus every airport, station and city in
+// Master data and the flight routes, so a new one ("Jorhat Airport") is read without a code change.
+function citiesOf(ctx: BuilderContext, avoid: string[]): string[] {
+  const out = new Set(CITIES);
+  const add = (name: string | null | undefined) => {
+    const c = (name ?? "").toLowerCase().replace(/\b(international|domestic|airport|railway station|railway|station|junction|jn|city|bus stand)\b/g, " ").replace(/[^a-z ]+/g, " ").replace(/\s+/g, " ").trim();
+    if (c.length >= 4 && !avoid.includes(c)) out.add(c);
+  };
+  for (const l of ctx.locations) if (l.type !== "property") add(l.name);
+  for (const r of ctx.flightRoutes ?? []) {
+    add(r.from_city);
+    add(r.to_city);
+  }
+  // longest first, so "new delhi" wins over "delhi"
+  return [...out].sort((a, b) => b.length - a.length).map(escapeRe);
+}
 const cityName = (c: string) => (c === "new delhi" ? "Delhi" : c === "bombay" ? "Mumbai" : c === "bangalore" ? "Bengaluru" : c === "calcutta" ? "Kolkata" : c.replace(/\b\w/g, (x) => x.toUpperCase()));
 
 // ---------------------------------------------------------------- helpers
@@ -298,10 +313,18 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   // Everything the text can refer to: parks, and lodges (which imply their park).
   const parkItems = ctx.pricing.parks.map((p) => ({ name: p.name, aliases: aliasesOf(p.name) }));
   const allParkAliases = parkItems.flatMap((p) => p.aliases);
+  const cities = citiesOf(ctx, [...allParkAliases, ...ctx.properties.map((l) => l.name.toLowerCase())]);
   const lodgeItems = ctx.properties
     .map((l) => {
       const park = ctx.pricing.parks.find((p) => p.id === l.park_id);
-      return park ? { name: park.name, lodge: l.name, aliases: lodgeAliases(l.name, allParkAliases) } : null;
+      if (!park) return null;
+      // a short name next to its own park is that lodge: "Tree House Bandhavgarh", "Bandhavgarh Kings".
+      // ("tree house" alone could be a room at another lodge, so it needs the park.)
+      const words = l.name.toLowerCase().split(/\s+/);
+      const shorts = [words.slice(0, -1).join(" "), words[0]].filter((w) => w.length >= 4 && (w.includes(" ") || (!GENERIC.has(w) && !ROOM_GENERIC.has(w))));
+      const own = aliasesOf(park.name).filter((a) => a.length >= 4);
+      const nextToPark = shorts.flatMap((w) => own.flatMap((a) => [`${w} ${a}`, `${a} ${w}`, `${w}, ${a}`, `${a}, ${w}`]));
+      return { name: park.name, lodge: l.name, aliases: [...new Set([...lodgeAliases(l.name, allParkAliases), ...nextToPark])] };
     })
     .filter((x): x is { name: string; lodge: string; aliases: string[] } => !!x);
   // Only distinctive words are spelling-corrected towards ("bandhavgarh", "waghoba"), never
@@ -387,7 +410,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   else if (/\b(foreign(?:er|ers)?|international|overseas|nri)\b/.test(low)) out.nationality = "foreign";
   else {
     // "a family from Mumbai": guests coming from an Indian city are Indian (not "flying from Mumbai")
-    const home = low.match(new RegExp(`(?<!(?:fly\\w*|flight\\w*|depart\\w*)\\s+)\\bfrom\\s+(${INDIAN_CITIES.join("|")})\\b`));
+    const home = low.match(new RegExp(`(?<!(?:fly\\w*|flight\\w*|depart\\w*)\\s+)\\bfrom\\s+(${cities.filter((c) => c !== "kathmandu").join("|")})\\b`));
     if (home) {
       out.nationality = "indian";
       out.country = "IN";
@@ -530,7 +553,15 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   const nightsFor = new Map<number, number>();
   for (const t of tokens) {
     let target = t.before ?? t.after;
-    if (t.before !== undefined && t.after !== undefined) target = prefixStyle > suffixStyle ? t.before : t.after;
+    if (t.before !== undefined && t.after !== undefined) {
+      // "Bandhavgarh, 3 nights Kanha": the comma ends the Bandhavgarh part, so the 3 nights are Kanha's.
+      // "Kanha 3 nights, Pench": the comma after the count ends Kanha's part.
+      const breakBefore = /[,;.]|\b(?:then|and|phir)\b/i.test(text.slice(parkHits[t.after].end, t.start));
+      const breakAfter = /[,;.]/.test(text.slice(t.end, parkHits[t.before].index));
+      if (breakBefore && !breakAfter) target = t.before;
+      else if (breakAfter && !breakBefore) target = t.after;
+      else target = prefixStyle > suffixStyle ? t.before : t.after;
+    }
     if (target !== undefined && !nightsFor.has(target)) nightsFor.set(target, t.value);
   }
   parkHits.forEach((h, hi) => {
@@ -627,7 +658,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
 
   // ---- flights and city stays (Delhi nights before or after the safari)
   const cityHits: { at: number; city: string }[] = [];
-  for (const c of CITIES) for (const m of low.matchAll(new RegExp(`\\b${c}\\b`, "g"))) cityHits.push({ at: m.index!, city: cityName(c) });
+  for (const c of cities) for (const m of low.matchAll(new RegExp(`\\b${c}\\b`, "g"))) cityHits.push({ at: m.index!, city: cityName(c) });
   cityHits.sort((a, b) => a.at - b.at);
   const firstPark = order.length ? order[0].at : Infinity;
   const lastPark = order.length ? order[order.length - 1].at : -Infinity;
@@ -640,12 +671,12 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   };
   for (const m of low.matchAll(/\b(?:flight|flights|fly|flying|flies|flew)\b/g)) {
     const after = low.slice(m.index!, m.index! + 70);
-    const to = after.match(new RegExp(`\\bto\\s+(${CITIES.join("|")})\\b`));
+    const to = after.match(new RegExp(`\\bto\\s+(${cities.join("|")})\\b`));
     if (!to) continue;
     // "...delhi flight, drive direct to Agra": the "to" belongs to the drive, not the flight
     if (/\b(?:drive|driving|drove|road|by car|transfer)\b/.test(after.slice(0, to.index))) continue;
     // "from Delhi to Raipur", "flying delhi to raipur"
-    const fromM = after.slice(0, to.index).match(new RegExp(`(?:\\bfrom\\s+)?\\b(${CITIES.join("|")})\\b`));
+    const fromM = after.slice(0, to.index).match(new RegExp(`(?:\\bfrom\\s+)?\\b(${cities.join("|")})\\b`));
     const before = cityHits.filter((h) => h.at < m.index! && h.city !== cityName(to[1])).pop();
     const from = fromM ? cityName(fromM[1]) : before?.city;
     if (!from) continue;
@@ -654,17 +685,17 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     addFlight(f, m.index!);
   }
   // "transfer to Nagpur for Delhi flight", "catch the Delhi flight": a flight to Delhi from the place before
-  for (const m of low.matchAll(new RegExp(`\\b(?:for|catch|take|board)\\s+(?:the\\s+|a\\s+)?(${CITIES.join("|")})\\s+flights?\\b`, "g"))) {
+  for (const m of low.matchAll(new RegExp(`\\b(?:for|catch|take|board)\\s+(?:the\\s+|a\\s+)?(${cities.join("|")})\\s+flights?\\b`, "g"))) {
     const to = cityName(m[1]);
     const from = cityHits.filter((h) => h.at < m.index! && h.city !== to).pop()?.city;
     if (from) addFlight({ from, to }, m.index!);
   }
-  for (const m of low.matchAll(new RegExp(`\\b(?:leave|leaving|leaves|depart(?:ing|s)?|return(?:ing|s)?|fly(?:ing)?\\s+back|head(?:ing)?\\s+back|go(?:ing)?\\s+back)\\s+from\\s+(${CITIES.join("|")})\\s+to\\s+(${CITIES.join("|")})\\b`, "g"))) {
+  for (const m of low.matchAll(new RegExp(`\\b(?:leave|leaving|leaves|depart(?:ing|s)?|return(?:ing|s)?|fly(?:ing)?\\s+back|head(?:ing)?\\s+back|go(?:ing)?\\s+back)\\s+from\\s+(${cities.join("|")})\\s+to\\s+(${cities.join("|")})\\b`, "g"))) {
     const f = { from: cityName(m[1]), to: cityName(m[2]) };
     if (!/^\W*(?:by\s+)?(?:road|car|train|drive)/.test(low.slice(m.index! + m[0].length, m.index! + m[0].length + 15))) addFlight(f, m.index!);
   }
   // the route before the word: "nagpur to delhi flight", "jaipur-nagpur by air"
-  for (const m of low.matchAll(new RegExp(`\\b(${CITIES.join("|")})\\s*(?:to|-)\\s*(${CITIES.join("|")})\\s+(?:flights?|by\\s+(?:air|flight))\\b`, "g"))) {
+  for (const m of low.matchAll(new RegExp(`\\b(${cities.join("|")})\\s*(?:to|-)\\s*(${cities.join("|")})\\s+(?:flights?|by\\s+(?:air|flight))\\b`, "g"))) {
     const f = { from: cityName(m[1]), to: cityName(m[2]) };
     addFlight(f, m.index!);
   }
@@ -684,7 +715,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   flights.sort((a, b) => (flightPos.get(a) ?? 0) - (flightPos.get(b) ?? 0));
   if (flights.length) out.flights = flights;
   const stays: NonNullable<ParsedTrip["cityStays"]> = [];
-  const CITY_RE = CITIES.join("|");
+  const CITY_RE = cities.join("|");
   const stayPatterns = [
     // "stay in Delhi for one night", "stay there 2 nights", "spend 2 nights in Delhi"
     new RegExp(`\\b(?:stay(?:ing)?|overnight|spend(?:ing)?)\\s+(?:in\\s+|at\\s+)?(?<city>${CITY_RE}|there)\\s+(?:for\\s+)?(?<n>${NUM.slice(1, -1)})\\s*nights?\\b`, "g"),
@@ -860,6 +891,31 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   if (out.arrival_place && !out.departure_place && placeHits.length === 1) {
     out.departure_place = out.arrival_place;
     out.notes.push(`Assumed the guest also leaves from ${out.arrival_place}.`);
+  }
+  // With flights in the trip, they decide where the safari starts and ends: the airport the last
+  // flight before the first park lands at, and the one the first flight after the last park leaves
+  // from. (Text order alone took "transfer to Nagpur for the Delhi flight" in the middle of the
+  // trip as the departure.)
+  if (flights.length && order.length) {
+    const airportOfCity = (city: string) => places.find((l) => l.type === "airport" && locationAliases(l.name, l.code).includes(city.toLowerCase()));
+    const inbound = flights.filter((f) => (flightPos.get(f) ?? 0) < firstPark).pop();
+    const outbound = flights.find((f) => (flightPos.get(f) ?? 0) > lastPark);
+    if (inbound) {
+      const ap = airportOfCity(inbound.to);
+      if (ap) out.arrival_place = ap.name;
+      else if (out.arrival_place && !out.arrival_place.toLowerCase().includes(inbound.to.toLowerCase())) {
+        delete out.arrival_place;
+        out.notes.push(`${inbound.to} Airport is not in Master data > Places yet.`);
+      }
+    }
+    if (outbound) {
+      const ap = airportOfCity(outbound.from);
+      if (ap) out.departure_place = ap.name;
+      else if (out.departure_place && !out.departure_place.toLowerCase().includes(outbound.from.toLowerCase())) {
+        delete out.departure_place;
+        out.notes.push(`${outbound.from} Airport is not in Master data > Places yet.`);
+      }
+    }
   }
 
   // ---- how they travel: own vehicle, train, flight, our car. Each mention belongs to its own
