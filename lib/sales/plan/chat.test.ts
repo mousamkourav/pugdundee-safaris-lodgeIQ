@@ -227,11 +227,11 @@ test("the AI choosing a lodge the message did not name: the lodge question is st
   // Gemini answers with a lodge on its own
   const ai = aiToParsed({ adults: 2, nationality: "indian", arrival_date: "2027-01-16", arrival_place: "Nagpur Airport", departure_place: "Nagpur Airport", stops: [{ park: "Pench", lodge: "Pench Jungle Camp", nights: 3 }] }, two);
   assert.equal(ai.parks[0].lodge, "Pench Jungle Camp");
-  const r = chatTurn(plan, initialFlags(plan), msg, two, TODAY, ai, { aiPrimary: true });
+  const r = chatTurn(plan, initialFlags(plan), msg, two, TODAY, { parsed: ai, source: "ai" });
   assert.match(r.reply.text, /Which lodge in Pench/);
   assert.ok(!(r.flags.lodgeDecided ?? []).includes("PENCH"));
   // when the message does name it, the AI's lodge is used and nothing is asked
-  const named = chatTurn(plan, initialFlags(plan), msg.replace("Pench 3 nights", "3 nights at Pench Jungle Camp"), two, TODAY, ai, { aiPrimary: true });
+  const named = chatTurn(plan, initialFlags(plan), msg.replace("Pench 3 nights", "3 nights at Pench Jungle Camp"), two, TODAY, { parsed: ai, source: "ai" });
   assert.equal(named.plan.stops[0].property_id, "PT2");
   assert.doesNotMatch(named.reply.text, /Which lodge/);
 });
@@ -343,7 +343,7 @@ test("Roseate House from Master data: its rates and the airport transfer are pri
     { adults: 2, arrival_date: "2027-03-16", arrival_place: "Khajuraho Airport", stops: [{ park: "Tadoba-Andhari Tiger Reserve", nights: 4 }, { park: "Pench National Park", nights: 3 }], flights: [{ from: "Delhi", to: "Nagpur" }], city_stays: [{ when: "before", city: "Delhi", nights: 1, hotel: "Roseate House" }] },
     full
   );
-  check(chatTurn(plan, initialFlags(plan), msg, full, TODAY, ai, { aiPrimary: true }));
+  check(chatTurn(plan, initialFlags(plan), msg, full, TODAY, { parsed: ai, source: "ai" }));
 });
 
 test("the whole Delhi - lodges - Khajuraho - Delhi trip from one message: naturalists, Khajuraho extras, the last drop", () => {

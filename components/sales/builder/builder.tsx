@@ -291,7 +291,7 @@ export function Builder({
             aiUnderstand({ message: text, history, planJson: JSON.stringify(plan) }),
             new Promise<{ parsed?: undefined; error: string }>((ok) => setTimeout(() => ok({ error: "The AI took too long; the built-in reader was used." }), 35_000)),
           ]);
-          if (ai.parsed) r = chatTurn(plan, flags, text, ctx, today, ai.parsed, { aiPrimary: true });
+          if (ai.parsed) r = chatTurn(plan, flags, text, ctx, today, { parsed: ai.parsed, source: "ai" });
           else if (ai.error) r = { ...r, reply: { ...r.reply, warnings: [...(r.reply.warnings ?? []), ai.error] } };
         } catch {
           r = { ...r, reply: { ...r.reply, warnings: [...(r.reply.warnings ?? []), "The AI is not reachable right now; the built-in reader was used."] } };

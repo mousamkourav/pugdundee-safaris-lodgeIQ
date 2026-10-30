@@ -11,8 +11,8 @@ import { paxText } from "@/lib/sales/pricing/pax";
 import { countryName, findPhone } from "@/lib/sales/countries";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 import type { ISODate } from "@/lib/sales/pricing/types";
-import { mergePrimary } from "./ai";
-import { ROOM_MATCH, aliasesOf, extractTrip, lodgeNamedIn, locationAliases, matchByName, mergeParsed, roomWishIn, type Ask, type ParsedTrip, type RoomWish } from "./parse-text";
+import { ROOM_MATCH, aliasesOf, extractTrip, lodgeNamedIn, locationAliases, matchByName, roomWishIn, type Ask, type ParsedTrip, type RoomWish } from "./parse-text";
+import { fillGaps, mergeMemory, sourceNote, type Filled } from "./reading";
 import { buildDays, defaultStop, defaultVehicle, emptyPlan, lodgesInPark, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems } from "./planner";
 import type { BuilderContext, Plan, PlanStop } from "./types";
 import { cityHotelNamed, cityHotels, safariOnly, sameCity, stayKey, stayWhere } from "./cities";
@@ -51,6 +51,13 @@ export interface ChatMessage {
   quick?: QuickReply[];
   action?: "review";
   checklist?: CheckItem[]; // the whole trip: ticks and questions
+  source?: string; // where the reading came from: "from memory", "built-in reader", "AI helped with: dates"
+}
+
+// A second reading of the message, from the memory of saved quotes or from the AI.
+export interface ExtraReading {
+  parsed: ParsedTrip;
+  source: "memory" | "ai";
 }
 
 export interface ChatResult {
@@ -114,8 +121,7 @@ export function chatTurn(
   message: string,
   full: BuilderContext,
   today: ISODate,
-  aiParsed?: ParsedTrip,
-  opts: { aiPrimary?: boolean } = {}
+  extra?: ExtraReading
 ): ChatResult {
   // Stops are planned from safari parks and lodges only; cities (Delhi, Khajuraho) and
   // city hotels (Roseate House) are city stays.
@@ -205,13 +211,16 @@ export function chatTurn(
 
   // ---- read the message
   let parsed = extractTrip(msg, ctx, today, cityHotels(full));
-  // With the AI assistant on, its reading comes first and the built-in reader fills gaps;
-  // otherwise the AI only fills what the built-in reader missed.
+  // One reading (lib/sales/plan/reading.ts): a saved reading from memory comes first (a
+  // person checked it); otherwise the built-in reader's, with the AI filling only what it
+  // left empty. Where the AI and the reader disagree, the sales person is asked.
   const ruleParsed = parsed;
-  if (aiParsed) parsed = opts.aiPrimary ? mergePrimary(aiParsed, parsed) : mergeParsed(parsed, aiParsed);
+  let filled: Filled[] = [];
+  if (extra?.source === "memory") parsed = mergeMemory(extra.parsed, parsed);
+  else if (extra?.source === "ai") ({ parsed, filled } = fillGaps(parsed, extra.parsed));
   // A lodge counts only when the message names it. The AI sometimes picks one by itself
   // (Kings Lodge for "Bandhavgarh 3 nights"); then the guest is asked which lodge instead.
-  if (aiParsed) {
+  if (extra?.source === "ai") {
     parsed = {
       ...parsed,
       parks: parsed.parks.map((p) =>
@@ -317,6 +326,8 @@ export function chatTurn(
         chips.push(`children aged ${ages.join(", ")}`);
       }
     }
+    // a disagreement between the reader and the AI: the reply already changed the plan, or kept it
+    if (answering.key.startsWith("conflict:") && chips.length === before) chips.push("kept as read");
     // anything else is kept word for word with the trip, so nothing said is lost
     if (chips.length === before && !parsed.adults && !parsed.parks.length && !parsed.arrival_date) {
       next.guest.notes = [next.guest.notes.trim(), `${answering.text} Answer: ${msg}`].filter(Boolean).join("\n").slice(0, 2000);
@@ -694,7 +705,7 @@ export function chatTurn(
   return {
     plan: next,
     flags: f,
-    reply: { role: "assistant", text, chips, warnings: [...warnings, ...step.warnings], quick: step.quick, action, checklist: tripChecklist(next, f, full) },
+    reply: { role: "assistant", text, chips, warnings: [...warnings, ...step.warnings], quick: step.quick, action, checklist: tripChecklist(next, f, full), source: sourceNote(extra?.source ?? "reader", filled) },
     understood,
     routeChanged,
   };
@@ -721,6 +732,12 @@ export function nextQuestion(
   const problems = routeProblems(plan, ctx);
   if (problems.length) return { text: `I cannot plan this yet: ${problems.join(" ")}`, pending: null, warnings: [], ready: false };
   const askOf = (key: string) => (f.asks ?? []).find((a) => a.key === key);
+  // The reader and the AI read the message differently (reading.ts): asked first, one at a
+  // time, because it is about what was written, not about what is missing.
+  const conflict = (f.asks ?? []).find((a) => a.key.startsWith("conflict:") || a.key.startsWith("unknown:"));
+  if (conflict) {
+    return { text: conflict.text, pending: "ask", askFor: conflict.key, quick: conflict.quick?.map((q) => ({ label: q, text: q })), warnings: [], ready: false };
+  }
   if (f.nightsUnknown.length) {
     const n = ctx.pricing.parks.find((p) => p.id === f.nightsUnknown[0])?.name ?? "the park";
     const split = askOf("split");

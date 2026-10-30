@@ -4,11 +4,11 @@
 //                  experiences, glossary, similar past enquiries, the trip so far
 //   aiToParsed   - Gemini's JSON turned into a ParsedTrip, keeping only names
 //                  that exist in master data and numbers in sensible ranges
-//   mergePrimary - the AI's reading first, the built-in reader fills the gaps
+//   (merging with the built-in reader: reading.ts, fillGaps - the AI fills gaps only)
 //   similarExamples / planToExample - "learning" from quotes already made
 // =====================================================================
 
-import { EXTRA_WORDS, aliasesOf, locationAliases, matchByName, scrubForAI, type ParsedTrip, type RoomWish } from "./parse-text";
+import { EXTRA_WORDS, aliasesOf, locationAliases, matchByName, scrubForAI, type Ask, type ParsedTrip, type RoomWish } from "./parse-text";
 import type { BuilderContext, Plan } from "./types";
 import { cityHotels, safariOnly } from "./cities";
 
@@ -128,14 +128,27 @@ export function aiToParsed(raw: unknown, full: BuilderContext): ParsedTrip {
     return n ? matchByName(places, n, (x: string) => locationAliases(x)) : null;
   };
   const parks: ParsedTrip["parks"] = [];
+  // a name that is not in master data is dropped and asked about, never guessed
+  const asks: Ask[] = [];
+  const unknownName = (name: string, what: string) => {
+    const key = `unknown:${name.toLowerCase()}`;
+    if (!asks.some((a) => a.key === key)) asks.push({ key, text: `"${name}" is not in Master data. Which ${what} did you mean? (Or add it in Master data first.)` });
+  };
   for (const sRaw of arr(o.stops).slice(0, 12)) {
     const s = obj(sRaw);
     // a lodge alone is enough: its park follows
     const lodgeName = str(s.lodge);
     const lodge = lodgeName ? ctx.properties.find((l) => l.name.toLowerCase() === lodgeName.toLowerCase()) : undefined;
     const park = lodge ? ctx.pricing.parks.find((p) => p.id === lodge.park_id) : parkOf(s.park);
-    if (!park) continue;
+    if (!park) {
+      const said = str(s.park) ?? lodgeName;
+      if (said) unknownName(said, "park or lodge");
+      continue;
+    }
+    if (lodgeName && !lodge) unknownName(lodgeName, "lodge");
     const room = ROOMS.includes(s.room as RoomWish) ? (s.room as RoomWish) : undefined;
+    // a room by its own name (from a saved quote): only if that lodge has it
+    const roomName = str(s.room_name) && lodge ? ctx.rooms.find((r) => r.property_id === lodge.id && r.name === str(s.room_name))?.name : undefined;
     const naturalists = int(s.naturalists, -1, 20);
     parks.push({
       name: park.name,
@@ -145,6 +158,7 @@ export function aiToParsed(raw: unknown, full: BuilderContext): ParsedTrip {
       naturalists,
       extras: [...new Set(arr(s.extras).filter((x): x is string => typeof x === "string" && EXTRA_KEYWORDS.includes(x)))],
       room,
+      ...(roomName ? { roomName } : {}),
     });
   }
   const country = str(o.country, 2);
@@ -163,10 +177,13 @@ export function aiToParsed(raw: unknown, full: BuilderContext): ParsedTrip {
       nights: int(c.nights, 1, 14)!,
       ...(str(c.hotel) ? { hotel: str(c.hotel)! } : {}),
       ...(int(c.price, 500, 10_000_000) ? { price: int(c.price, 500, 10_000_000)! } : {}),
+      ...(int(c.at, 0, 12) !== undefined ? { at: int(c.at, 0, 12)! } : {}),
     }))
     .slice(0, 6); // several cities: Delhi before; Khajuraho, then Delhi after
   const arrival = placeOf(o.arrival_place);
   const departure = placeOf(o.departure_place);
+  if (str(o.arrival_place) && !arrival) unknownName(str(o.arrival_place)!, "airport, station or place");
+  if (str(o.departure_place) && !departure && str(o.departure_place) !== str(o.arrival_place)) unknownName(str(o.departure_place)!, "airport, station or place");
   const meal = String(o.meal_plan ?? "").toUpperCase();
   const names = (v: unknown) => arr(v).map((x) => parkOf(x)?.name).filter((x): x is string => !!x);
   return {
@@ -186,34 +203,8 @@ export function aiToParsed(raw: unknown, full: BuilderContext): ParsedTrip {
     removeParks: names(o.remove_parks),
     order: names(o.order),
     replaceRoute: o.replace_route === true,
+    ...(asks.length ? { asks } : {}),
     notes: [],
-  };
-}
-
-// The AI's reading first; the built-in reader fills whatever the AI left out.
-export function mergePrimary(ai: ParsedTrip, rule: ParsedTrip): ParsedTrip {
-  const usedAiParks = ai.parks.length > 0;
-  return {
-    adults: ai.adults ?? rule.adults,
-    children: ai.children?.length ? ai.children : rule.children,
-    rooms: ai.rooms ?? rule.rooms,
-    nationality: ai.nationality ?? rule.nationality,
-    country: ai.country ?? rule.country,
-    arrival_date: ai.arrival_date ?? rule.arrival_date,
-    departure_date: rule.departure_date,
-    arrival_place: ai.arrival_place ?? rule.arrival_place,
-    departure_place: ai.departure_place ?? rule.departure_place,
-    parks: usedAiParks ? ai.parks : rule.parks,
-    meal_plan: ai.meal_plan ?? rule.meal_plan,
-    // the fuller reading of flights and city nights wins: the AI sometimes drops a leg the reader found
-    flights: (ai.flights?.length ?? 0) >= (rule.flights?.length ?? 0) ? ai.flights ?? rule.flights : rule.flights,
-    cityStays: (ai.cityStays?.length ?? 0) >= (rule.cityStays?.length ?? 0) ? ai.cityStays ?? rule.cityStays : rule.cityStays,
-    reverse: ai.reverse ?? rule.reverse,
-    removeParks: ai.removeParks,
-    order: ai.order,
-    replaceRoute: ai.replaceRoute,
-    // the reader's "assumed they leave from where they arrived" only if the AI said nothing about it
-    notes: rule.notes.filter((n) => !(ai.departure_place && n.startsWith("Assumed the guest also leaves"))),
   };
 }
 

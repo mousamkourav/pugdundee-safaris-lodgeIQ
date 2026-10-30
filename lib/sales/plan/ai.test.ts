@@ -58,7 +58,7 @@ test("a Hinglish enquiry: the built-in reader reads it too, the AI's answer buil
   const ai = aiToParsed(GEMINI_ANSWER, ctx);
   assert.equal(ai.parks.length, 2); // Kaziranga dropped
   assert.deepEqual(ai.parks[1].extras, ["bush dinner"]); // unknown experience dropped
-  const r = chatTurn(plan, initialFlags(plan), HINGLISH, ctx, TODAY, ai, { aiPrimary: true });
+  const r = chatTurn(plan, initialFlags(plan), HINGLISH, ctx, TODAY, { parsed: ai, source: "ai" });
   assert.deepEqual(r.plan.stops.map((s) => [s.park_id, s.nights]), [["TADOBA", 4], ["PENCH", 3]]);
   assert.equal(r.plan.arrival_location_id, "NAG");
   assert.equal(r.plan.departure_location_id, "NAG");
@@ -71,13 +71,13 @@ test("a Hinglish enquiry: the built-in reader reads it too, the AI's answer buil
 
 test("AI corrections: remove a park, a new order, a whole new route", () => {
   let plan = emptyPlan(TODAY);
-  let r = chatTurn(plan, initialFlags(plan), HINGLISH, ctx, TODAY, aiToParsed(GEMINI_ANSWER, ctx), { aiPrimary: true });
+  let r = chatTurn(plan, initialFlags(plan), HINGLISH, ctx, TODAY, { parsed: aiToParsed(GEMINI_ANSWER, ctx), source: "ai" });
   plan = r.plan;
-  r = chatTurn(plan, r.flags, "pench pehle karo", ctx, TODAY, aiToParsed({ order: ["Pench National Park", "Tadoba-Andhari Tiger Reserve"] }, ctx), { aiPrimary: true });
+  r = chatTurn(plan, r.flags, "pench pehle karo", ctx, TODAY, { parsed: aiToParsed({ order: ["Pench National Park", "Tadoba-Andhari Tiger Reserve"] }, ctx), source: "ai" });
   assert.deepEqual(r.plan.stops.map((s) => s.park_id), ["PENCH", "TADOBA"]);
-  r = chatTurn(r.plan, r.flags, "tadoba hata do", ctx, TODAY, aiToParsed({ remove_parks: ["Tadoba-Andhari Tiger Reserve"] }, ctx), { aiPrimary: true });
+  r = chatTurn(r.plan, r.flags, "tadoba hata do", ctx, TODAY, { parsed: aiToParsed({ remove_parks: ["Tadoba-Andhari Tiger Reserve"] }, ctx), source: "ai" });
   assert.deepEqual(r.plan.stops.map((s) => s.park_id), ["PENCH"]);
-  r = chatTurn(r.plan, r.flags, "new plan: tadoba 2 nights only", ctx, TODAY, aiToParsed({ replace_route: true, stops: [{ park: "Tadoba-Andhari Tiger Reserve", nights: 2 }] }, ctx), { aiPrimary: true });
+  r = chatTurn(r.plan, r.flags, "new plan: tadoba 2 nights only", ctx, TODAY, { parsed: aiToParsed({ replace_route: true, stops: [{ park: "Tadoba-Andhari Tiger Reserve", nights: 2 }] }, ctx), source: "ai" });
   assert.deepEqual(r.plan.stops.map((s) => [s.park_id, s.nights]), [["TADOBA", 2]]);
 });
 
@@ -138,7 +138,7 @@ test("the guest's name from the guest fields never reaches the AI, even without 
 
 test("learning: a saved quote becomes an example, and similar enquiries find it", () => {
   const plan = emptyPlan(TODAY);
-  const r = chatTurn(plan, initialFlags(plan), HINGLISH, ctx, TODAY, aiToParsed(GEMINI_ANSWER, ctx), { aiPrimary: true });
+  const r = chatTurn(plan, initialFlags(plan), HINGLISH, ctx, TODAY, { parsed: aiToParsed(GEMINI_ANSWER, ctx), source: "ai" });
   const ex = JSON.parse(planToExample(r.plan, ctx));
   assert.deepEqual(ex.stops.map((s: { park: string; nights: number }) => [s.park, s.nights]), [["Tadoba-Andhari Tiger Reserve", 4], ["Pench National Park", 3]]);
   const all = [
