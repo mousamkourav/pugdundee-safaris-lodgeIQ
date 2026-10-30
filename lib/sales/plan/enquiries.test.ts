@@ -7,14 +7,14 @@ import assert from "node:assert/strict";
 import { chatTurn, initialFlags, type ChatFlags, type ChatResult } from "./chat";
 import { emptyPlan, planToTrip } from "./planner";
 import { scrubForAI } from "./parse-text";
-import { readerCtx as ctx, READER_TODAY as TODAY } from "./reader-fixture";
+import { DELHI_KAZIRANGA, jorhatCtx, readerCtx as ctx, READER_TODAY as TODAY } from "./reader-fixture";
 import type { Plan } from "./types";
 
-function conversation() {
+function conversation(c: typeof ctx = ctx) {
   let plan: Plan = emptyPlan(TODAY);
   let flags: ChatFlags = initialFlags(plan);
   return (msg: string) => {
-    const r = chatTurn(plan, flags, msg, ctx, TODAY);
+    const r = chatTurn(plan, flags, msg, c, TODAY);
     plan = r.plan;
     flags = r.flags;
     return r;
@@ -358,4 +358,21 @@ test("30. the full multi-city trip: Delhi, six lodges with Kings and THH as two 
   assert.deepEqual([r.plan.arrival_location_id, r.plan.departure_location_id], ["BHO", "NAG"]);
   assert.equal(r.plan.arrival_date, "2026-12-21");
   assert.ok(r.plan.stops.every((s) => s.want_extras?.includes("nature walk") && s.want_extras.includes("special")));
+});
+
+// The enquiry of 30 Oct 2026, misread with the AI first (Kings Lodge, Kanha 2, Pench 1).
+// The built-in reader alone reads it right; the AI may no longer override it (reading.test.ts).
+test("31. Delhi, Tree House 3, Kanha 3, Pench 2, Nagpur to Delhi, Delhi, Jorhat, Kaziranga 3, back to Delhi", () => {
+  const r = conversation(jorhatCtx)(DELHI_KAZIRANGA);
+  assert.deepEqual(route(r.plan), ["BAN 3 THH", "KAN 3 KEL", "PEN 2 PTL", "KAZ 3 IORA"]);
+  assert.deepEqual(r.plan.city_stays?.map((c) => [c.when, c.city, c.nights, c.at ?? null]), [["before", "Delhi", 1, null], ["after", "Delhi", 1, 3]]);
+  assert.deepEqual(r.plan.flights?.map((f) => `${f.from}>${f.to}`), ["Delhi>Jabalpur", "Nagpur>Delhi", "Delhi>Jorhat", "Jorhat>Delhi"]);
+  const days = r.plan.days;
+  // Delhi the night of 1 Apr, the flight to Jabalpur on 2 Apr
+  assert.equal(days[0].date, "2027-04-01");
+  assert.equal(days[0].kind, "city");
+  assert.equal(days[1].date, "2027-04-02");
+  assert.ok(days[1].items.some((i) => i.type === "flight" && /Delhi to Jabalpur/.test(i.title)));
+  assert.deepEqual(roads(r.plan).filter((x) => !x.includes("@")), ["JLR>L_THH", "L_THH>L_KEL", "L_KEL>L_PTL", "L_PTL>NAG", "JRH>L_IORA", "L_IORA>JRH"]);
+  assert.deepEqual([r.plan.arrival_location_id, r.plan.departure_location_id], ["JLR", "JRH"]);
 });

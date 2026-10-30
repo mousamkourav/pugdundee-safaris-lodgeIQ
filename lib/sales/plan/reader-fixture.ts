@@ -135,3 +135,19 @@ export const readerCtx: BuilderContext = {
 
 // The reader tests' "today".
 export const READER_TODAY = "2026-10-27";
+
+// The same master data with Jorhat Airport and its road to Iora Retreat
+// (supabase/sales_jorhat_flights_transfers.sql), for Kaziranga trips by air.
+export const jorhatCtx: BuilderContext = {
+  ...readerCtx,
+  locations: [...readerCtx.locations, { id: "JRH", name: "Jorhat Airport", type: "airport", property_id: null, code: "JRH" }],
+  pricing: {
+    ...pricing,
+    locations: [...pricing.locations, { id: "JRH", name: "Jorhat Airport", property_id: null }],
+    transferRates: [...pricing.transferRates, road("JRH", "L_IORA", 7000, 2)],
+  },
+};
+
+// The enquiry of 30 Oct 2026 (Delhi, three MP parks, Delhi, Kaziranga by air).
+export const DELHI_KAZIRANGA =
+  "starting 1st april - 1 night delhi, next day fly to Jabalpur then transfer to Bandhavgarh, 3 nights Tree House Bandhavgarh, 3 nights Kanha, 2 nights Pench, transfer to nagpur for delhi flight 1 night delhi, next day flight to Jorhat and then 3 nights Kaziranga and then flight to delhi.";
