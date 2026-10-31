@@ -55,6 +55,8 @@ export function priceBreakdown(r: Pick<PriceResult, "lines" | "totals">): { rows
 // line, and for guests who ask for a detailed breakup. The markup is spread over
 // the lines in proportion (never shown as a charge), like the summary above.
 export interface DetailRow {
+  kind?: PriceLine["kind"];
+  nights?: number; // a room row: how many nights it covers
   lkey: string | null;
   date: string | null;
   label: string;
@@ -68,9 +70,56 @@ export interface DetailRow {
   hike?: number;
 }
 
-export function detailedBreakdown(r: Pick<PriceResult, "lines" | "totals">, opts: { spreadMarkup: boolean } = { spreadMarkup: true }): { rows: DetailRow[]; total: number } {
-  const lines = (r.lines ?? []).filter((l) => !l.missing && l.kind !== "markup" && l.kind !== "adjustment" && l.kind !== "tax");
+// The order on one day, as the guests travel: a morning safari, leaving the lodge or hotel,
+// the flight, the transfer from the airport, the night's room, the safaris, then extras.
+function dayRank(l: PriceLine): number {
+  if (l.kind === "safari") return / morning /.test(` ${l.description} `) ? -1 : l.group === "naturalist" ? 5 : 4;
+  if (l.kind === "transfer") return l.leg === "out" ? 0 : 2;
+  if (l.kind === "addon" && l.group === "flight") return 1;
+  if (l.kind === "room" || (l.kind === "addon" && l.group === "hotel")) return 3;
+  return 6;
+}
+
+// The lines in trip order: by date, then as the day goes; lines without a date (discounts) last.
+export function inTripOrder(lines: PriceLine[]): PriceLine[] {
+  return lines
+    .map((l, i) => ({ l, i }))
+    .sort((a, b) => (a.l.date ?? "9999").localeCompare(b.l.date ?? "9999") || dayRank(a.l) - dayRank(b.l) || a.i - b.i)
+    .map((x) => x.l);
+}
+
+const addNights = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+// The nights of one stay as one row: "Tree House Hideaway, Tree House, full board - 3 nights".
+function groupNights(rows: DetailRow[]): DetailRow[] {
+  const out: DetailRow[] = [];
+  for (const r of rows) {
+    if (r.kind !== "room" || !r.date) {
+      out.push(r);
+      continue;
+    }
+    // the same stay goes on: the same wording, the next night, priced the same way
+    const prev = [...out].reverse().find((x) => x.kind === "room" && x.label === r.label);
+    if (prev?.date && prev.nights && r.date === addNights(prev.date, prev.nights) && !prev.edited && !r.edited && !!prev.manual === !!r.manual && prev.hike === r.hike) {
+      prev.nights += 1;
+      prev.net += r.net;
+      prev.gst += r.gst;
+      prev.amount += r.amount;
+      prev.lkey = null;
+      continue;
+    }
+    out.push({ ...r, nights: 1 });
+  }
+  return out.map((r) => (r.kind === "room" && r.nights ? { ...r, label: `${r.label} - ${r.nights} night${r.nights === 1 ? "" : "s"}` } : r));
+}
+
+export function detailedBreakdown(
+  r: Pick<PriceResult, "lines" | "totals">,
+  opts: { spreadMarkup: boolean; groupNights?: boolean } = { spreadMarkup: true }
+): { rows: DetailRow[]; total: number } {
+  const lines = inTripOrder((r.lines ?? []).filter((l) => !l.missing && l.kind !== "markup" && l.kind !== "adjustment" && l.kind !== "tax"));
   const rows: DetailRow[] = lines.map((l) => ({
+    kind: l.kind,
     lkey: l.lkey ?? null,
     date: l.date,
     label: l.description,
@@ -101,6 +150,8 @@ export function detailedBreakdown(r: Pick<PriceResult, "lines" | "totals">, opts
   } else if (markup) {
     rows.push({ lkey: null, date: null, label: "Markup", quantity: 1, net: markup, gstPct: null, gst: 0, amount: markup });
   }
+  // the guest's view: a stay's nights on one row (the team's price check keeps one per night, to correct)
+  if (opts.groupNights !== false) rows.splice(0, rows.length, ...groupNights(rows));
   const pkg = (r.lines ?? []).find((l) => l.kind === "tax");
   if (pkg) rows.push({ lkey: null, date: null, label: pkg.description, quantity: 1, net: 0, gstPct: pkg.tax_pct ?? null, gst: pkg.amount, amount: pkg.amount });
   const adjustment = r.totals?.adjustment ?? 0;

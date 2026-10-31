@@ -300,6 +300,7 @@ export interface PriceLine {
   edited?: boolean; // price corrected by hand on the detailed price check
   hike?: number; // % yearly hike applied to last year's rate
   group?: "naturalist" | "flight" | "hotel"; // shown separately in the price breakup
+  leg?: "out" | "in"; // a transfer: leaving a lodge or hotel, or from an airport or station (orders the day)
   property_id: string | null; // which lodge bills it
   ref_id: string | null; // room_category / park / transfer rate / addon / offer id
   missing?: boolean; // no rate found and no typed price: amount is 0 and an error is reported

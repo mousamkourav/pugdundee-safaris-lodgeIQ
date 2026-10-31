@@ -8,6 +8,7 @@ import { chatTurn, initialFlags, type ChatFlags } from "./chat";
 import { buildDays, emptyPlan, masterHotel, planToTrip } from "./planner";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 import { mealCode } from "@/lib/sales/pricing/meal";
+import { detailedBreakdown, inTripOrder } from "@/lib/sales/pricing/breakdown";
 import { roseateCtx as ctx, TEST_JORHAT, TEST_JORHAT_1, TEST_JORHAT_2 } from "./reader-fixture";
 import type { Plan } from "./types";
 
@@ -99,4 +100,55 @@ test("a second hotel row with the same name (no rooms) does not hide the one wit
 
 test("meal plans saved as B&B, FB, HB or Room only are read as CP, AP, MAP, EP", () => {
   assert.deepEqual(["B&B", "bb", "Bed & Breakfast", "CP", "FB", "Full board", "HB", "map", "Room only", "EP"].map(mealCode), ["CP", "CP", "CP", "CP", "AP", "AP", "MAP", "MAP", "EP", "EP"]);
+});
+
+// ---- the price lines follow the trip as typed
+test("price lines in trip order, each saying what it is (lodge / hotel, room, meal plan)", () => {
+  const p = conversation()(TEST_JORHAT).plan;
+  // a fare on the first flight, so it is priced
+  p.days = p.days.map((d) => ({ ...d, items: d.items.map((it) => (it.type === "flight" && /Jabalpur/.test(it.title) ? { ...it, flight: { ...it.flight!, fare_pp: 6000 } } : it)) }));
+  const r = priced(p);
+  const day = (date: string) => inTripOrder(r.lines).filter((l) => l.date === date).map((l) => `${l.kind}: ${l.description}`);
+  assert.deepEqual(day("2027-04-20"), ["transfer: Delhi Airport to Roseate House", "room: Roseate House, AC Deluxe, B&B"]);
+  assert.deepEqual(day("2027-04-21"), [
+    "transfer: Roseate House to Delhi Airport",
+    "addon: Flight Delhi to Jabalpur",
+    "transfer: Jabalpur Airport to Tree House Hideaway",
+    "room: Tree House Hideaway, Tree House, full board",
+  ]);
+  // a safari day as it goes: the morning safari, the night, the evening safari
+  assert.deepEqual(day("2027-04-22"), [
+    "safari: Bandhavgarh National Park core morning safari",
+    "room: Tree House Hideaway, Tree House, full board",
+    "safari: Bandhavgarh National Park core evening safari",
+  ]);
+  // the per-lodge totals in trip order: Delhi first, then the lodges as typed
+  assert.deepEqual(r.byProperty.map((b) => b.name).slice(0, 5), ["Roseate House", "Tree House Hideaway", "Kanha Earth Lodge", "Waghoba Eco Lodge", "Iora Retreat"]);
+});
+
+test("the guest's breakup: a stay's nights on one row; the team's check keeps one row per night", () => {
+  const r = priced(conversation()(TEST_JORHAT).plan);
+  const guest = detailedBreakdown(r).rows.filter((x) => x.kind === "room").map((x) => `${x.date} ${x.label} ${x.amount}`);
+  assert.deepEqual(guest, [
+    "2027-04-20 Roseate House, AC Deluxe, B&B - 1 night 20060",
+    "2027-04-21 Tree House Hideaway, Tree House, full board - 3 nights 75000",
+    "2027-04-24 Kanha Earth Lodge, Cottage, full board - 3 nights 75000",
+    "2027-04-27 Waghoba Eco Lodge, AC Cottage, full board - 4 nights 100000",
+    "2027-05-01 Roseate House, AC Deluxe, B&B - 1 night 20060",
+    "2027-05-02 Iora Retreat, Deluxe Room, full board - 3 nights 75000",
+  ]);
+  const team = detailedBreakdown(r, { spreadMarkup: false, groupNights: false }).rows.filter((x) => x.kind === "room");
+  assert.equal(team.length, 15);
+  assert.ok(team.every((x) => x.lkey));
+  // both add up to the same total
+  assert.equal(detailedBreakdown(r).total, detailedBreakdown(r, { spreadMarkup: true, groupNights: false }).total);
+});
+
+test("a price corrected by hand on a saved quote still finds its room line (key keeps the old wording)", () => {
+  const p = conversation()(TEST_JORHAT).plan;
+  const key = "room|2027-04-22|THH_T||Tree House x1, AP";
+  const r = priced({ ...p, line_prices: { [key]: 30000 } });
+  const line = r.lines.find((l) => l.lkey === key);
+  assert.equal(line?.amount, 30000);
+  assert.equal(line?.description, "Tree House Hideaway, Tree House, full board");
 });

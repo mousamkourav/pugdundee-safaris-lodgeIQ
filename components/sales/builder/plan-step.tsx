@@ -318,7 +318,7 @@ export function PlanStep({
   const stillNeeded = (result?.missing ?? []).filter((m) => plan.manual_prices?.[m.key] === undefined);
 
   const setGuest = (patch: Partial<Plan["guest"]>) => setPlan((p) => ({ ...p, guest: { ...p.guest, ...patch } }));
-  const detail = result ? detailedBreakdown(result, { spreadMarkup: false }).rows : [];
+  const detail = result ? detailedBreakdown(result, { spreadMarkup: false, groupNights: false }).rows : [];
   const editedCount = Object.keys(plan.line_prices ?? {}).length;
   const setLinePrice = (key: string, v: number | null) =>
     setPlan((p) => {

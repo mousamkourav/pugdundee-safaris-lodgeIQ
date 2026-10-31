@@ -42,6 +42,9 @@ import type {
 const round = (n: number) => Math.round(n);
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const readableDate = (d: ISODate) => `${Number(d.slice(8, 10))} ${MON[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`;
+// The meal plan in words on a price line.
+const MEAL_WORDS: Record<string, string> = { AP: "full board", MAP: "half board", CP: "B&B", EP: "room only" };
+export const mealLabel = (meal: string) => MEAL_WORDS[meal] ?? meal;
 
 export const DEFAULT_PAYMENT_SLABS: PaymentSlab[] = [
   { label: "Deposit", pct: 25, days_before_arrival: null },
@@ -234,10 +237,16 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
   const hikeLabel = (pct: number) => (pct && hike ? ` (${hike.label} rate, +${pct}%)` : "");
 
   // ---------------- rooms ----------------
+  // room lines: their description now, and the older wording their key is made from
+  const keyDesc = new Map<string, string>();
   const totalRooms = trip.stays.reduce((m, s) => Math.max(m, s.rooms), 0);
   for (const stay of trip.stays) {
     const room = roomOf(stay.room_category_id);
-    const label = `${room?.name ?? "Room"} x${stay.rooms}, ${stay.meal_plan}`;
+    // what the line is: the lodge or hotel, the room and the meal plan ("Roseate House, AC Deluxe, B&B")
+    const label = `${propName(stay.property_id)}, ${room?.name ?? "Room"}${stay.rooms > 1 ? ` x${stay.rooms}` : ""}, ${mealLabel(stay.meal_plan)}`;
+    // the line's key keeps the older wording, so prices corrected by hand on saved quotes still match
+    const keyLabel = `${room?.name ?? "Room"} x${stay.rooms}, ${stay.meal_plan}`;
+    keyDesc.set(label, keyLabel);
     const occ = occupancy(trip.adults, stay.rooms);
     if (occ.some((n) => n === 0)) warnings.push(`${propName(stay.property_id)}: more rooms than adults, so some rooms are priced as single.`);
     if (room) {
@@ -305,6 +314,7 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
       const pax = base > 0 ? { adult: (base - extraPart - childParts.reduce((t, c) => t + c, 0)) / base, extra: extraPart / base, child: childParts.map((c) => c / base) } : undefined;
       base = withHike(base, hikePct);
       const { amount, tax } = withTax(base, rate.tax_pct, rate.rates_include_tax);
+      keyDesc.set(label + hikeLabel(hikePct), keyLabel + hikeLabel(hikePct));
       lines.push({ kind: "room", date: night, description: label + hikeLabel(hikePct), quantity: stay.rooms, unit_price: round(base / stay.rooms), amount, tax, tax_pct: rate.tax_pct, property_id: stay.property_id, ref_id: stay.room_category_id, ...(hikePct ? { hike: hikePct } : {}), ...(pax ? { pax } : {}) });
     }
   }
@@ -422,6 +432,8 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     const from = locOf(t.from_location_id);
     const to = locOf(t.to_location_id);
     const label = `${from?.name ?? t.from_label ?? "?"} to ${to?.name ?? t.to_label ?? "?"}`;
+    // leaving a lodge or hotel (first on its day), or arriving from an airport or station
+    const leg: "out" | "in" = from?.property_id || (t.from_location_id.startsWith("@") && !/airport|station/i.test(t.from_label ?? "")) ? "out" : "in";
     const billTo = from?.property_id ?? to?.property_id ?? null;
 
     // Rates for this road: this direction first; a rate entered only the other way
@@ -463,10 +475,10 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
       needPrice({ key, kind: "transfer", label: `Transfer ${label}`, unit: "one way, all vehicles, incl. tax", date: t.date }, `No transfer rate for ${label}.`);
       if (manual[key] !== undefined) {
         const amount = round(manual[key]);
-        lines.push({ kind: "transfer", date: t.date, description: label, quantity: 1, unit_price: amount, amount, tax: 0, property_id: billTo, ref_id: null, manual: true, key });
+        lines.push({ kind: "transfer", leg, date: t.date, description: label, quantity: 1, unit_price: amount, amount, tax: 0, property_id: billTo, ref_id: null, manual: true, key });
         continue;
       }
-      lines.push({ kind: "transfer", date: t.date, description: label, quantity: 0, unit_price: 0, amount: 0, tax: 0, property_id: billTo, ref_id: null, missing: true, key });
+      lines.push({ kind: "transfer", leg, date: t.date, description: label, quantity: 0, unit_price: 0, amount: 0, tax: 0, property_id: billTo, ref_id: null, missing: true, key });
       continue;
     }
     // Yearly hike: last year's rate for a date in the hike period; dates not fixed,
@@ -478,6 +490,7 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     const hours = priced.r.drive_hours ? ` (about ${priced.r.drive_hours} hrs)` : "";
     lines.push({
       kind: "transfer",
+      leg,
       date: t.date,
       description: `${label} by ${priced.r.vehicle_type}${hours}${hikeLabel(hikePct)}`,
       quantity: priced.vehicles,
@@ -553,7 +566,7 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
   // amount (incl. GST, which is worked out again at the line's rate).
   const seen = new Map<string, number>();
   for (const l of lines) {
-    const base = `${l.kind}|${l.date ?? ""}|${l.ref_id ?? ""}|${l.group ?? ""}|${l.description}`;
+    const base = `${l.kind}|${l.date ?? ""}|${l.ref_id ?? ""}|${l.group ?? ""}|${(l.kind === "room" && keyDesc.get(l.description)) || l.description}`;
     const n = (seen.get(base) ?? 0) + 1;
     seen.set(base, n);
     l.lkey = n > 1 ? `${base}#${n}` : base;
@@ -741,11 +754,9 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     t.total += l.amount;
     byPid.set(l.property_id, t);
   }
-  const order = (pid: string | null) => {
-    const i = trip.stays.findIndex((s) => s.property_id === pid);
-    return i < 0 ? 999 : i;
-  };
-  const byProperty = [...byPid.values()].sort((a, b) => order(a.property_id) - order(b.property_id));
+  // in trip order: by the first night at each lodge or hotel (Delhi first); lines billed to none last
+  const firstNight = (pid: string | null) => trip.stays.filter((s) => s.property_id === pid).map((s) => s.check_in).sort()[0] ?? "9999";
+  const byProperty = [...byPid.values()].sort((a, b) => firstNight(a.property_id).localeCompare(firstNight(b.property_id)));
 
   // ---------------- dates, currency, payments ----------------
   const arrival = trip.stays.length ? trip.stays.map((s) => s.check_in).sort()[0] : null;

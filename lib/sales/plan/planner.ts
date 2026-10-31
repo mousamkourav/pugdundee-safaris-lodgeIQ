@@ -828,9 +828,11 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
     const h = d.city_hotel;
     if (!h) continue;
     const last = stays[stays.length - 1];
-    if (last?.outside && last.property_id === h.property_id && addDays(last.check_in, last.nights) === d.date) last.nights += 1;
+    if (last?.outside && last.property_id === h.property_id && last.room_category_id === h.room_category_id && last.meal_plan === h.meal_plan && addDays(last.check_in, last.nights) === d.date) last.nights += 1;
     else stays.push({ property_id: h.property_id, room_category_id: h.room_category_id, meal_plan: h.meal_plan, check_in: d.date, nights: 1, rooms: plan.guest.rooms, outside: true });
   }
+  // the stays in trip order (Delhi first), so the price lines and the per-lodge totals follow the trip
+  stays.sort((a, b) => a.check_in.localeCompare(b.check_in));
   const safaris: SafariInput[] = [];
   const transfers: TransferInput[] = [];
   const addons: { addon_id: string; date: string; qty?: number }[] = [];
