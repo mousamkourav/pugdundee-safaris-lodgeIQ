@@ -8,7 +8,7 @@ import { scrubForAI } from "@/lib/sales/plan/parse-text";
 import { loadBuilderContext, todayIST } from "@/lib/sales/plan/load-context";
 import { sanitizePlan } from "@/lib/sales/plan/sanitize";
 import { buildPrompt, type GlossaryRow } from "@/lib/sales/plan/ai";
-import { aiShouldHelp, normaliseEnquiry, pickPattern, structureOf, type ReadingPattern, type Token } from "@/lib/sales/plan/reading";
+import { normaliseEnquiry, pickPattern, structureOf, type ReadingPattern, type Token } from "@/lib/sales/plan/reading";
 import { timed } from "@/lib/timing";
 
 // The second reading of a chat message (lib/sales/plan/reading.ts), after the built-in
@@ -134,9 +134,9 @@ async function assistReadingUnsafe(input: AssistInput): Promise<AssistResult> {
     }
   }
 
-  // 2. the AI, only for gaps, and only when it may help
-  const unknown = (Array.isArray(input.unknownWords) ? input.unknownWords : []).filter((w): w is string => typeof w === "string").slice(0, 20);
-  if (!input.wantAI || !aiShouldHelp({ gaps, unknownWords: unknown, stops: plan.stops.length || 1 }) || !(await aiEnabled())) return { source: "reader" };
+  // 2. the AI, only for gaps. Whether it may help (aiShouldHelp) is decided in the browser, on
+  // the reader's reading of this message; here: something must be missing, and the AI on.
+  if (!input.wantAI || !gaps.length || !(await aiEnabled())) return { source: "reader" };
 
   const gl = await supabase.from("sales_glossary").select("term, meaning").eq("active", true).limit(300);
   const glossary = ((gl.data ?? []) as GlossaryRow[]).filter((g) => g.term && g.meaning);
