@@ -28,8 +28,9 @@ export default async function RateAuditPage() {
         <Link href="/sales/admin" className="text-xs font-medium text-sand-500 hover:text-olive-600">Master data</Link>
         <h1 className="mt-1 text-2xl">Rate audit</h1>
         <p className="mt-1 max-w-3xl text-sm text-sand-500">
-          Master data compared with the rate documents for 2026-27: the selling-rate card (road transfers), the partner hotels, and the Ken River Lodge B2B sheet. Also every room rate above Rs 7,500 a night without 18% GST.
-          Fix a difference in Master data, or run <code>supabase/sales_rate_card_2026.sql</code> for the transfer card.
+          Master data compared with the rate documents for 2026-27: the selling-rate card (road transfers and the roads via a place), the Pugdundee tariff and season calendar,
+          the foreigners&apos; safari and activity rates, the Ken River Lodge B2B sheet and the partner hotels. Also every room rate above Rs 7,500 a night without 18% GST.
+          Run <code>supabase/sales_rate_card_2026.sql</code> for the corrections the documents make clear; fix the rest in Master data.
         </p>
       </div>
 

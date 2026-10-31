@@ -36,13 +36,16 @@ const data: AuData = {
     t("JLR", "L_KEL", "Dzire / Etios", 7000),
     t("L_KL", "JLR", "Innova / Crysta", 9000, 0),
   ],
-  addons: [{ name: "Khajuraho sightseeing (per vehicle)", property_id: "RAD", rate: 6000, rate_foreign: null, tax_pct: 5, active: true }],
+  addons: [
+    { name: "Khajuraho sightseeing (per vehicle)", property_id: "RAD", rate: 6000, rate_foreign: null, tax_pct: 5, active: true },
+    { name: "Transfer via Bedaghat / Dhuandhar Falls (extra per vehicle)", property_id: "KEL", rate: 1500, rate_foreign: null, tax_pct: 5, active: true },
+  ],
 };
 const rows = auditRates(data);
 const row = (source: string, item: string) => rows.find((r) => r.source === source && r.item === item);
 
 test("the selling-rate card has 33 roads", () => {
-  assert.equal(CARD_TRANSFERS.length, 33);
+  assert.equal(CARD_TRANSFERS.filter((c) => !c.source).length, 33);
 });
 
 test("transfers: OK, a different amount, missing, wrong GST; Jabalpur is its airport; Bandhavgarh is both lodges", () => {
@@ -54,8 +57,12 @@ test("transfers: OK, a different amount, missing, wrong GST; Jabalpur is its air
   assert.equal(row("Selling-rate card", "Tree House Hideaway - Jabalpur Airport, Innova / Crysta")?.status, "missing");
   // a park with no lodge in this data: not in Master data
   assert.equal(rows.find((r) => r.item === "Satpura - Bhopal")?.status, "not found");
-  // a road "via" a place is a question, never loaded
-  assert.equal(rows.find((r) => r.item === "Kanha - Jabalpur via Bedaghat")?.status, "not found");
+  // Jabalpur: the airport and the railway station of the city, the same rate
+  assert.equal(row("Selling-rate card", "Kanha Earth Lodge - Jabalpur Railway Station, Innova / Crysta")?.status, "missing");
+  // a road "via" a place is an add-on at the lodge, the extra per vehicle
+  assert.equal(row("Selling-rate card", "Kanha Earth Lodge: Transfer via Bedaghat / Dhuandhar Falls (extra per vehicle)")?.status, "ok");
+  assert.equal(row("Selling-rate card", "Kings Lodge: Transfer via Bedaghat / Dhuandhar Falls (extra per vehicle)")?.status, "missing");
+  assert.ok(!rows.some((r) => / via /.test(r.item) && !/Transfer via/.test(r.item)));
 });
 
 test("partner hotel rooms: Roseate 23,000 OK; 17,000 saved for Indian guests only is flagged; Radisson GST", () => {
@@ -73,6 +80,66 @@ test("experiences: found and checked, or missing", () => {
 });
 
 test("what the documents leave open is a question for the owner", () => {
-  assert.ok(RATE_CARD_QUESTIONS.some((q) => /via/.test(q)));
-  assert.ok(RATE_CARD_QUESTIONS.some((q) => /Foreign-nationals tariff/.test(q)));
+  assert.ok(RATE_CARD_QUESTIONS.some((q) => /Bhimbetka/.test(q)));
+  assert.ok(RATE_CARD_QUESTIONS.some((q) => /from 01st Apr/.test(q)));
+});
+
+// ---- the tariff, the season calendar, safaris and Ken River Lodge
+const full: AuData = {
+  ...data,
+  properties: [...data.properties, { id: "KRL", name: "Ken River Lodge", kind: "own_lodge" }],
+  rooms: [...data.rooms, { id: "KRL_S", property_id: "KRL", name: "Stilted River Facing Cottage" }, { id: "KRL_H", property_id: "KRL", name: "AC Premium Hut", rate_category_id: "CAT_HUT" }],
+  roomRates: [...data.roomRates, rr("KRL_S", { meal_plan: "AP", valid_from: "2026-10-01", valid_to: "2027-09-30", rate_double: 16500, weekend_rate_double: 17500, tax_pct: 0, rates_include_tax: true })],
+  categories: [{ id: "CAT_C", name: "Cottage" }, { id: "CAT_T", name: "Treehouse" }, { id: "CAT_HUT", name: "KRL Premium Hut", calendar: "krl" }],
+  tariff: [
+    { rate_category_id: "CAT_C", nationality: "foreign", season: "shoulder", valid_from: "2026-10-01", valid_to: "2027-09-30", rate_single: 15000, rate_double: 18000, meal_plan: "AP", tax_pct: 18, rates_include_tax: false, active: true },
+    { rate_category_id: "CAT_C", nationality: "foreign", season: "high", valid_from: "2026-10-01", valid_to: "2027-09-30", rate_single: 18500, rate_double: 21000, meal_plan: "AP", tax_pct: 18, rates_include_tax: false, active: true },
+    { rate_category_id: "CAT_C", nationality: "indian", season: "all", valid_from: "2026-10-01", valid_to: "2027-03-31", rate_single: 27000, rate_double: 30000, meal_plan: "AP", tax_pct: 18, rates_include_tax: false, active: true },
+    { rate_category_id: "CAT_HUT", nationality: "all", season: "all", valid_from: "2026-10-01", valid_to: "2027-09-30", rate_single: null, rate_double: 16000, weekend_rate_double: 16000, meal_plan: "AP", tax_pct: 0, rates_include_tax: true, active: true },
+  ],
+  calendar: [
+    { calendar: "pugdundee", season: "shoulder", date_from: "2026-10-01", date_to: "2026-10-31", active: true },
+    { calendar: "pugdundee", season: "shoulder", date_from: "2026-11-01", date_to: "2026-11-15", active: true },
+  ],
+  parks: [{ id: "TAD", name: "Tadoba-Andhari Tiger Reserve" }, { id: "PAN", name: "Panna National Park" }],
+  safaris: (["morning", "afternoon"] as const).flatMap((session) => [
+    { park_id: "TAD", zone: "core", session, vehicle_type: "exclusive_jeep", nationality: "foreign", valid_from: "2026-10-01", valid_to: "2027-09-30", weekday_rate: 11500, weekend_rate: 12500, naturalist_fee: 2500, tax_pct: 5, active: true, book_min_days: 4, book_max_days: 59 },
+    { park_id: "TAD", zone: "core", session, vehicle_type: "exclusive_jeep", nationality: "foreign", valid_from: "2026-10-01", valid_to: "2027-09-30", weekday_rate: 14500, weekend_rate: 14500, naturalist_fee: 2500, tax_pct: 5, active: true, book_min_days: 60, book_max_days: 120 },
+    { park_id: "PAN", zone: "core", session, vehicle_type: "exclusive_jeep", nationality: "all", valid_from: "2026-10-01", valid_to: "2027-09-30", weekday_rate: 15000, weekend_rate: 16000, naturalist_fee: 0, tax_pct: 5, active: true },
+  ]),
+};
+const all = auditRates(full);
+const find = (source: string, item: string) => all.find((r) => r.source === source && r.item === item);
+
+test("tariff: foreign seasons and the Indian published rate; amount, dates and missing rows", () => {
+  assert.equal(find("Tariff 2026-27", "Cottage, foreign, shoulder")?.status, "ok");
+  assert.equal(find("Tariff 2026-27", "Cottage, foreign, high")?.status, "different"); // 21,000 saved, 22,000 on the tariff
+  assert.equal(find("Tariff 2026-27", "Cottage, foreign, peak")?.status, "missing");
+  assert.equal(find("Tariff 2026-27", "Cottage, Indian (published)")?.status, "dates"); // ends 31 Mar, not 30 Sep 2027
+  assert.equal(find("Tariff 2026-27", "Tree House, foreign, shoulder")?.status, "missing"); // "Treehouse" is the same category
+  assert.equal(find("Tariff 2026-27", "Forest Suite, foreign, shoulder")?.status, "not found");
+});
+
+test("season calendar: a range as on the tariff, a range with other dates, a missing one", () => {
+  assert.equal(find("Tariff 2026-27", "Season calendar: 2026-10-01 to 2026-10-31")?.status, "ok");
+  const nov = find("Tariff 2026-27", "Season calendar: 2026-11-01 to 2026-11-30");
+  assert.equal(nov?.status, "dates");
+  assert.match(nov!.found, /shoulder 2026-11-01 to 2026-11-15/);
+  assert.equal(find("Tariff 2026-27", "Season calendar: 2027-05-16 to 2027-06-30")?.status, "missing");
+});
+
+test("safaris: Tadoba by booking window, Panna taxes included, missing parks", () => {
+  assert.equal(find("Safaris and activities - foreigners", "Tadoba core, foreign, booked 4-59 days ahead, morning")?.status, "ok");
+  assert.equal(find("Safaris and activities - foreigners", "Tadoba core, foreign, booked 60-120 days ahead, evening")?.status, "different"); // weekend 14,500 vs 19,000
+  assert.equal(find("Safaris and activities - foreigners", "Tadoba buffer, foreign, morning")?.status, "missing");
+  assert.equal(find("Ken River Lodge B2B", "Panna core, morning")?.status, "gst"); // 5% added, the B2B rate includes taxes
+  assert.equal(find("Safaris and activities - foreigners", "Kanha core, foreign")?.status, "not found");
+});
+
+test("Ken River Lodge rooms: B2B weekday / weekend, from the room's rate or its tariff category", () => {
+  assert.equal(find("Ken River Lodge B2B", "Ken River Lodge: Stilted River Facing Cottage (2 guests)")?.status, "ok");
+  const hut = find("Ken River Lodge B2B", "Ken River Lodge: AC Premium Hut (2 guests)");
+  assert.equal(hut?.status, "different");
+  assert.match(hut!.found, /published tariff/);
+  assert.equal(find("Ken River Lodge B2B", "Ken River Lodge: AC Villa Cottage, 3 bedrooms (6 guests)")?.status, "not found");
 });
