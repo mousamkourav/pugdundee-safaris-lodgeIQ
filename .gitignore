@@ -9,3 +9,5 @@ design-reference/
 
 # TypeScript build cache (changes on every type check)
 tsconfig.tsbuildinfo
+
+rate-docs/
