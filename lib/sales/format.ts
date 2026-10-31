@@ -47,3 +47,14 @@ export function startOfMonthIST(now = new Date()) {
   const m = ist.getUTCMonth();
   return new Date(Date.UTC(y, m, 1) - 330 * 60_000).toISOString();
 }
+
+// A trip day with its weekday and year: "Mon, 16 Jan 2027" (guest page, PDF, builder).
+// Read as a calendar date (no time zone shift).
+const DAY_DATE = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+export function fmtDay(iso: string | null | undefined) {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return "";
+  const d = new Date(iso.slice(0, 10) + "T00:00:00Z");
+  if (Number.isNaN(d.getTime())) return "";
+  const p = Object.fromEntries(DAY_DATE.formatToParts(d).map((x) => [x.type, x.value]));
+  return `${p.weekday}, ${p.day} ${p.month} ${p.year}`;
+}

@@ -6,10 +6,10 @@ import { DownloadPdfButton } from "@/components/sales/download-pdf";
 import { ShareButtons } from "@/components/sales/share-buttons";
 import { PhotoCarousel } from "@/components/sales/photo-carousel";
 import { Icon } from "@/components/icons";
-import { dayName } from "@/lib/sales/pricing/dates";
 import { shortPark } from "@/lib/sales/plan/draft";
 import { routeOf, segments } from "@/lib/sales/plan/planner";
 import { sameCity } from "@/lib/sales/plan/cities";
+import { fmtDay } from "@/lib/sales/format";
 
 // Guest-facing itinerary. Public: opened from a share link without signing in.
 export async function generateMetadata({ params }: { params: Promise<{ token: string }> }): Promise<Metadata> {
@@ -43,9 +43,7 @@ const fileNameFor = (guest: string, start: string | null) =>
     .join(" - ") + ".pdf";
 
 const LONG = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
-const SHORT = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 const long = (d: string | null) => (d ? LONG.format(new Date(d + "T00:00:00Z")) : "");
-const short = (d: string) => SHORT.format(new Date(d + "T00:00:00Z"));
 
 function money(n: number, currency: string) {
   return new Intl.NumberFormat(currency === "INR" ? "en-IN" : "en-GB", {
@@ -330,7 +328,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                         <p className="font-display text-3xl font-semibold leading-none text-[var(--color-gold-500,#C9A227)]">{pad2(i + 1)}</p>
                         {!view.dateless && (
                           <p className="text-xs uppercase tracking-[0.15em] text-sand-500 sm:mt-2">
-                            {dayName(d.date)} {short(d.date)}
+                            {fmtDay(d.date)}
                           </p>
                         )}
                       </div>
@@ -522,7 +520,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                         <tr key={i} className="border-t border-white/10 align-top">
                           <td className="py-2 pr-3 text-white/85">
                             {r.label}
-                            {r.date && !view.dateless && <span className="block text-xs text-white/50">{short(r.date)}</span>}
+                            {r.date && !view.dateless && <span className="block text-xs text-white/50">{fmtDay(r.date)}</span>}
                           </td>
                           <td className="tabular py-2 pr-3 text-right">{money(r.net, view.currency)}</td>
                           <td className="tabular py-2 pr-3 text-right text-white/75">

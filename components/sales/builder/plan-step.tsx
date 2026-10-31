@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
-import { rupees, fmtDate } from "@/lib/sales/format";
-import { dayName } from "@/lib/sales/pricing/dates";
+import { rupees, fmtDate, fmtDay } from "@/lib/sales/format";
 import { closedAt, describe, routeOf, roomsFor, segments, stayAt } from "@/lib/sales/plan/planner";
 import { cityParkIds, sameCity } from "@/lib/sales/plan/cities";
 import { detailedBreakdown } from "@/lib/sales/pricing/breakdown";
@@ -466,7 +465,7 @@ export function PlanStep({
                   <span className="flex items-baseline gap-2">
                     <span className={`text-sm text-olive-700 ${isTarget ? "font-bold" : "font-semibold"}`}>Day {i + 1}</span>
                     {isTarget && <span className="rounded-full bg-olive-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">Adding here</span>}
-                    {!plan.dateless && <span className="text-xs uppercase tracking-wide text-sand-500">{dayName(d.date)} {fmtDate(d.date)}</span>}
+                    {!plan.dateless && <span className="text-xs uppercase tracking-wide text-sand-500">{fmtDay(d.date)}</span>}
                   </span>
                   <span className="truncate text-xs text-sand-500">{d.property_id ? lodgeName(d.property_id) : d.kind === "city" ? d.title || "City stay" : d.title || "Departure"}</span>
                 </button>

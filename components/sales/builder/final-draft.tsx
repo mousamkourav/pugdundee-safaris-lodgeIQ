@@ -3,8 +3,7 @@
 import { ui } from "@/components/ui";
 import { paxLines } from "@/lib/sales/pricing/pax";
 import { Icon } from "@/components/icons";
-import { rupees, fmtDate } from "@/lib/sales/format";
-import { dayName } from "@/lib/sales/pricing/dates";
+import { rupees, fmtDate, fmtDay } from "@/lib/sales/format";
 import { defaultDraft, withEdits, type DraftInputs } from "@/lib/sales/plan/draft";
 import { detailedBreakdown, priceBreakdown } from "@/lib/sales/pricing/breakdown";
 import { flightSummary } from "./plan-step";
@@ -139,7 +138,7 @@ export function FinalDraft({
                 <li key={d.date + i} className="grid gap-2 sm:grid-cols-[120px_1fr]">
                   <div>
                     <p className="font-display font-semibold text-olive-800">Day {i + 1}</p>
-                    {!plan.dateless && <p className="text-sm text-sand-500">{dayName(d.date)} {fmtDate(d.date)}</p>}
+                    {!plan.dateless && <p className="text-sm text-sand-500">{fmtDay(d.date)}</p>}
                   </div>
                   <div className="space-y-1.5">
                     <input

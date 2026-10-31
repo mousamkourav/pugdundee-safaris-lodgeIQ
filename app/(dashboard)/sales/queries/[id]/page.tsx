@@ -15,8 +15,7 @@ import { todayIST } from "@/lib/sales/plan/load-context";
 import { getMemberNames } from "@/lib/sales/members";
 import { loadFlightBookings } from "@/lib/sales/flight-bookings";
 import { FlightBookings, type FlightRowIn } from "@/components/sales/flight-bookings";
-import { rupees, fmtDate, fmtRange, daysSince } from "@/lib/sales/format";
-import { dayName } from "@/lib/sales/pricing/dates";
+import { rupees, fmtDate, fmtDay, fmtRange, daysSince } from "@/lib/sales/format";
 import type { QueryStatus } from "@/lib/sales/status";
 import type { Plan } from "@/lib/sales/plan/types";
 import type { PriceResult } from "@/lib/sales/pricing/types";
@@ -308,7 +307,7 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
                   <li key={i} className="grid gap-1 sm:grid-cols-[150px_1fr]">
                     <div>
                       <p className="font-display font-semibold text-olive-800">Day {i + 1}</p>
-                      {!plan.dateless && <p className="text-xs text-sand-500">{fmtDate(d.date)} ({dayName(d.date)})</p>}
+                      {!plan.dateless && <p className="text-xs text-sand-500">{fmtDay(d.date)}</p>}
                     </div>
                     <div>
                       <p className="font-medium text-olive-800">{d.title}</p>
