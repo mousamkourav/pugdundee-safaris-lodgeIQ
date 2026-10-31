@@ -82,6 +82,17 @@ Middleware (`middleware.ts`) only routes; it is not the security boundary.
   multi-lodge offer, no lodge discount, no automatic safaris.
 - Prices are always recalculated on the server when a quote is saved; never trust the
   browser's numbers.
+- Master data is cached for the builder (`loadBuilderContext`, unstable_cache, tag
+  `sales-master`, 5 min): any new code that saves master data must call
+  `revalidateMasterData()` (`lib/sales/master/cache.ts`).
+- Missing transfer rates: Master data > Missing transfer rates (`lib/sales/master/missing-transfers.ts`),
+  Excel out and back in through Import rates. A transfer price typed on Plan & price can be
+  saved as the rate (admins) or sent as a suggestion (`sales_rate_suggestions`, approved in
+  Master data > Rate suggestions; a trigger adds the rate).
+- Saving an edited quote: a new version (new link) or an update of the current version
+  (same link, audit in `sales_version_audit`; never for booked / cancelled / lost), `lib/sales/versions.ts`.
+- Trip days are shown with `fmtDay` ("Sat, 16 Jan 2027").
+- Server timings: `[timing]` lines in the Vercel logs (`lib/timing.ts`).
 
 ## AI assistant (Sales builder)
 One reading flow (`lib/sales/plan/reading.ts`), so the reader and the AI never disagree:
