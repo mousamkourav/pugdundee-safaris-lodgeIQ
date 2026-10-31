@@ -975,7 +975,7 @@ export function PlanStep({
                         onClick={() => setPlan((p) => ({ ...p, discount: { pct: p.discount?.pct ?? 0, reason: p.discount?.reason ?? "", scope: sc } }))}
                         className={`rounded-md px-2 py-1.5 font-medium ${on ? "bg-white text-olive-800 shadow-card" : "text-sand-600 hover:text-olive-700"}`}
                       >
-                        {sc === "lodges" ? "Our lodges' rooms" : "Whole trip"}
+                        {sc === "lodges" ? "Our lodges' rooms" : "Whole trip (not flights)"}
                       </button>
                     );
                   })}

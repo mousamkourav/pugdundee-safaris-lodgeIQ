@@ -624,8 +624,13 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
       continue;
     }
 
+    // never a city hotel's night (Roseate House); a multi-lodge offer: our own lodges' rooms only
+    const outsideIds = new Set(trip.stays.filter((s) => s.outside).map((s) => s.property_id));
+    const ownIds = new Set(data.properties.filter((p) => (p.kind ?? "own_lodge") === "own_lodge").map((p) => p.id));
     const matches = (l: PriceLine) =>
       offer.applies_to.includes(l.kind) &&
+      !(l.kind === "room" && l.property_id !== null && outsideIds.has(l.property_id)) &&
+      !(offer.offer_type === "multi_lodge" && l.kind === "room" && !(l.property_id !== null && ownIds.has(l.property_id))) &&
       (!l.date || inRange(l.date, offer.travel_from, offer.travel_to)) &&
       (!offer.property_ids.length || (l.property_id !== null && offer.property_ids.includes(l.property_id))) &&
       (l.kind !== "room" || !offer.room_category_ids.length || (l.ref_id !== null && offer.room_category_ids.includes(l.ref_id)));
@@ -677,15 +682,19 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
   }
 
   // ---------------- % discount ----------------
-  // On accommodation at our own lodges, or on the whole itinerary. GST is
-  // reduced in proportion, so the breakup (net + GST) still adds up exactly.
+  // On accommodation at our own lodges (their room lines only: not city or partner hotels,
+  // safaris, transfers or flights), or on the whole itinerary (everything except flights,
+  // which are passed on at cost; after any offer). GST is reduced in proportion, so the
+  // breakup (net + GST) still adds up exactly.
   const disc = trip.discount;
   if (disc && disc.pct > 0) {
     if (disc.pct > 100) errors.push("The discount cannot be more than 100%.");
     if (!disc.reason?.trim()) errors.push("A discount needs a reason (for internal use).");
     const own = new Set(data.properties.filter((p) => (p.kind ?? "own_lodge") === "own_lodge").map((p) => p.id));
     const base = lines.filter((l) =>
-      disc.scope === "lodges" ? l.kind === "room" && !!l.property_id && own.has(l.property_id) : ["room", "safari", "transfer", "addon", "discount"].includes(l.kind)
+      disc.scope === "lodges"
+        ? l.kind === "room" && !!l.property_id && own.has(l.property_id)
+        : ["room", "safari", "transfer", "addon", "discount"].includes(l.kind) && l.group !== "flight"
     );
     const pct = Math.min(100, disc.pct);
     const label = disc.scope === "lodges" ? `Discount ${pct}% on accommodation at our lodges` : `Discount ${pct}% on the itinerary`;

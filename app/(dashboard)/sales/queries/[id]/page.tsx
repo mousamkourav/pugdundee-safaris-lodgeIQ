@@ -236,7 +236,7 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
               )}
               {plan?.discount && plan.discount.pct > 0 && (
                 <p className="mt-2 text-xs text-sand-500">
-                  Discount {plan.discount.pct}% {plan.discount.scope === "lodges" ? "on accommodation at our lodges" : "on the whole itinerary"}. Reason (internal): {plan.discount.reason || "-"}
+                  Discount {plan.discount.pct}% {plan.discount.scope === "lodges" ? "on accommodation at our lodges" : "on the whole itinerary (not flights)"}. Reason (internal): {plan.discount.reason || "-"}
                 </p>
               )}
               {pricing.lines && (
