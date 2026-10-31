@@ -144,31 +144,50 @@ function pickSafariRateBySeason(rates: SafariRate[], s: SafariInput, nationality
   return { rate, nextYearFound: nextYear.length > 0 };
 }
 
+// Days between the booking and the safari.
+export const leadDays = (date: ISODate, bookingDate: ISODate) => Math.round((Date.parse(date) - Date.parse(bookingDate)) / 86_400_000);
+const hasWindow = (r: SafariRate) => r.book_min_days != null || r.book_max_days != null;
+export const inBookingWindow = (r: SafariRate, lead: number) => (r.book_min_days == null || lead >= r.book_min_days) && (r.book_max_days == null || lead <= r.book_max_days);
+
 function pickSafariRate(rates: SafariRate[], s: SafariInput, nationality: string, bookingDate?: ISODate) {
   const vehicle = s.vehicle_type ?? "exclusive_jeep";
-  const lead = bookingDate ? Math.round((Date.parse(s.date) - Date.parse(bookingDate)) / 86_400_000) : null;
-  const inWindow = (r: SafariRate) =>
-    lead === null || ((r.book_min_days == null || lead >= r.book_min_days) && (r.book_max_days == null || lead <= r.book_max_days));
-  const windowed = (r: SafariRate) => (r.book_min_days != null || r.book_max_days != null ? 0 : 1);
-  return rates
-    .filter(
-      (r) =>
-        r.active &&
-        r.park_id === s.park_id &&
-        r.zone === s.zone &&
-        r.session === s.session &&
-        r.vehicle_type === vehicle &&
-        (r.nationality === "all" || r.nationality === nationality) &&
-        inRange(s.date, r.valid_from, r.valid_to) &&
-        inWindow(r)
-    )
-    .sort((a, b) => {
-      // a rate for this nationality beats an "all guests" rate; a rate for this
-      // booking window beats an open one; then newest first
+  const lead = bookingDate ? leadDays(s.date, bookingDate) : null;
+  const windowed = (r: SafariRate) => (hasWindow(r) ? 0 : 1);
+  const all = rates.filter(
+    (r) =>
+      r.active &&
+      r.park_id === s.park_id &&
+      r.zone === s.zone &&
+      r.session === s.session &&
+      r.vehicle_type === vehicle &&
+      (r.nationality === "all" || r.nationality === nationality) &&
+      inRange(s.date, r.valid_from, r.valid_to)
+  );
+  // a rate for this nationality beats an "all guests" rate; a rate for this
+  // booking window beats an open one; then newest first
+  const best = (xs: SafariRate[]) =>
+    [...xs].sort((a, b) => {
       const na = a.nationality === "all" ? 1 : 0;
       const nb = b.nationality === "all" ? 1 : 0;
       return na - nb || windowed(a) - windowed(b) || (a.valid_from < b.valid_from ? 1 : -1);
     })[0];
+  const fits = all.filter((r) => lead === null || inBookingWindow(r, lead));
+  if (fits.length || lead === null) return best(fits);
+  // Outside every booking window (Tadoba: 4-59 and 60-120 days). More than the longest
+  // window ahead: permits are not open yet, so the rate of the latest window (60-120 days).
+  // Fewer days than the shortest window: the rate of the earliest window (4-59 days).
+  const win = all.filter(hasWindow);
+  const maxOf = (r: SafariRate) => r.book_max_days ?? Infinity;
+  const minOf = (r: SafariRate) => r.book_min_days ?? 0;
+  if (win.length && win.every((r) => lead > maxOf(r))) {
+    const top = Math.max(...win.map(maxOf));
+    return best(win.filter((r) => maxOf(r) === top));
+  }
+  if (win.length && win.every((r) => lead < minOf(r))) {
+    const low = Math.min(...win.map(minOf));
+    return best(win.filter((r) => minOf(r) === low));
+  }
+  return undefined;
 }
 
 export function closureFor(data: PricingData, parkId: string, zone: string, session: string, date: ISODate) {
@@ -344,6 +363,15 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
       }
     }
     if (hikePct) hikeUsed.safaris = true;
+    // a rate from the nearest booking window: say so once per park
+    if (rate && !basis && hasWindow(rate) && !inBookingWindow(rate, leadDays(s.date, trip.booking_date))) {
+      const lead = leadDays(s.date, trip.booking_date);
+      const note =
+        lead > (rate.book_max_days ?? Infinity)
+          ? `${parkName(s.park_id)} safaris more than ${rate.book_max_days} days ahead: permits are not open yet, so the ${rate.book_min_days ?? 0}-${rate.book_max_days} day rate is used.`
+          : `${parkName(s.park_id)} safaris fewer than ${rate.book_min_days} days ahead: the ${rate.book_min_days}-${rate.book_max_days ?? ""} day rate is used.`;
+      if (!warnings.includes(note)) warnings.push(note);
+    }
     const billTo = stayOn(s.date)?.property_id ?? null;
     if (s.naturalist) priceNaturalist(s, rate, billTo, where);
     // A full-day safari with no safari rate: the lodges keep it as an add-on ("Full-day safari
