@@ -22,14 +22,20 @@
 
 begin;
 
+-- Helper tables live in their own schema for this run only (the Supabase SQL Editor does
+-- not keep temp tables between statements). A leftover from a failed run is removed first;
+-- the schema is dropped again before the commit, so nothing of it stays.
+drop schema if exists rate_card_tmp cascade;
+create schema rate_card_tmp;
+
 -- ---------------------------------------------------------------------
 -- 1. road transfers
 -- ---------------------------------------------------------------------
-create temp table card_road (park_from text, park_to text, vehicle text, rate numeric, a_id text, b_id text) on commit drop;
-create temp table card_place (name text, id text) on commit drop;
+create table rate_card_tmp.card_road (park_from text, park_to text, vehicle text, rate numeric, a_id text, b_id text);
+create table rate_card_tmp.card_place (name text, id text);
 
 -- the lodges a park stands for
-insert into card_place (name, id)
+insert into rate_card_tmp.card_place (name, id)
 select m.park, l.id::text
 from (values
   ('Satpura', 'Denwa Backwater Escape'), ('Kanha', 'Kanha Earth Lodge'), ('Bandhavgarh', 'Kings Lodge'),
@@ -40,7 +46,7 @@ join public.sales_properties p on p.name ilike m.lodge || '%' and p.active is no
 join public.sales_locations l on l.property_id = p.id and l.active is not false;
 
 -- towns: the airport and / or the railway station, else one place by its name
-insert into card_place (name, id)
+insert into rate_card_tmp.card_place (name, id)
 select distinct r.name, x.id::text
 from (values
   ('Bhopal', 'Bhopal', 'airport'), ('Bhopal', 'Bhopal', 'railway'),
@@ -94,23 +100,23 @@ with card(f, t, innova, dzire) as (values
   ('Iora', 'Guwahati Airport', 13000, null),
   ('Iora', 'Jorhat Airport', 10000, null)
 )
-insert into card_road (park_from, park_to, vehicle, rate, a_id, b_id)
+insert into rate_card_tmp.card_road (park_from, park_to, vehicle, rate, a_id, b_id)
 select c.f, c.t, v.vehicle, v.rate, a.id, b.id
 from card c
 cross join lateral (values ('innova', c.innova), ('dzire', c.dzire)) as v(vehicle, rate)
-join card_place a on a.name = c.f
-join card_place b on b.name = c.t
+join rate_card_tmp.card_place a on a.name = c.f
+join rate_card_tmp.card_place b on b.name = c.t
 where v.rate is not null;
 
 -- the vehicle class of a rate; guests per vehicle as in Master data now (Innova 6, Dzire 3)
-create temp table card_vehicle (vehicle text, pattern text, fallback_name text, capacity int) on commit drop;
-insert into card_vehicle values ('innova', '(innova|crysta)', 'Innova / Crysta', 6), ('dzire', '(dzire|etios|sedan)', 'Dzire / Etios', 3);
+create table rate_card_tmp.card_vehicle (vehicle text, pattern text, fallback_name text, capacity int);
+insert into rate_card_tmp.card_vehicle values ('innova', '(innova|crysta)', 'Innova / Crysta', 6), ('dzire', '(dzire|etios|sedan)', 'Dzire / Etios', 3);
 
 -- a rate on the road for that vehicle: amount and GST as on the card
 update public.sales_transfer_rates t
 set rate = r.rate, tax_pct = 5
-from card_road r
-join card_vehicle v on v.vehicle = r.vehicle
+from rate_card_tmp.card_road r
+join rate_card_tmp.card_vehicle v on v.vehicle = r.vehicle
 where t.active is not false
   and (t.valid_to is null or t.valid_to >= current_date)
   and t.vehicle_type ~* v.pattern
@@ -122,8 +128,8 @@ insert into public.sales_transfer_rates (from_location_id, to_location_id, vehic
 select a.id, b.id,
   coalesce((select x.vehicle_type from public.sales_transfer_rates x where x.vehicle_type ~* v.pattern group by x.vehicle_type order by count(*) desc limit 1), v.fallback_name),
   v.capacity, r.rate, null, 0, true, 5, true, date '2027-09-30'
-from card_road r
-join card_vehicle v on v.vehicle = r.vehicle
+from rate_card_tmp.card_road r
+join rate_card_tmp.card_vehicle v on v.vehicle = r.vehicle
 join public.sales_locations a on a.id::text = r.a_id
 join public.sales_locations b on b.id::text = r.b_id
 where r.a_id <> r.b_id
@@ -139,8 +145,8 @@ where r.a_id <> r.b_id
 -- 2. roads "via" a place: an add-on at each lodge, the extra per vehicle (+ 5% GST).
 --    Dzire / Etios via Bhimbetka is + 0 for now, so it has no add-on.
 -- ---------------------------------------------------------------------
-create temp table card_via (via text, name text, lodge text, rate numeric) on commit drop;
-insert into card_via values
+create table rate_card_tmp.card_via (via text, name text, lodge text, rate numeric);
+insert into rate_card_tmp.card_via values
   ('Tawa Dam', 'Transfer via Tawa Dam (extra per vehicle)', 'Denwa Backwater Escape', 1500),
   ('Bedaghat', 'Transfer via Bedaghat / Dhuandhar Falls (extra per vehicle)', 'Kanha Earth Lodge', 1500),
   ('Bedaghat', 'Transfer via Bedaghat / Dhuandhar Falls (extra per vehicle)', 'Kings Lodge', 1500),
@@ -149,14 +155,14 @@ insert into card_via values
 
 update public.sales_addons a
 set rate = v.rate, tax_pct = 5
-from card_via v
+from rate_card_tmp.card_via v
 join public.sales_properties p on p.name ilike v.lodge || '%'
 where a.property_id = p.id and a.active is not false and a.name ~* ('via\s+' || v.via)
   and (a.rate <> v.rate or a.tax_pct is distinct from 5);
 
 insert into public.sales_addons (name, property_id, pricing_unit, rate, tax_pct, active)
 select v.name, p.id, 'per_group', v.rate, 5, true
-from card_via v
+from rate_card_tmp.card_via v
 join public.sales_properties p on p.name ilike v.lodge || '%' and p.active is not false
 where not exists (select 1 from public.sales_addons a where a.property_id = p.id and a.name ~* ('via\s+' || v.via));
 
@@ -170,17 +176,17 @@ begin
     return;
   end if;
 
-  create temp table card_tariff (category text, nationality text, season text, single numeric, dbl numeric) on commit drop;
-  insert into card_tariff values
+  create table rate_card_tmp.card_tariff (category text, nationality text, season text, single numeric, dbl numeric);
+  insert into rate_card_tmp.card_tariff values
     ('cottage', 'foreign', 'shoulder', 15000, 18000), ('cottage', 'foreign', 'high', 18500, 22000), ('cottage', 'foreign', 'peak', 20000, 23000), ('cottage', 'indian', 'all', 27000, 30000),
     ('treehouse', 'foreign', 'shoulder', 17250, 21000), ('treehouse', 'foreign', 'high', 21000, 25500), ('treehouse', 'foreign', 'peak', 22000, 26500), ('treehouse', 'indian', 'all', 30000, 33000),
     ('forestsuite', 'foreign', 'shoulder', 19000, 23500), ('forestsuite', 'foreign', 'high', 22000, 26000), ('forestsuite', 'foreign', 'peak', 23000, 27500), ('forestsuite', 'indian', 'all', 33000, 37000),
     ('deluxeroom', 'foreign', 'shoulder', 13000, 16000), ('deluxeroom', 'foreign', 'high', 14000, 18000), ('deluxeroom', 'foreign', 'peak', 16000, 20000), ('deluxeroom', 'indian', 'all', 21000, 24000);
 
   -- the category by its name without spaces ("Tree House" = "Treehouse")
-  create temp table card_tariff_cat on commit drop as
+  create table rate_card_tmp.card_tariff_cat as
   select t.*, c.id::text as cat_id
-  from card_tariff t
+  from rate_card_tmp.card_tariff t
   join public.sales_rate_categories c on lower(regexp_replace(c.name, '[^a-zA-Z0-9]', '', 'g')) = t.category and c.active is not false;
 
   -- rows of 2026-27: amounts, AP, + 18%; the dates too when it is the only row of that season
@@ -192,7 +198,7 @@ begin
     select c.*, (select count(*) from public.sales_tariff x
                  where x.rate_category_id::text = c.cat_id and x.nationality = c.nationality and x.season = c.season and x.active is not false
                    and x.valid_from <= date '2027-09-30' and x.valid_to >= date '2026-10-01') as n
-    from card_tariff_cat c
+    from rate_card_tmp.card_tariff_cat c
   ) k
   where s.rate_category_id::text = k.cat_id and s.nationality = k.nationality and s.season = k.season and s.active is not false
     and s.valid_from <= date '2027-09-30' and s.valid_to >= date '2026-10-01'
@@ -201,7 +207,7 @@ begin
 
   insert into public.sales_tariff (rate_category_id, nationality, season, valid_from, valid_to, rate_double, rate_single, meal_plan, tax_pct, rates_include_tax, active)
   select c.id, k.nationality, k.season, date '2026-10-01', date '2027-09-30', k.dbl, k.single, 'AP', 18, false, true
-  from card_tariff_cat k
+  from rate_card_tmp.card_tariff_cat k
   join public.sales_rate_categories c on c.id::text = k.cat_id
   where not exists (
     select 1 from public.sales_tariff x
@@ -282,8 +288,8 @@ where p.name ilike 'panna%' and s.park_id = p.id and s.zone = 'core'
 -- ---------------------------------------------------------------------
 -- Ken River Lodge B2B (taxes included): the add-on whose name matches; added when missing.
 -- "boat" is a boat safari that is not the night one (exclude = a word it must not have).
-create temp table card_krl (pattern text, exclude text, name text, unit text, rate numeric) on commit drop;
-insert into card_krl values
+create table rate_card_tmp.card_krl (pattern text, exclude text, name text, unit text, rate numeric);
+insert into rate_card_tmp.card_krl values
   ('boat', 'night', 'Boat safari (1.5 hours, up to 4 guests)', 'per_group', 5000),
   ('night.*boat|boat.*night', null, 'Night boat safari (2 hours, up to 4 guests)', 'per_group', 6000),
   ('fishing.*full|full.*fishing', null, 'Fishing, full day (morning + evening), max 2 guests', 'per_person', 7500),
@@ -297,14 +303,14 @@ insert into card_krl values
 
 update public.sales_addons a
 set rate = k.rate, tax_pct = 0
-from card_krl k, public.sales_properties p
+from rate_card_tmp.card_krl k, public.sales_properties p
 where p.name ilike 'ken river%' and a.property_id = p.id and a.active is not false
   and a.name ~* k.pattern and (k.exclude is null or a.name !~* k.exclude)
   and (a.rate <> k.rate or a.tax_pct is distinct from 0);
 
 insert into public.sales_addons (name, property_id, pricing_unit, rate, tax_pct, active)
 select k.name, p.id, k.unit, k.rate, 0, true
-from card_krl k
+from rate_card_tmp.card_krl k
 join public.sales_properties p on p.name ilike 'ken river%' and p.active is not false
 where not exists (
   select 1 from public.sales_addons a
@@ -343,22 +349,22 @@ begin
 end $foreign$;
 
 -- Tadoba supplements at Waghoba Eco Lodge, per safari, all guests, + 5%: corrected, added only when missing
-create temp table card_wel (pattern text, exclude text, name text, rate numeric) on commit drop;
-insert into card_wel values
+create table rate_card_tmp.card_wel (pattern text, exclude text, name text, rate numeric);
+insert into rate_card_tmp.card_wel values
   ('moharli', null, 'Core safari from Moharli gate (extra per safari)', 4000),
   ('gypsy|modified', 'scorpio', 'Modified Gypsy (extra per safari)', 6000),
   ('scorpio', null, 'Modified Scorpio (extra per safari)', 9000);
 
 update public.sales_addons a
 set rate = k.rate, tax_pct = 5
-from card_wel k, public.sales_properties p
+from rate_card_tmp.card_wel k, public.sales_properties p
 where p.name ilike 'waghoba%' and a.property_id = p.id and a.active is not false
   and a.name ~* k.pattern and (k.exclude is null or a.name !~* k.exclude)
   and (a.rate <> k.rate or a.tax_pct is distinct from 5);
 
 insert into public.sales_addons (name, property_id, pricing_unit, rate, tax_pct, active)
 select k.name, p.id, 'per_group', k.rate, 5, true
-from card_wel k
+from rate_card_tmp.card_wel k
 join public.sales_properties p on p.name ilike 'waghoba%' and p.active is not false
 where not exists (
   select 1 from public.sales_addons a
@@ -383,8 +389,8 @@ where a.property_id = p.id and a.active is not false and a.name ~* k.pattern and
 --     Weekday and weekend on the season's rate; a short row over Christmas (up to 16 days,
 --     21 Dec - 4 Jan) or the category's Peak row is the long-weekend rate.
 -- ---------------------------------------------------------------------
-create temp table card_krl_room (pattern text, exclude text, wd numeric, we numeric, lw numeric) on commit drop;
-insert into card_krl_room values
+create table rate_card_tmp.card_krl_room (pattern text, exclude text, wd numeric, we numeric, lw numeric);
+insert into rate_card_tmp.card_krl_room values
   ('stilted.*family|family.*stilted', null, 24000, 25000, 26000),
   ('stilted', 'family', 16500, 17500, 18500),
   ('premium hut|\mhut\M', null, 10500, 11500, 12500),
@@ -392,9 +398,9 @@ insert into card_krl_room values
   ('villa', null, 26000, 29000, 32000),
   ('mud house', null, 10500, 11500, 12500);
 
-create temp table card_krl_cat on commit drop as
+create table rate_card_tmp.card_krl_cat as
 select c.id as room_id, k.*
-from card_krl_room k
+from rate_card_tmp.card_krl_room k
 join public.sales_properties p on p.name ilike 'ken river%'
 join public.sales_room_categories c on c.property_id = p.id and c.name ~* k.pattern and (k.exclude is null or c.name !~* k.exclude);
 
@@ -403,7 +409,7 @@ update public.sales_room_rates r
 set rate_double = case when r.valid_to - r.valid_from <= 16 then k.lw else k.wd end,
     weekend_rate_double = case when r.valid_to - r.valid_from <= 16 then r.weekend_rate_double else k.we end,
     tax_pct = 0, rates_include_tax = true
-from card_krl_cat k
+from rate_card_tmp.card_krl_cat k
 where r.room_category_id = k.room_id and r.active is not false
   and r.valid_from <= date '2027-09-30' and r.valid_to >= date '2026-10-01'
   and (r.rate_double <> case when r.valid_to - r.valid_from <= 16 then k.lw else k.wd end
@@ -421,7 +427,7 @@ begin
   set rate_double = case when t.season = 'peak' then k.lw else k.wd end,
       weekend_rate_double = case when t.season = 'peak' then t.weekend_rate_double else k.we end,
       tax_pct = 0, rates_include_tax = true
-  from card_krl_cat k
+  from rate_card_tmp.card_krl_cat k
   join public.sales_room_categories c on c.id = k.room_id
   where t.rate_category_id = c.rate_category_id and t.active is not false
     and t.valid_from <= date '2027-09-30' and t.valid_to >= date '2026-10-01'
@@ -433,8 +439,8 @@ end $krl$;
 -- ---------------------------------------------------------------------
 -- 7. partner hotel rooms: B&B (CP), + 18% GST, to 31 Mar 2027 and 1 Apr - 30 Sep 2027
 -- ---------------------------------------------------------------------
-create temp table card_room (hotel text, f date, t date, rate numeric) on commit drop;
-insert into card_room values
+create table rate_card_tmp.card_room (hotel text, f date, t date, rate numeric);
+insert into rate_card_tmp.card_room values
   ('Roseate House', '2026-10-01', '2027-03-31', 23000), ('Roseate House', '2027-04-01', '2027-09-30', 17000),
   ('DoubleTree', '2026-10-01', '2027-03-31', 20000), ('DoubleTree', '2027-04-01', '2027-09-30', 15000),
   ('Courtyard', '2026-10-01', '2027-03-31', 20000), ('Courtyard', '2027-04-01', '2027-09-30', 15000),
@@ -444,7 +450,7 @@ insert into card_room values
 -- a CP rate that covers the middle of the period: amount and GST as on the document
 update public.sales_room_rates r
 set rate_double = k.rate, tax_pct = 18, rates_include_tax = false
-from card_room k
+from rate_card_tmp.card_room k
 join public.sales_properties p on p.name ilike k.hotel || '%'
 join public.sales_room_categories c on c.property_id = p.id
 where r.room_category_id = c.id and r.active is not false and upper(r.meal_plan) in ('CP', 'B&B', 'BB')
@@ -454,7 +460,7 @@ where r.room_category_id = c.id and r.active is not false and upper(r.meal_plan)
 -- no CP rate for the period: added for the hotel's first room (hotels with no room are listed below)
 insert into public.sales_room_rates (room_category_id, valid_from, valid_to, meal_plan, rate_double, min_nights, tax_pct, rates_include_tax, active)
 select c.id, k.f, k.t, 'CP', k.rate, 1, 18, false, true
-from card_room k
+from rate_card_tmp.card_room k
 join public.sales_properties p on p.name ilike k.hotel || '%' and p.active is not false
 cross join lateral (select rc.id from public.sales_room_categories rc where rc.property_id = p.id and rc.active is not false order by rc.name limit 1) c
 where not exists (
@@ -470,11 +476,13 @@ select r.park_from || ' - ' || r.park_to as road, a.name as from_place, b.name a
      from public.sales_transfer_rates t
      where t.active is not false and t.vehicle_type ~* v.pattern
        and ((t.from_location_id::text = r.a_id and t.to_location_id::text = r.b_id) or (t.from_location_id::text = r.b_id and t.to_location_id::text = r.a_id))) as in_master_data
-from card_road r
-join card_vehicle v on v.vehicle = r.vehicle
+from rate_card_tmp.card_road r
+join rate_card_tmp.card_vehicle v on v.vehicle = r.vehicle
 join public.sales_locations a on a.id::text = r.a_id
 join public.sales_locations b on b.id::text = r.b_id
 order by 1, 2, 3, 4;
+
+drop schema rate_card_tmp cascade;
 
 commit;
 
