@@ -235,6 +235,9 @@ function auditTariff(d: AuData): AuditRow[] {
 }
 
 // Ken River Lodge rooms (B2B, taxes included): the lodge's own room rates, or its tariff category.
+// The long-weekend rate: a row of at most LONG_WEEKEND_DAYS over Christmas, or the category's Peak row.
+const LONG_WEEKEND_DAYS = 16;
+const XMAS = "2026-12-25";
 function auditKrlRooms(d: AuData): AuditRow[] {
   const source = "Ken River Lodge B2B";
   const krl = d.properties.find((p) => starts(p.name, "Ken River"));
@@ -244,13 +247,21 @@ function auditKrlRooms(d: AuData): AuditRow[] {
     const expected = `${rs(c.weekday)} / ${rs(c.weekend)} / ${rs(c.long)} incl. GST`;
     const room = krl && d.rooms.find((r) => r.property_id === krl.id && c.room.test(r.name));
     if (!room) return { source, item, expected, found: krl ? "no such room" : "no lodge", status: "not found" as const };
-    const own = d.roomRates.filter((r) => r.active && r.room_category_id === room.id && r.valid_from <= on && r.valid_to >= on);
+    // the weekday / weekend rate covers a long period; a long weekend is a short row (21 Dec - 4 Jan)
+    const short = (from: string, to: string) => Date.parse(to) - Date.parse(from) <= LONG_WEEKEND_DAYS * 86_400_000;
+    const own = d.roomRates.filter((r) => r.active && r.room_category_id === room.id && r.valid_from <= on && r.valid_to >= on && !short(r.valid_from, r.valid_to));
+    const longs = [
+      ...d.roomRates.filter((r) => r.active && r.room_category_id === room.id && r.valid_from <= XMAS && r.valid_to >= XMAS && short(r.valid_from, r.valid_to)).map((r) => r.rate_double),
+      ...(room.rate_category_id ? (d.tariff ?? []).filter((t) => t.active && t.rate_category_id === room.rate_category_id && t.season === "peak" && t.valid_from <= XMAS && t.valid_to >= XMAS).map((t) => t.rate_double) : []),
+    ];
     const cat = room.rate_category_id ? (d.tariff ?? []).filter((t) => t.active && t.rate_category_id === room.rate_category_id && t.season !== "peak" && t.valid_from <= on && t.valid_to >= on) : [];
     const list = [...own.map((r) => ({ double: r.rate_double, weekend: r.weekend_rate_double ?? null, incl: r.rates_include_tax || r.tax_pct === 0 })), ...cat.map((t) => ({ double: t.rate_double, weekend: t.weekend_rate_double ?? null, incl: t.rates_include_tax || t.tax_pct === 0 }))];
     if (!list.length) return { source, item, expected, found: "-", status: "missing" as const };
     const r = list.find((x) => x.double === c.weekday) ?? list[0];
-    const found = `${rs(r.double)} / ${rs(r.weekend)}${r.incl ? " incl. GST" : " + GST"}`;
-    const status: AuditStatus = r.double !== c.weekday || (r.weekend !== null && r.weekend !== c.weekend) ? "different" : !r.incl ? "gst" : "ok";
+    const long = longs.find((x) => x === c.long) ?? longs[0] ?? null;
+    const found = `${rs(r.double)} / ${rs(r.weekend)} / ${long === null ? "no long-weekend rate" : rs(long)}${r.incl ? " incl. GST" : " + GST"}`;
+    const status: AuditStatus =
+      r.double !== c.weekday || (r.weekend !== null && r.weekend !== c.weekend) || (long !== null && long !== c.long) ? "different" : long === null ? "missing" : !r.incl ? "gst" : "ok";
     return { source, item, expected, found: r.double === c.published ? `${found} (the published tariff)` : found, status };
   });
 }
@@ -260,8 +271,9 @@ function auditSafaris(d: AuData): AuditRow[] {
   const rows: AuditRow[] = [];
   for (const c of CARD_SAFARIS) {
     const park = (d.parks ?? []).find((p) => starts(p.name, c.park));
-    const label = `${c.park} ${c.zone}${c.nationality === "foreign" ? ", foreign" : ""}${c.book ? `, booked ${c.book[0]}-${c.book[1]} days ahead` : ""}`;
-    const expected = `${rs(c.weekday)} / ${rs(c.weekend)}, naturalist ${c.naturalist ? rs(c.naturalist) : "included"}${gstText(c.tax_pct)}`;
+    const label = `${c.park} ${c.zone}${c.nationality !== "all" ? `, ${c.nationality}` : ""}${c.book ? `, booked ${c.book[0]}-${c.book[1]} days ahead` : ""}`;
+    const nat = c.naturalist === undefined ? "" : `, naturalist ${c.naturalist ? rs(c.naturalist) : "included"}`;
+    const expected = `${rs(c.weekday)} / ${rs(c.weekend)}${nat}${gstText(c.tax_pct)}`;
     if (!park) {
       rows.push({ source: c.source, item: label, expected, found: "no park", status: "not found" });
       continue;
@@ -280,8 +292,8 @@ function auditSafaris(d: AuData): AuditRow[] {
       }
       const s = list.find((x) => x.nationality === c.nationality) ?? list[0];
       const weekend = s.weekend_rate ?? s.weekday_rate;
-      const found = `${rs(s.weekday_rate)} / ${rs(weekend)}, naturalist ${s.naturalist_fee ? rs(s.naturalist_fee) : "included"}${gstText(s.tax_pct)}${s.nationality !== c.nationality ? ` (${s.nationality} guests)` : ""}`;
-      const status: AuditStatus = s.weekday_rate !== c.weekday || weekend !== c.weekend || s.naturalist_fee !== c.naturalist ? "different" : s.tax_pct !== c.tax_pct ? "gst" : "ok";
+      const found = `${rs(s.weekday_rate)} / ${rs(weekend)}${c.naturalist === undefined ? "" : `, naturalist ${s.naturalist_fee ? rs(s.naturalist_fee) : "included"}`}${gstText(s.tax_pct)}${s.nationality !== c.nationality ? ` (${s.nationality} guests)` : ""}`;
+      const status: AuditStatus = s.weekday_rate !== c.weekday || weekend !== c.weekend || (c.naturalist !== undefined && s.naturalist_fee !== c.naturalist) ? "different" : s.tax_pct !== c.tax_pct ? "gst" : "ok";
       rows.push({ source: c.source, item, expected, found, status });
     }
   }

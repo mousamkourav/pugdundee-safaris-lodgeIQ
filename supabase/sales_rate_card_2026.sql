@@ -6,15 +6,17 @@
 --   2. The roads "via" a place: add-ons at the lodges, the extra per vehicle
 --   3. The Pugdundee tariff 2026-27 (foreign by season, Indian published), AP + 18%
 --   4. The season calendar 2026-27 (only ranges that clash with nothing)
---   5. Safaris: Tadoba (foreign, by booking window) and Panna / Ken River Lodge
---      (all guests, taxes and naturalist included) - existing rates only
+--   5. Safaris (existing rates of 2026-27 only): MP parks foreign and Indian for the
+--      whole season, Tadoba foreign and Indian by booking window, Panna / Ken River
+--      Lodge (all guests, taxes and naturalist included)
 --   6. Experiences: Ken River Lodge B2B (taxes included), the foreigners' activity
---      rates (existing add-ons only), partner hotel add-ons
+--      rates (existing add-ons only), Tadoba supplements at Waghoba (Moharli gate,
+--      modified Gypsy, Scorpio), partner hotel add-ons; 6b. Ken River Lodge rooms (B2B)
 --   7. Partner hotel rooms: Roseate House, Agra, Jaipur (to 31 Mar 2027 / 1 Apr -
 --      30 Sep 2027, B&B, + 18%) - existing rates corrected, missing ones added
--- Not changed here (questions for the owner, listed on the Rate audit page): the
--- foreigners' MP jeep safaris ("from 01st Apr"), Ken River Lodge rooms (B2B or
--- published), boat-safari price tiers, and safari rates Master data has no row for.
+-- Not changed here (the Rate audit page lists them): boat-safari price tiers, and
+-- safari rates Master data has no row for (add them in Master data). 1 Jul - 30 Sep
+-- 2027 has no season on purpose (owner, 31 Oct 2026).
 -- Safe to run more than once: the second run changes nothing.
 -- =====================================================================
 
@@ -242,6 +244,29 @@ where p.name ilike 'tadoba%' and s.park_id = p.id and s.zone = k.zone and s.nati
   and s.book_min_days is not distinct from k.bmin and s.book_max_days is not distinct from k.bmax
   and (s.weekday_rate <> k.wd or s.weekend_rate is distinct from k.we or s.naturalist_fee is distinct from 2500 or s.tax_pct is distinct from 5);
 
+-- MP parks: foreign (naturalist 2,500) and Indian guests, for the whole 2026-27 season; + 5%.
+-- Tadoba, Indian: core by booking window, buffer. (naturalist null = not changed)
+update public.sales_safari_rates s
+set weekday_rate = k.wd, weekend_rate = k.we, naturalist_fee = coalesce(k.nat, s.naturalist_fee), tax_pct = 5
+from (values
+  ('satpura', 'foreign', 'core', null::int, null::int, 16500, 17500, 2500), ('satpura', 'foreign', 'buffer', null, null, 14000, 14000, 2500),
+  ('kanha', 'foreign', 'core', null, null, 17500, 18500, 2500), ('kanha', 'foreign', 'buffer', null, null, 15000, 15000, 2500),
+  ('bandhavgarh', 'foreign', 'core', null, null, 17500, 18500, 2500), ('bandhavgarh', 'foreign', 'buffer', null, null, 15000, 15000, 2500),
+  ('pench', 'foreign', 'core', null, null, 17500, 18500, 2500), ('pench', 'foreign', 'buffer', null, null, 15000, 15000, 2500),
+  ('pench', 'indian', 'core', null, null, 14500, 15000, null), ('pench', 'indian', 'buffer', null, null, 13500, 13500, null),
+  ('kanha', 'indian', 'core', null, null, 14500, 15000, null), ('kanha', 'indian', 'buffer', null, null, 13500, 13500, null),
+  ('bandhavgarh', 'indian', 'core', null, null, 14500, 15000, null), ('bandhavgarh', 'indian', 'buffer', null, null, 13500, 13500, null),
+  ('satpura', 'indian', 'core', null, null, 13500, 14000, null), ('satpura', 'indian', 'buffer', null, null, 12500, 12500, null),
+  ('tadoba', 'indian', 'core', 4, 59, 11000, 12000, null), ('tadoba', 'indian', 'core', 60, 120, 14000, 18500, null),
+  ('tadoba', 'indian', 'buffer', null, null, 13000, 14000, null)
+) as k(park, nationality, zone, bmin, bmax, wd, we, nat),
+     public.sales_parks p
+where p.name ilike k.park || '%' and s.park_id = p.id and s.zone = k.zone and s.nationality = k.nationality
+  and s.active is not false and s.vehicle_type ilike '%jeep%'
+  and s.valid_from <= date '2026-12-15' and s.valid_to >= date '2026-12-15'
+  and s.book_min_days is not distinct from k.bmin and s.book_max_days is not distinct from k.bmax
+  and (s.weekday_rate <> k.wd or s.weekend_rate is distinct from k.we or (k.nat is not null and s.naturalist_fee is distinct from k.nat) or s.tax_pct is distinct from 5);
+
 -- Panna (Ken River Lodge): 15,000 Mon-Fri / 16,000 Sat-Sun, all guests; entry, guide and
 -- naturalist included, taxes included (no GST added)
 update public.sales_safari_rates s
@@ -317,6 +342,30 @@ begin
     and (a.rate_foreign is distinct from k.rate or a.tax_pct is distinct from k.tax);
 end $foreign$;
 
+-- Tadoba supplements at Waghoba Eco Lodge, per safari, all guests, + 5%: corrected, added only when missing
+create temp table card_wel (pattern text, exclude text, name text, rate numeric) on commit drop;
+insert into card_wel values
+  ('moharli', null, 'Core safari from Moharli gate (extra per safari)', 4000),
+  ('gypsy|modified', 'scorpio', 'Modified Gypsy (extra per safari)', 6000),
+  ('scorpio', null, 'Modified Scorpio (extra per safari)', 9000);
+
+update public.sales_addons a
+set rate = k.rate, tax_pct = 5
+from card_wel k, public.sales_properties p
+where p.name ilike 'waghoba%' and a.property_id = p.id and a.active is not false
+  and a.name ~* k.pattern and (k.exclude is null or a.name !~* k.exclude)
+  and (a.rate <> k.rate or a.tax_pct is distinct from 5);
+
+insert into public.sales_addons (name, property_id, pricing_unit, rate, tax_pct, active)
+select k.name, p.id, 'per_group', k.rate, 5, true
+from card_wel k
+join public.sales_properties p on p.name ilike 'waghoba%' and p.active is not false
+where not exists (
+  select 1 from public.sales_addons a
+  where a.property_id = p.id and a.active is not false
+    and a.name ~* k.pattern and (k.exclude is null or a.name !~* k.exclude)
+);
+
 -- partner hotels' services (the add-on at that hotel whose name matches)
 update public.sales_addons a
 set rate = k.rate
@@ -328,6 +377,58 @@ from (values
 ) as k(hotel, pattern, rate)
 join public.sales_properties p on p.name ilike k.hotel || '%'
 where a.property_id = p.id and a.active is not false and a.name ~* k.pattern and a.rate <> k.rate;
+
+-- ---------------------------------------------------------------------
+-- 6b. Ken River Lodge rooms: B2B 2026-27, AP, taxes included (existing rates only).
+--     Weekday and weekend on the season's rate; a short row over Christmas (up to 16 days,
+--     21 Dec - 4 Jan) or the category's Peak row is the long-weekend rate.
+-- ---------------------------------------------------------------------
+create temp table card_krl_room (pattern text, exclude text, wd numeric, we numeric, lw numeric) on commit drop;
+insert into card_krl_room values
+  ('stilted.*family|family.*stilted', null, 24000, 25000, 26000),
+  ('stilted', 'family', 16500, 17500, 18500),
+  ('premium hut|\mhut\M', null, 10500, 11500, 12500),
+  ('family cottage', 'stilted', 18000, 20000, 22000),
+  ('villa', null, 26000, 29000, 32000),
+  ('mud house', null, 10500, 11500, 12500);
+
+create temp table card_krl_cat on commit drop as
+select c.id as room_id, k.*
+from card_krl_room k
+join public.sales_properties p on p.name ilike 'ken river%'
+join public.sales_room_categories c on c.property_id = p.id and c.name ~* k.pattern and (k.exclude is null or c.name !~* k.exclude);
+
+-- the room's own rates
+update public.sales_room_rates r
+set rate_double = case when r.valid_to - r.valid_from <= 16 then k.lw else k.wd end,
+    weekend_rate_double = case when r.valid_to - r.valid_from <= 16 then r.weekend_rate_double else k.we end,
+    tax_pct = 0, rates_include_tax = true
+from card_krl_cat k
+where r.room_category_id = k.room_id and r.active is not false
+  and r.valid_from <= date '2027-09-30' and r.valid_to >= date '2026-10-01'
+  and (r.rate_double <> case when r.valid_to - r.valid_from <= 16 then k.lw else k.wd end
+       or (r.valid_to - r.valid_from > 16 and r.weekend_rate_double is distinct from k.we)
+       or r.tax_pct is distinct from 0 or r.rates_include_tax is distinct from true);
+
+-- or its tariff category (when rooms point to one)
+do $krl$
+begin
+  if to_regclass('public.sales_tariff') is null
+     or not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'sales_room_categories' and column_name = 'rate_category_id') then
+    return;
+  end if;
+  update public.sales_tariff t
+  set rate_double = case when t.season = 'peak' then k.lw else k.wd end,
+      weekend_rate_double = case when t.season = 'peak' then t.weekend_rate_double else k.we end,
+      tax_pct = 0, rates_include_tax = true
+  from card_krl_cat k
+  join public.sales_room_categories c on c.id = k.room_id
+  where t.rate_category_id = c.rate_category_id and t.active is not false
+    and t.valid_from <= date '2027-09-30' and t.valid_to >= date '2026-10-01'
+    and (t.rate_double <> case when t.season = 'peak' then k.lw else k.wd end
+         or (t.season <> 'peak' and t.weekend_rate_double is distinct from k.we)
+         or t.tax_pct is distinct from 0 or t.rates_include_tax is distinct from true);
+end $krl$;
 
 -- ---------------------------------------------------------------------
 -- 7. partner hotel rooms: B&B (CP), + 18% GST, to 31 Mar 2027 and 1 Apr - 30 Sep 2027

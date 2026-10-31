@@ -209,27 +209,37 @@ export interface CardSafari {
   source: string;
   park: string; // the park's name in Master data (matched by its start)
   zone: "core" | "buffer";
-  nationality: "foreign" | "all";
+  nationality: "foreign" | "indian" | "all";
   on: string;
   weekday: number;
   weekend: number;
-  naturalist: number; // fee per safari (0 = included)
+  naturalist?: number; // fee per safari (0 = included); not checked when the document gives none
   tax_pct: number; // 0 = taxes included
   book?: [number, number]; // booking window in days
 }
 const FOREIGN = "Safaris and activities - foreigners";
-const mp = (park: string, weekday: number, weekend: number, buffer: number): CardSafari[] => [
-  { source: FOREIGN, park, zone: "core", nationality: "foreign", on: "2027-04-15", weekday, weekend, naturalist: 2500, tax_pct: 5 },
-  { source: FOREIGN, park, zone: "buffer", nationality: "foreign", on: "2027-04-15", weekday: buffer, weekend: buffer, naturalist: 2500, tax_pct: 5 },
+const INDIAN = "Safari rates - Indian guests";
+// The MP rates say "from 01st Apr"; they apply to the whole 2026-27 season (owner, 31 Oct 2026).
+const mp = (source: string, nationality: "foreign" | "indian", park: string, weekday: number, weekend: number, buffer: number, naturalist?: number): CardSafari[] => [
+  { source, park, zone: "core", nationality, on: "2026-12-15", weekday, weekend, naturalist, tax_pct: 5 },
+  { source, park, zone: "buffer", nationality, on: "2026-12-15", weekday: buffer, weekend: buffer, naturalist, tax_pct: 5 },
 ];
 export const CARD_SAFARIS: CardSafari[] = [
-  ...mp("Satpura", 16500, 17500, 14000),
-  ...mp("Kanha", 17500, 18500, 15000),
-  ...mp("Bandhavgarh", 17500, 18500, 15000),
-  ...mp("Pench", 17500, 18500, 15000),
+  ...mp(FOREIGN, "foreign", "Satpura", 16500, 17500, 14000, 2500),
+  ...mp(FOREIGN, "foreign", "Kanha", 17500, 18500, 15000, 2500),
+  ...mp(FOREIGN, "foreign", "Bandhavgarh", 17500, 18500, 15000, 2500),
+  ...mp(FOREIGN, "foreign", "Pench", 17500, 18500, 15000, 2500),
   { source: FOREIGN, park: "Tadoba", zone: "core", nationality: "foreign", on: "2026-12-15", weekday: 11500, weekend: 12500, naturalist: 2500, tax_pct: 5, book: [4, 59] },
   { source: FOREIGN, park: "Tadoba", zone: "core", nationality: "foreign", on: "2026-12-15", weekday: 14500, weekend: 19000, naturalist: 2500, tax_pct: 5, book: [60, 120] },
   { source: FOREIGN, park: "Tadoba", zone: "buffer", nationality: "foreign", on: "2026-12-15", weekday: 13500, weekend: 14500, naturalist: 2500, tax_pct: 5 },
+  // Indian guests (per jeep, + 5% GST; the owner's earlier rate document, 31 Oct 2026)
+  ...mp(INDIAN, "indian", "Pench", 14500, 15000, 13500),
+  ...mp(INDIAN, "indian", "Kanha", 14500, 15000, 13500),
+  ...mp(INDIAN, "indian", "Bandhavgarh", 14500, 15000, 13500),
+  ...mp(INDIAN, "indian", "Satpura", 13500, 14000, 12500),
+  { source: INDIAN, park: "Tadoba", zone: "core", nationality: "indian", on: "2026-12-15", weekday: 11000, weekend: 12000, tax_pct: 5, book: [4, 59] },
+  { source: INDIAN, park: "Tadoba", zone: "core", nationality: "indian", on: "2026-12-15", weekday: 14000, weekend: 18500, tax_pct: 5, book: [60, 120] },
+  { source: INDIAN, park: "Tadoba", zone: "buffer", nationality: "indian", on: "2026-12-15", weekday: 13000, weekend: 14000, tax_pct: 5 },
   // Ken River Lodge: entry, guide and naturalist included, taxes included, all guests
   { source: "Ken River Lodge B2B", park: "Panna", zone: "core", nationality: "all", on: "2026-12-15", weekday: 15000, weekend: 16000, naturalist: 0, tax_pct: 0 },
 ];
@@ -302,15 +312,16 @@ export const CARD_ADDONS: CardAddon[] = [
   // Tadoba (Waghoba Eco Lodge): boat safari up to 5 guests, transfer and naturalist included
   fx("Waghoba Eco Lodge", /boat.*1\s*h|1\s*-?\s*hour|one hour/i, "Tadoba boat safari, 1 hour", 11000, { unit: "per_group" }),
   fx("Waghoba Eco Lodge", /boat.*2\s*h|2\s*-?\s*hour|two hour/i, "Tadoba boat safari, 2 hours", 13000, { unit: "per_group" }),
+  // Tadoba supplements per safari, all guests, + 5% (owner, 31 Oct 2026: add-ons at Waghoba)
+  { source: FOREIGN, hotel: "Waghoba Eco Lodge", name: /moharli/i, label: "Core safari from Moharli gate (extra per safari)", rate: 4000, tax_pct: 5 },
+  { source: FOREIGN, hotel: "Waghoba Eco Lodge", name: /^(?!.*scorpio).*(gypsy|modified)/i, label: "Modified Gypsy (extra per safari)", rate: 6000, tax_pct: 5 },
+  { source: FOREIGN, hotel: "Waghoba Eco Lodge", name: /scorpio/i, label: "Modified Scorpio (extra per safari)", rate: 9000, tax_pct: 5 },
 ];
 
-// What the documents do not make clear: asked, never guessed or loaded.
+// Kept as the owner decided for now, to be confirmed with management (31 Oct 2026).
 export const RATE_CARD_QUESTIONS: string[] = [
-  "Dzire / Etios via Bhimbetka: + 0 for now (the card's 6,500 is below the direct 7,000), as you said; please confirm with management.",
-  "Iora Retreat transfers (Guwahati 13,000, Jorhat 10,000) are treated as + 5% GST for now; please confirm.",
-  "Foreigners' MP jeep safaris say \"from 01st Apr\": from 1 Apr 2027 (and what applies before), or from 1 Apr 2026 for the whole 2026-27 season? They are checked on 15 Apr 2027 and not changed by the SQL until this is clear.",
-  "Tadoba: core safaris are priced from the Khutwanda gate; from Moharli it is Rs 4,000 more per safari, and modified jeeps cost Rs 6,000 / Scorpio Rs 9,000 more. Should these be add-ons?",
-  "The season calendar has no dates for 1 Jul - 30 Sep 2027 (monsoon). Are the lodges closed then, or which season applies?",
-  "Ken River Lodge rooms: are they priced with the B2B rates (as checked here) or the published tariff (35,000 / 25,000 / 16,000 / 30,000 / 45,000 / 16,000)? The SQL does not change them until this is clear.",
-  "Indian safari and activity rates: there is no document for them yet.",
+  "Dzire / Etios via Bhimbetka: + 0 (the card's 6,500 is below the direct 7,000).",
+  "Iora Retreat transfers (Guwahati 13,000, Jorhat 10,000): + 5% GST.",
+  "Foreigners' MP jeep safaris (\"from 01st Apr\" on the sheet): applied to the whole 2026-27 season.",
+  "1 Jul - 30 Sep 2027 has no season in the calendar: quotes for those dates show \"price needed\" (core zones are closed then; buffer only).",
 ];

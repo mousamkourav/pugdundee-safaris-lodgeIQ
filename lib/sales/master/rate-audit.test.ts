@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { auditRates, type AuData, type AuRoomRate } from "./rate-audit";
-import { CARD_TRANSFERS, RATE_CARD_QUESTIONS } from "./rate-card";
+import { CARD_SAFARIS, CARD_TRANSFERS, RATE_CARD_QUESTIONS } from "./rate-card";
 
 const rr = (room: string, o: Partial<AuRoomRate>): AuRoomRate => ({
   room_category_id: room, valid_from: "2026-04-01", valid_to: "2027-03-31", meal_plan: "CP", rate_single: null, rate_double: 0,
@@ -81,7 +81,7 @@ test("experiences: found and checked, or missing", () => {
 
 test("what the documents leave open is a question for the owner", () => {
   assert.ok(RATE_CARD_QUESTIONS.some((q) => /Bhimbetka/.test(q)));
-  assert.ok(RATE_CARD_QUESTIONS.some((q) => /from 01st Apr/.test(q)));
+  assert.ok(RATE_CARD_QUESTIONS.some((q) => /whole 2026-27 season/.test(q)));
 });
 
 // ---- the tariff, the season calendar, safaris and Ken River Lodge
@@ -89,7 +89,11 @@ const full: AuData = {
   ...data,
   properties: [...data.properties, { id: "KRL", name: "Ken River Lodge", kind: "own_lodge" }],
   rooms: [...data.rooms, { id: "KRL_S", property_id: "KRL", name: "Stilted River Facing Cottage" }, { id: "KRL_H", property_id: "KRL", name: "AC Premium Hut", rate_category_id: "CAT_HUT" }],
-  roomRates: [...data.roomRates, rr("KRL_S", { meal_plan: "AP", valid_from: "2026-10-01", valid_to: "2027-09-30", rate_double: 16500, weekend_rate_double: 17500, tax_pct: 0, rates_include_tax: true })],
+  roomRates: [
+    ...data.roomRates,
+    rr("KRL_S", { meal_plan: "AP", valid_from: "2026-10-01", valid_to: "2027-09-30", rate_double: 16500, weekend_rate_double: 17500, tax_pct: 0, rates_include_tax: true }),
+    rr("KRL_S", { meal_plan: "AP", valid_from: "2026-12-21", valid_to: "2027-01-04", rate_double: 18500, tax_pct: 0, rates_include_tax: true }),
+  ],
   categories: [{ id: "CAT_C", name: "Cottage" }, { id: "CAT_T", name: "Treehouse" }, { id: "CAT_HUT", name: "KRL Premium Hut", calendar: "krl" }],
   tariff: [
     { rate_category_id: "CAT_C", nationality: "foreign", season: "shoulder", valid_from: "2026-10-01", valid_to: "2027-09-30", rate_single: 15000, rate_double: 18000, meal_plan: "AP", tax_pct: 18, rates_include_tax: false, active: true },
@@ -105,6 +109,7 @@ const full: AuData = {
   safaris: (["morning", "afternoon"] as const).flatMap((session) => [
     { park_id: "TAD", zone: "core", session, vehicle_type: "exclusive_jeep", nationality: "foreign", valid_from: "2026-10-01", valid_to: "2027-09-30", weekday_rate: 11500, weekend_rate: 12500, naturalist_fee: 2500, tax_pct: 5, active: true, book_min_days: 4, book_max_days: 59 },
     { park_id: "TAD", zone: "core", session, vehicle_type: "exclusive_jeep", nationality: "foreign", valid_from: "2026-10-01", valid_to: "2027-09-30", weekday_rate: 14500, weekend_rate: 14500, naturalist_fee: 2500, tax_pct: 5, active: true, book_min_days: 60, book_max_days: 120 },
+    { park_id: "TAD", zone: "buffer", session, vehicle_type: "exclusive_jeep", nationality: "indian", valid_from: "2026-10-01", valid_to: "2027-09-30", weekday_rate: 13000, weekend_rate: 14000, naturalist_fee: 0, tax_pct: 5, active: true },
     { park_id: "PAN", zone: "core", session, vehicle_type: "exclusive_jeep", nationality: "all", valid_from: "2026-10-01", valid_to: "2027-09-30", weekday_rate: 15000, weekend_rate: 16000, naturalist_fee: 0, tax_pct: 5, active: true },
   ]),
 };
@@ -132,14 +137,38 @@ test("safaris: Tadoba by booking window, Panna taxes included, missing parks", (
   assert.equal(find("Safaris and activities - foreigners", "Tadoba core, foreign, booked 4-59 days ahead, morning")?.status, "ok");
   assert.equal(find("Safaris and activities - foreigners", "Tadoba core, foreign, booked 60-120 days ahead, evening")?.status, "different"); // weekend 14,500 vs 19,000
   assert.equal(find("Safaris and activities - foreigners", "Tadoba buffer, foreign, morning")?.status, "missing");
+  // Indian guests: no naturalist fee on that document, so it is not checked
+  assert.equal(find("Safari rates - Indian guests", "Tadoba buffer, indian, evening")?.status, "ok");
+  assert.equal(find("Safari rates - Indian guests", "Tadoba core, indian, booked 4-59 days ahead, morning")?.status, "missing");
   assert.equal(find("Ken River Lodge B2B", "Panna core, morning")?.status, "gst"); // 5% added, the B2B rate includes taxes
   assert.equal(find("Safaris and activities - foreigners", "Kanha core, foreign")?.status, "not found");
+  // the MP rates are checked for the whole 2026-27 season (a December date)
+  assert.ok(CARD_SAFARIS.filter((c) => c.park === "Kanha").every((c) => c.on === "2026-12-15"));
 });
 
 test("Ken River Lodge rooms: B2B weekday / weekend, from the room's rate or its tariff category", () => {
-  assert.equal(find("Ken River Lodge B2B", "Ken River Lodge: Stilted River Facing Cottage (2 guests)")?.status, "ok");
+  const stilted = find("Ken River Lodge B2B", "Ken River Lodge: Stilted River Facing Cottage (2 guests)");
+  assert.equal(stilted?.status, "ok");
+  assert.equal(stilted!.found, "Rs 16,500 / Rs 17,500 / Rs 18,500 incl. GST");
   const hut = find("Ken River Lodge B2B", "Ken River Lodge: AC Premium Hut (2 guests)");
   assert.equal(hut?.status, "different");
   assert.match(hut!.found, /published tariff/);
   assert.equal(find("Ken River Lodge B2B", "Ken River Lodge: AC Villa Cottage, 3 bedrooms (6 guests)")?.status, "not found");
+});
+
+test("Tadoba supplements at Waghoba: Moharli gate, modified Gypsy and Scorpio, per safari + 5%", () => {
+  const withWaghoba: AuData = {
+    ...data,
+    properties: [...data.properties, { id: "WEL", name: "Waghoba Eco Lodge", kind: "own_lodge" }],
+    addons: [
+      ...data.addons,
+      { name: "Core safari from Moharli gate", property_id: "WEL", rate: 4000, rate_foreign: null, tax_pct: 5, active: true },
+      { name: "Modified luxury Gypsy (per safari)", property_id: "WEL", rate: 5000, rate_foreign: null, tax_pct: 5, active: true },
+    ],
+  };
+  const r = auditRates(withWaghoba);
+  const get = (label: string) => r.find((x) => x.item === `Waghoba Eco Lodge: ${label}`);
+  assert.equal(get("Core safari from Moharli gate (extra per safari)")?.status, "ok");
+  assert.equal(get("Modified Gypsy (extra per safari)")?.status, "different");
+  assert.equal(get("Modified Scorpio (extra per safari)")?.status, "missing");
 });

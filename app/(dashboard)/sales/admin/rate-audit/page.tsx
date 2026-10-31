@@ -74,8 +74,8 @@ export default async function RateAuditPage() {
       </div>
 
       <section className={`${ui.card} p-4`}>
-        <h2 className="text-base font-semibold text-olive-800">Questions for the owner</h2>
-        <p className="mt-1 text-sm text-sand-500">The documents do not make these clear, so nothing was changed for them.</p>
+        <h2 className="text-base font-semibold text-olive-800">To confirm with management</h2>
+        <p className="mt-1 text-sm text-sand-500">Kept as decided for now (31 Oct 2026).</p>
         <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm text-sand-700">
           {RATE_CARD_QUESTIONS.map((q) => (
             <li key={q}>{q}</li>
