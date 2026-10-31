@@ -331,11 +331,23 @@ export function fillGaps(rule: ParsedTrip, ai: ParsedTrip): { parsed: ParsedTrip
     ask("date", `I read the arrival as ${fmtDate(rule.arrival_date)}, the AI as ${fmtDate(ai.arrival_date)}. When do they arrive?`, [`arriving ${fmtDate(rule.arrival_date)}`, `arriving ${fmtDate(ai.arrival_date)}`]);
 
   // ---- the way in and out
-  if (!rule.arrival_place && ai.arrival_place) { out.arrival_place = ai.arrival_place; filled.add("arrival"); }
-  else if (rule.arrival_place && ai.arrival_place && rule.arrival_place !== ai.arrival_place)
-    ask("arrival", `I read the arrival at ${rule.arrival_place}, the AI at ${ai.arrival_place}. Where do they arrive?`, [`arrive at ${rule.arrival_place}`, `arrive at ${ai.arrival_place}`]);
-  if (!rule.departure_place && ai.departure_place) { out.departure_place = ai.departure_place; filled.add("departure"); }
-  else if (rule.departure_place && ai.departure_place && rule.departure_place !== ai.departure_place)
+  // The arrival place is where our car picks them up for the safari part (after any flight).
+  // With a city night before the first lodge and a flight out of that city ("1 night Delhi,
+  // fly to Jabalpur"), an AI that names the city (or its airport) as the arrival means the
+  // same trip: not a disagreement, and not a place to fill in. The same for the way out.
+  const cityNights = rule.cityStays?.length ? rule.cityStays : ai.cityStays ?? [];
+  const flown = rule.flights?.length ? rule.flights : ai.flights ?? [];
+  const lodges = rule.parks.length || ai.parks.length;
+  const inCity = (place: string, city: string) => place.toLowerCase().includes(city.toLowerCase().trim());
+  const flyInCity = (place: string) =>
+    cityNights.some((c) => c.when === "before" && !c.at && !!c.city && inCity(place, c.city) && flown.some((f) => inCity(f.from, c.city)));
+  const flyOutCity = (place: string) =>
+    cityNights.some((c) => c.when === "after" && (c.at === undefined || c.at >= lodges) && !!c.city && inCity(place, c.city) && flown.some((f) => inCity(f.to, c.city)));
+  if (!rule.arrival_place && ai.arrival_place && !flyInCity(ai.arrival_place)) { out.arrival_place = ai.arrival_place; filled.add("arrival"); }
+  else if (rule.arrival_place && ai.arrival_place && rule.arrival_place !== ai.arrival_place && !flyInCity(ai.arrival_place))
+    ask("arrival", `Where does our car pick them up for the safari part? I read ${rule.arrival_place}, the AI read ${ai.arrival_place}.`, [`arrive at ${rule.arrival_place}`, `arrive at ${ai.arrival_place}`]);
+  if (!rule.departure_place && ai.departure_place && !flyOutCity(ai.departure_place)) { out.departure_place = ai.departure_place; filled.add("departure"); }
+  else if (rule.departure_place && ai.departure_place && rule.departure_place !== ai.departure_place && !flyOutCity(ai.departure_place))
     ask("departure", `I read the departure from ${rule.departure_place}, the AI from ${ai.departure_place}. Where do they leave from?`, [`leave from ${rule.departure_place}`, `leave from ${ai.departure_place}`]);
 
   // ---- the route

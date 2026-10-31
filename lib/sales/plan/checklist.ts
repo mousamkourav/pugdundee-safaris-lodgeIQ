@@ -54,7 +54,7 @@ export function tripChecklist(plan: Plan, f: ChatFlags, full: BuilderContext): C
         ? { key: "arrival", label: "Arrival", ok: true, text: `${arrPlace}${arrMode ? ` (${MODE[arrMode]})` : ""}, our transfer to the lodge` }
         : f.arrivalAsked
           ? { key: "arrival", label: "Arrival", ok: true, text: "On their own (no pick-up)" }
-          : { key: "arrival", label: "Arrival", ok: false, text: "Where do they arrive, and how (flight, train, own vehicle)?" }
+          : { key: "arrival", label: "Arrival", ok: false, text: "Where does our car pick them up for the safari part (airport, station), or do they come in their own vehicle?" }
   );
 
   // each stop

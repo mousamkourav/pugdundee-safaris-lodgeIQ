@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import { aiToParsed } from "./ai";
 import { chatTurn, initialFlags } from "./chat";
 import { emptyPlan } from "./planner";
-import { unknownWords } from "./parse-text";
+import { extractTrip, unknownWords } from "./parse-text";
+import { cityHotels, safariOnly } from "./cities";
 import { DELHI_KAZIRANGA, jorhatCtx as ctx, READER_TODAY as TODAY } from "./reader-fixture";
 import { chooseSource, dateOf, fillGaps, gapsOf, normaliseEnquiry, patternFromPlan, pickPattern, structureOf } from "./reading";
 import type { Plan } from "./types";
@@ -143,3 +144,42 @@ test("the same enquiry with other dates and numbers is read from memory too; an 
 test("the built-in reader alone says so", () => {
   assert.equal(first(DELHI_KAZIRANGA).reply.source, "built-in reader");
 });
+
+// Stand-in for the Thompson enquiry (31 Oct 2026): a Delhi night first, then a flight
+// Delhi -> Jabalpur; at the end a flight back to Delhi and a Delhi night. The arrival is
+// where our car picks them up for the safari part (Jabalpur), so an AI that says
+// "Delhi Airport (IGI)" agrees with the reader.
+const THOMPSON =
+  "Thompson family, 2 adults from UK, 10 feb 1 night delhi, next day fly to jabalpur, kanha 3 nights, bandhavgarh kings lodge 2 nights, back to jabalpur for the flight to delhi, 1 night delhi";
+const igi = { ...ctx, locations: ctx.locations.map((l) => (l.id === "DEL" ? { ...l, name: "Delhi Airport (IGI)" } : l)) };
+const firstIgi = (msg: string, extra?: Parameters<typeof chatTurn>[5]) => {
+  const p = emptyPlan(TODAY);
+  return chatTurn(p, initialFlags(p), msg, igi, TODAY, extra);
+};
+
+test("a Delhi night and a flight to Jabalpur: the AI's Delhi arrival is no conflict (the Thompson enquiry)", () => {
+  const rule = firstIgi(THOMPSON);
+  assert.deepEqual([rule.plan.arrival_location_id, rule.plan.departure_location_id], ["JLR", "JLR"]);
+  assert.deepEqual(rule.plan.city_stays?.map((c) => [c.when, c.city, c.nights]), [["before", "Delhi", 1], ["after", "Delhi", 1]]);
+  const ai = aiToParsed({ arrival_place: "Delhi Airport (IGI)", departure_place: "Delhi Airport (IGI)", stops: [{ park: "Kanha National Park", nights: 3 }, { park: "Bandhavgarh National Park", lodge: "Kings Lodge", nights: 2 }] }, igi);
+  assert.equal(ai.arrival_place, "Delhi Airport (IGI)");
+  const r = firstIgi(THOMPSON, { parsed: ai, source: "ai" });
+  assert.deepEqual([r.plan.arrival_location_id, r.plan.departure_location_id], ["JLR", "JLR"]);
+  const asks = (r.reply.checklist ?? []).map((c) => c.key);
+  assert.ok(!asks.includes("ask:conflict:arrival") && !asks.includes("ask:conflict:departure"), asks.join(", "));
+  assert.doesNotMatch(r.reply.text, /Where do they arrive|Where does our car pick them up/);
+  // with no arrival read, the AI's Delhi is not filled in either (Delhi is before the flight)
+  const filled = fillGaps({ ...extractFor(THOMPSON), arrival_place: undefined }, ai).parsed;
+  assert.equal(filled.arrival_place, undefined);
+});
+
+test("a real arrival disagreement is still asked, as where our car picks them up", () => {
+  const ai = aiToParsed({ arrival_place: "Nagpur Airport" }, igi);
+  const r = firstIgi(THOMPSON, { parsed: ai, source: "ai" });
+  assert.match(r.reply.text, /^Where does our car pick them up for the safari part\? I read Jabalpur Airport, the AI read Nagpur Airport\./);
+  assert.deepEqual(r.reply.quick?.map((q) => q.text), ["arrive at Jabalpur Airport", "arrive at Nagpur Airport"]);
+});
+
+function extractFor(msg: string) {
+  return extractTrip(msg, safariOnly(igi), TODAY, cityHotels(igi));
+}
