@@ -81,3 +81,17 @@ test("the Excel for management: filled rows come back as new rates, empty ones a
   other.addWorksheet("Room tariff");
   assert.equal(await readMissingTransfersWorkbook(Buffer.from(await other.xlsx.writeBuffer())), null);
 });
+
+test("Test Jorhat: Kanha Earth Lodge -> Waghoba Eco Lodge has no rate, so it is listed (no price made up)", () => {
+  const pairs = missingTransferPairs(input([{ from: "L_KEL", to: "L_WEL", price: null }]));
+  const kw = pairs.find((p) => [p.from_id, p.to_id].sort().join("-") === "L_KEL-L_WEL");
+  assert.ok(kw, "Kanha Earth Lodge - Waghoba Eco Lodge is missing from the list");
+  assert.equal(kw.needed, 1);
+  assert.equal(kw.last_price, null);
+  // and the quote shows it as missing, priced at 0, not guessed
+  const trip: TripInput = { adults: 2, children: [], nationality: "foreign", stays: [], safaris: [], booking_date: "2026-10-31", transfers: [{ date: "2027-04-27", from_location_id: "L_KEL", to_location_id: "L_WEL" }] };
+  const r = priceTrip(trip, ctx.pricing);
+  assert.equal(r.lines[0].amount, 0);
+  assert.equal(r.lines[0].missing, true);
+  assert.deepEqual(r.missing.map((m) => m.label), ["Transfer Kanha Earth Lodge to Waghoba Eco Lodge"]);
+});
