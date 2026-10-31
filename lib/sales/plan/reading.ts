@@ -299,16 +299,16 @@ export function fillGaps(rule: ParsedTrip, ai: ParsedTrip): { parsed: ParsedTrip
   const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
   // ---- guests
-  if (rule.adults === undefined && ai.adults !== undefined) (out.adults = ai.adults), filled.add("guests");
+  if (rule.adults === undefined && ai.adults !== undefined) { out.adults = ai.adults; filled.add("guests"); }
   else if (rule.adults !== undefined && ai.adults !== undefined && ai.adults !== rule.adults)
     ask("adults", `I read ${plural(rule.adults, "adult")}, the AI read ${ai.adults}. How many adults?`, [plural(rule.adults, "adult"), plural(ai.adults, "adult")]);
-  if (!rule.children?.length && ai.children?.length) (out.children = ai.children), filled.add("guests");
+  if (!rule.children?.length && ai.children?.length) { out.children = ai.children; filled.add("guests"); }
   else if (rule.children?.length && ai.children?.length && rule.children.join() !== ai.children.join())
     ask("children", `I read children aged ${rule.children.join(", ")}, the AI read ${ai.children.join(", ")}. Which is right?`, [
       `${rule.children.length} ${rule.children.length === 1 ? "child" : "children"} aged ${rule.children.join(" and ")}`,
       `${ai.children.length} ${ai.children.length === 1 ? "child" : "children"} aged ${ai.children.join(" and ")}`,
     ]);
-  if (rule.rooms === undefined && ai.rooms !== undefined) (out.rooms = ai.rooms), filled.add("guests");
+  if (rule.rooms === undefined && ai.rooms !== undefined) { out.rooms = ai.rooms; filled.add("guests"); }
   else if (rule.rooms !== undefined && ai.rooms !== undefined && ai.rooms !== rule.rooms)
     ask("rooms", `I read ${plural(rule.rooms, "room")}, the AI read ${ai.rooms}. How many rooms?`, [plural(rule.rooms, "room"), plural(ai.rooms, "room")]);
 
@@ -326,15 +326,15 @@ export function fillGaps(rule: ParsedTrip, ai: ParsedTrip): { parsed: ParsedTrip
   }
 
   // ---- date
-  if (!rule.arrival_date && ai.arrival_date) (out.arrival_date = ai.arrival_date), filled.add("dates");
+  if (!rule.arrival_date && ai.arrival_date) { out.arrival_date = ai.arrival_date; filled.add("dates"); }
   else if (rule.arrival_date && ai.arrival_date && rule.arrival_date !== ai.arrival_date)
     ask("date", `I read the arrival as ${fmtDate(rule.arrival_date)}, the AI as ${fmtDate(ai.arrival_date)}. When do they arrive?`, [`arriving ${fmtDate(rule.arrival_date)}`, `arriving ${fmtDate(ai.arrival_date)}`]);
 
   // ---- the way in and out
-  if (!rule.arrival_place && ai.arrival_place) (out.arrival_place = ai.arrival_place), filled.add("arrival");
+  if (!rule.arrival_place && ai.arrival_place) { out.arrival_place = ai.arrival_place; filled.add("arrival"); }
   else if (rule.arrival_place && ai.arrival_place && rule.arrival_place !== ai.arrival_place)
     ask("arrival", `I read the arrival at ${rule.arrival_place}, the AI at ${ai.arrival_place}. Where do they arrive?`, [`arrive at ${rule.arrival_place}`, `arrive at ${ai.arrival_place}`]);
-  if (!rule.departure_place && ai.departure_place) (out.departure_place = ai.departure_place), filled.add("departure");
+  if (!rule.departure_place && ai.departure_place) { out.departure_place = ai.departure_place; filled.add("departure"); }
   else if (rule.departure_place && ai.departure_place && rule.departure_place !== ai.departure_place)
     ask("departure", `I read the departure from ${rule.departure_place}, the AI from ${ai.departure_place}. Where do they leave from?`, [`leave from ${rule.departure_place}`, `leave from ${ai.departure_place}`]);
 
@@ -352,26 +352,26 @@ export function fillGaps(rule: ParsedTrip, ai: ParsedTrip): { parsed: ParsedTrip
         const a = ai.parks[i];
         const p = { ...r };
         const name = short(r.name);
-        if (r.nights === undefined && a.nights !== undefined) (p.nights = a.nights), filled.add("nights");
+        if (r.nights === undefined && a.nights !== undefined) { p.nights = a.nights; filled.add("nights"); }
         else if (r.nights !== undefined && a.nights !== undefined && r.nights !== a.nights)
           ask(`nights:${i}`, `${name}: I read ${plural(r.nights, "night")}, the AI read ${a.nights}. How many nights?`, [`make ${name} ${plural(r.nights, "night")}`, `make ${name} ${plural(a.nights, "night")}`]);
-        if (!r.lodge && a.lodge) (p.lodge = a.lodge), filled.add("lodge");
+        if (!r.lodge && a.lodge) { p.lodge = a.lodge; filled.add("lodge"); }
         else if (r.lodge && a.lodge && r.lodge !== a.lodge)
           ask(`lodge:${i}`, `${name}: I read ${r.lodge}, the AI read ${a.lodge}. Which lodge?`, [`${name} at ${r.lodge}`, `${name} at ${a.lodge}`]);
-        if (!r.room && !r.roomName && a.room) (p.room = a.room), filled.add("room");
-        if (r.safaris === undefined && a.safaris !== undefined) (p.safaris = a.safaris), filled.add("safaris");
+        if (!r.room && !r.roomName && a.room) { p.room = a.room; filled.add("room"); }
+        if (r.safaris === undefined && a.safaris !== undefined) { p.safaris = a.safaris; filled.add("safaris"); }
         else if (r.safaris !== undefined && a.safaris !== undefined && r.safaris !== a.safaris)
           ask(`safaris:${i}`, `${name}: I read ${plural(r.safaris, "safari")}, the AI read ${a.safaris}. How many safaris?`, [`${name} ${plural(r.safaris, "safari")}`, `${name} ${plural(a.safaris, "safari")}`]);
-        if (r.naturalists === undefined && a.naturalists !== undefined) (p.naturalists = a.naturalists), filled.add("safaris");
-        if (!r.extras?.length && a.extras?.length) (p.extras = a.extras), filled.add("experiences");
+        if (r.naturalists === undefined && a.naturalists !== undefined) { p.naturalists = a.naturalists; filled.add("safaris"); }
+        if (!r.extras?.length && a.extras?.length) { p.extras = a.extras; filled.add("experiences"); }
         return p;
       });
     }
   }
   // edits only the AI understood ("pench pehle karo"): taken when the reader read none
-  if (!rule.order?.length && ai.order?.length) (out.order = ai.order), filled.add("route");
-  if (!rule.removeParks?.length && ai.removeParks?.length) (out.removeParks = ai.removeParks), filled.add("route");
-  if (rule.reverse === undefined && ai.reverse) (out.reverse = true), filled.add("route");
+  if (!rule.order?.length && ai.order?.length) { out.order = ai.order; filled.add("route"); }
+  if (!rule.removeParks?.length && ai.removeParks?.length) { out.removeParks = ai.removeParks; filled.add("route"); }
+  if (rule.reverse === undefined && ai.reverse) { out.reverse = true; filled.add("route"); }
   // "new plan: ...": a whole new route, when the AI's stops are the ones the reader read too
   if (!rule.replaceRoute && ai.replaceRoute && out.parks.length && !asks.some((a) => a.key === "conflict:route")) {
     out.replaceRoute = true;
@@ -380,15 +380,15 @@ export function fillGaps(rule: ParsedTrip, ai: ParsedTrip): { parsed: ParsedTrip
 
   // ---- flights and city nights
   const legs = (f: ParsedTrip["flights"]) => (f ?? []).map((x) => `${x.from}>${x.to}`).join(", ");
-  if (!rule.flights?.length && ai.flights?.length) (out.flights = ai.flights), filled.add("flights");
+  if (!rule.flights?.length && ai.flights?.length) { out.flights = ai.flights; filled.add("flights"); }
   else if (rule.flights?.length && ai.flights?.length && legs(rule.flights).toLowerCase() !== legs(ai.flights).toLowerCase())
     ask("flights", `I read the flights as ${legs(rule.flights).replace(/>/g, " to ")}; the AI read ${legs(ai.flights).replace(/>/g, " to ")}. I kept mine: are they right?`, ["Keep these flights"]);
   const stays = (c: ParsedTrip["cityStays"]) => (c ?? []).map((x) => `${x.city} ${x.nights}`).join(", ");
-  if (!rule.cityStays?.length && ai.cityStays?.length) (out.cityStays = ai.cityStays), filled.add("city nights");
+  if (!rule.cityStays?.length && ai.cityStays?.length) { out.cityStays = ai.cityStays; filled.add("city nights"); }
   else if (rule.cityStays?.length && ai.cityStays?.length && stays(rule.cityStays).toLowerCase() !== stays(ai.cityStays).toLowerCase())
     ask("city", `I read the city nights as ${stays(rule.cityStays)}; the AI read ${stays(ai.cityStays)}. I kept mine: are they right?`, ["Keep these city nights"]);
 
-  if (!rule.meal_plan && ai.meal_plan) (out.meal_plan = ai.meal_plan), filled.add("meal plan");
+  if (!rule.meal_plan && ai.meal_plan) { out.meal_plan = ai.meal_plan; filled.add("meal plan"); }
 
   // names the AI gave that are not in master data (dropped by aiToParsed): asked, never guessed
   for (const a of ai.asks ?? []) if (!asks.some((x) => x.key === a.key)) asks.push(a);
