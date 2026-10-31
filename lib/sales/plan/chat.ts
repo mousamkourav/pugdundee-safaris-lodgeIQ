@@ -13,7 +13,8 @@ import { priceTrip } from "@/lib/sales/pricing/engine";
 import type { ISODate } from "@/lib/sales/pricing/types";
 import { ROOM_MATCH, aliasesOf, extractTrip, lodgeNamedIn, locationAliases, matchByName, roomWishIn, type Ask, type ParsedTrip, type RoomWish } from "./parse-text";
 import { fillGaps, mergeMemory, sourceNote, type Filled } from "./reading";
-import { buildDays, defaultStop, defaultVehicle, emptyPlan, lodgesInPark, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems } from "./planner";
+import { buildDays, defaultStop, defaultVehicle, emptyPlan, lodgesInPark, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems, segments } from "./planner";
+import { addDays } from "@/lib/sales/pricing/dates";
 import type { BuilderContext, Plan, PlanStop } from "./types";
 import { cityHotelNamed, cityHotels, safariOnly, sameCity, stayKey, stayWhere } from "./cities";
 import { tripChecklist, type CheckItem } from "./checklist";
@@ -244,6 +245,34 @@ export function chatTurn(
     }
   }
   parsed.parks = parsed.parks.filter((p) => !removed.has(p.name));
+
+  // ---- a message that carries the trip on ("2 May flight Delhi to Jorhat, Iora Retreat 3 nights"):
+  // all its parks are new, so they come after the lodges already planned. Its date, its own way
+  // in and its city nights belong to that later part, never to the start of the trip.
+  const lodgesBefore = next.stops.length;
+  const continuing =
+    lodgesBefore > 0 &&
+    !parsed.replaceRoute &&
+    parsed.parks.length > 0 &&
+    parsed.parks.every((p) => {
+      const park = matchByName(ctx.pricing.parks, p.name, aliasesOf);
+      return !!park && !next.stops.some((s) => s.park_id === park.id);
+    });
+  // where the trip ends so far: the new part starts that day
+  const tripEnd = continuing ? segments(next).slice(-1)[0]?.checkOut ?? null : null;
+  // the flights and city nights of the whole trip once this message is in
+  const allFlights = !parsed.flights?.length
+    ? undefined
+    : continuing
+      ? [...(next.flights ?? []), ...parsed.flights.filter((fl) => !(next.flights ?? []).some((h) => sameCity(h.from, fl.from) && sameCity(h.to, fl.to)))]
+      : parsed.flights;
+  const allStays = continuing
+    ? [
+        // a night that was at the end so far stays before the new lodges
+        ...(next.city_stays ?? []).map((c) => (c.when === "after" && c.at === undefined ? { ...c, at: lodgesBefore } : c)),
+        ...(parsed.cityStays ?? []).map((c) => (c.when === "before" ? { ...c, when: "after" as const, at: lodgesBefore } : c.at !== undefined ? { ...c, at: lodgesBefore + c.at } : c)),
+      ]
+    : undefined;
   warnings.push(...parsed.notes.filter((n) => !n.startsWith("Assumed the guest also leaves")));
 
   // ---- a reply to "our car or their own vehicle between the lodges?" / "how do they leave?"
@@ -383,7 +412,12 @@ export function chatTurn(
   }
 
   // ---- dates
-  if (parsed.arrival_date) {
+  if (parsed.arrival_date && continuing && f.dateSet) {
+    // the date of the new part: the trip keeps its start; said if the nights do not lead there
+    const lead = (parsed.cityStays ?? []).filter((c) => c.when === "before").reduce((t, c) => t + c.nights, 0);
+    if (tripEnd && parsed.arrival_date !== tripEnd && parsed.arrival_date !== addDays(tripEnd, lead))
+      warnings.push(`By the nights planned, this part of the trip starts on ${tripEnd}, not ${parsed.arrival_date}. The trip still starts on ${next.arrival_date}; change the nights or the start date if that is wrong.`);
+  } else if (parsed.arrival_date) {
     if (parsed.arrival_date < today) warnings.push(`${parsed.arrival_date} is in the past. Please check the date.`);
     next.arrival_date = parsed.arrival_date;
     f.dateSet = true;
@@ -403,7 +437,8 @@ export function chatTurn(
   const assumedSame = parsed.notes.some((n) => n.startsWith("Assumed the guest also leaves"));
   // A single place in reply to "where do they leave from?" is the way out, not a new arrival.
   const answersDeparture = f.pending === "departure" && !!arr && (!dep || assumedSame) && !!plan.arrival_location_id;
-  if (arr && !answersDeparture) {
+  // a later part's own way in ("flight to Jorhat") is not where the trip starts
+  if (arr && !answersDeparture && !continuing) {
     next.arrival_location_id = arr.id;
     if (next.arrival_mode === "own") delete next.arrival_mode;
     f.arrivalAsked = true;
@@ -485,7 +520,8 @@ export function chatTurn(
     }
     next.stops[i] = { ...next.stops[i], ...wish };
     const stop = next.stops[i];
-    // a lodge already in the trip, only named (e.g. "Kanha first"): nothing new to report    if (idx >= 0 && !p.nights && !p.lodge && !Object.keys(wish).length) continue;
+    // a lodge already in the trip, only named (e.g. "Kanha first"): nothing new to report
+    if (idx >= 0 && !p.nights && !p.lodge && !Object.keys(wish).length) continue;
     const lodgeName = ctx.properties.find((x) => x.id === stop.property_id)?.name;
     const roomName = p.room || p.roomName ? ctx.rooms.find((r) => r.id === stop.room_category_id)?.name : null;
     chips.push(
@@ -501,14 +537,15 @@ export function chatTurn(
   }
 
   // ---- with flights, the airports are where they fly in and out: "fly to Bhopal ... leave from Nagpur to Delhi"
-  if (parsed.flights?.length) {
+  if (allFlights?.length) {
     // the airport of a city: one called "... Airport" first when there are two ("Delhi", "Delhi Airport (IGI)")
     const airportFor = (city: string) => {
       const all = placesOf(ctx).filter((l) => l.type === "airport" && (l.name.toLowerCase().startsWith(city.toLowerCase()) || sameCity(l.name, city)));
       return all.find((l) => /airport/i.test(l.name)) ?? all[0];
     };
-    const fl = parsed.flights;
-    const stays = parsed.cityStays ?? [];
+    // the whole trip's flights and city nights (a message that carries the trip on adds to them)
+    const fl = allFlights;
+    const stays = allStays ?? parsed.cityStays ?? [];
     const beforeCity = stays.find((c) => c.when === "before")?.city;
     const afterCity = stays.find((c) => c.when === "after")?.city;
     const isAfterCity = (c: string) => stays.some((s) => s.when === "after" && sameCity(s.city, c));
@@ -574,11 +611,15 @@ export function chatTurn(
   }
 
   // ---- flights and nights in a city (Delhi) before or after
-  if (parsed.flights?.length) {
-    next.flights = parsed.flights;
+  if (allFlights?.length && parsed.flights?.length) {
+    next.flights = allFlights;
     for (const fl of parsed.flights) chips.push(`flight ${fl.from} to ${fl.to}${fl.time ? ` at ${fl.time}` : ""}`);
   }
-  if (parsed.cityStays?.length) {
+  if (allStays) {
+    // carrying the trip on: every night already planned is kept, the new ones come after
+    next.city_stays = allStays;
+    for (const c of parsed.cityStays ?? []) chips.push(`${c.nights} night${c.nights === 1 ? "" : "s"} in ${c.city} after ${parkName(next.stops[lodgesBefore - 1]?.park_id ?? "")}`);
+  } else if (parsed.cityStays?.length) {
     const keep = (next.city_stays ?? []).filter((c) => !parsed.cityStays!.some((x) => x.when === c.when));
     next.city_stays = [...keep, ...parsed.cityStays];
     for (const c of parsed.cityStays) {

@@ -603,8 +603,12 @@ function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
 
   legs.forEach(({ stop, checkIn }, i) => {
     const toLoc = locationOfProperty(ctx, stop.property_id);
-    const viaCity = i > 0 ? arrivalAfterCity(i) : null;
-    const fromLoc = i === 0 ? plan.arrival_location_id : viaCity ? viaCity.loc : locationOfProperty(ctx, legs[i - 1].stop.property_id);
+    // Each lodge is reached from the flight that lands just before it. The first lodge after
+    // a city night with a flight out of it (Delhi, then Delhi > Jabalpur): that flight's airport,
+    // whatever the arrival point says (a later flight, Delhi > Jorhat, is never the way in).
+    const viaCity = arrivalAfterCity(i);
+    const flownIn = i === 0 && viaCity?.flown && viaCity.loc ? viaCity.loc : null;
+    const fromLoc = i === 0 ? flownIn ?? plan.arrival_location_id : viaCity ? viaCity.loc : locationOfProperty(ctx, legs[i - 1].stop.property_id);
     // Moving between two lodges in the same park (Tree House Hideaway to Kings Lodge):
     // a morning safari first, then the short drive.
     const samePark = i > 0 && legs[i - 1].stop.park_id === stop.park_id;

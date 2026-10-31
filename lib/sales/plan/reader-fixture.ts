@@ -151,3 +151,31 @@ export const jorhatCtx: BuilderContext = {
 // The enquiry of 30 Oct 2026 (Delhi, three MP parks, Delhi, Kaziranga by air).
 export const DELHI_KAZIRANGA =
   "starting 1st april - 1 night delhi, next day fly to Jabalpur then transfer to Bandhavgarh, 3 nights Tree House Bandhavgarh, 3 nights Kanha, 2 nights Pench, transfer to nagpur for delhi flight 1 night delhi, next day flight to Jorhat and then 3 nights Kaziranga and then flight to delhi.";
+
+// Jorhat master data plus Delhi and Roseate House (a city hotel with Master data rates:
+// AC Deluxe, B&B (CP), Rs 23,000 to 31 Mar 2027 and Rs 17,000 from 1 Apr 2027, + 18% GST).
+const roseateRate = (id: string, from: string, to: string, amount: number): RoomRate => ({
+  id, room_category_id: "ROS_D", valid_from: from, valid_to: to, meal_plan: "CP",
+  rate_single: null, rate_double: amount, extra_adult: null, child_rates: [], weekend_days: [],
+  weekend_rate_single: null, weekend_rate_double: null, min_nights: 1, tax_pct: 18, rates_include_tax: false, active: true,
+});
+export const roseateCtx: BuilderContext = {
+  ...jorhatCtx,
+  properties: [...jorhatCtx.properties, { id: "ROS", name: "Roseate House", park_id: "DLI", kind: "city_hotel", fallback_priority: 1, sort: 0, city: "Delhi" }],
+  locations: [...jorhatCtx.locations, { id: "L_ROS", name: "Roseate House", type: "property", property_id: "ROS" }],
+  rooms: [...jorhatCtx.rooms, { id: "ROS_D", property_id: "ROS", name: "AC Deluxe", sort: 0 }],
+  pricing: {
+    ...jorhatCtx.pricing,
+    parks: [...jorhatCtx.pricing.parks, { id: "DLI", name: "Delhi" }],
+    properties: [...jorhatCtx.pricing.properties, { id: "ROS", name: "Roseate House", park_id: "DLI", kind: "city_hotel" }],
+    rooms: [...jorhatCtx.pricing.rooms, { id: "ROS_D", property_id: "ROS", name: "AC Deluxe", max_adults: 2, max_children: 1, extra_bed: true }],
+    roomRates: [...jorhatCtx.pricing.roomRates, roseateRate("ROS_1", "2026-04-01", "2027-03-31", 23000), roseateRate("ROS_2", "2027-04-01", "2027-09-30", 17000)],
+    locations: [...jorhatCtx.pricing.locations, { id: "L_ROS", name: "Roseate House", property_id: "ROS" }],
+  },
+};
+
+// The owner's test trip "Test Jorhat" (2 adults, foreign, 1 room), in one message and in two.
+export const TEST_JORHAT_1 =
+  "Test Jorhat, 2 adults from UK, 1 room. 20 Apr 2027 1 night Delhi at Roseate House, 21 Apr flight Delhi to Jabalpur, Tree House Hideaway 3 nights, Kanha Earth Lodge 3 nights, Waghoba 4 nights, 1 May flight Nagpur to Delhi, 1 night Delhi at Roseate House";
+export const TEST_JORHAT_2 = "2 May flight Delhi to Jorhat, Iora Retreat 3 nights, 5 May flight Jorhat to Delhi";
+export const TEST_JORHAT = `${TEST_JORHAT_1}, ${TEST_JORHAT_2}`;
