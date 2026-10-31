@@ -606,6 +606,7 @@ function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
   const legs = stopDates(plan);
   const vehicle = plan.vehicle_type;
   const segs = segments(plan);
+  const regions = roadRegions(ctx);
   // A city stay between two lodges (Kaziranga, Delhi 1 night, then Bandhavgarh): the next lodge is
   // reached from the airport the guests fly into (Jabalpur), or by road from the city hotel.
   const arrivalAfterCity = (i: number): { loc: string | null; flown: boolean } | null => {
@@ -640,6 +641,9 @@ function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
     const morning = samePark ? autoSafaris(ctx, stop.park_id, checkIn, plan.dateless).safaris.filter((x) => x.session === "morning") : [];
     // in their own vehicle: all the way, on the way in, or between the lodges
     const own = !!plan.own_vehicle || (i === 0 ? plan.arrival_mode === "own" : plan.between_lodges === "own");
+    // two lodges far apart (Pench, then Iora Retreat) in a trip with flights: never a road
+    // transfer; the chat asks how the guests travel between them
+    const far = i > 0 && !viaCity && !!plan.flights?.length && !!fromLoc && !!toLoc && farApart(ctx, fromLoc, toLoc, regions);
     days.push(
       describe(ctx, {
         date: checkIn,
@@ -647,10 +651,10 @@ function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
         property_id: stop.property_id,
         park_id: stop.park_id,
         safaris: morning,
-        transfer: fromLoc && toLoc ? { from_location_id: fromLoc, to_location_id: toLoc } : null,
+        transfer: fromLoc && toLoc && !far ? { from_location_id: fromLoc, to_location_id: toLoc } : null,
         title: "",
         text: "",
-        notes: [],
+        notes: far ? [`${ctx.properties.find((p) => p.id === legs[i - 1].stop.property_id)?.name ?? "The last lodge"} and ${ctx.properties.find((p) => p.id === stop.property_id)?.name ?? "this lodge"} are far apart (no road between them in Master data): how the guests travel is asked, not priced as a drive.`] : [],
         items: [],
         ...(own ? { own_vehicle: true } : {}),
       }, vehicle)
@@ -695,6 +699,73 @@ function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
     );
   }
   return days;
+}
+
+// ---------------- regions ----------------
+// Places joined by road in Master data (a transfer rate between them, directly or through
+// other places) are one region: the MP lodges with Jabalpur and Nagpur, Iora Retreat with
+// Guwahati and Jorhat. A missing rate inside a region is a price to type; two regions are
+// far apart (a flight between them, not a drive).
+export function roadRegions(ctx: BuilderContext): Map<string, string> {
+  const next = new Map<string, string[]>();
+  const link = (a: string, b: string) => next.set(a, [...(next.get(a) ?? []), b]);
+  for (const r of ctx.pricing.transferRates) {
+    if (r.active === false) continue;
+    link(r.from_location_id, r.to_location_id);
+    link(r.to_location_id, r.from_location_id);
+  }
+  // lodges in the same park are one place (Tree House Hideaway and Kings Lodge, Bandhavgarh),
+  // even when one of them has fewer roads in Master data
+  const byPark = new Map<string, string[]>();
+  for (const p of ctx.properties) {
+    const loc = p.park_id ? locationOfProperty(ctx, p.id) : null;
+    if (loc) byPark.set(p.park_id!, [...(byPark.get(p.park_id!) ?? []), loc]);
+  }
+  for (const locs of byPark.values()) {
+    for (const a of locs) {
+      for (const b of locs) {
+        if (a !== b) link(a, b);
+      }
+    }
+  }
+  const region = new Map<string, string>();
+  for (const start of next.keys()) {
+    if (region.has(start)) continue;
+    const todo = [start];
+    region.set(start, start);
+    while (todo.length) {
+      for (const x of next.get(todo.pop()!) ?? []) {
+        if (region.has(x)) continue;
+        region.set(x, start);
+        todo.push(x);
+      }
+    }
+  }
+  return region;
+}
+
+// Two places far apart: each has roads, but none joins their regions.
+export function farApart(ctx: BuilderContext, a: string, b: string, regions = roadRegions(ctx)) {
+  const ra = regions.get(a);
+  const rb = regions.get(b);
+  return !!ra && !!rb && ra !== rb;
+}
+
+// Consecutive lodges far apart with nothing in between (no city night), in a trip with
+// flights: never a road transfer; the sales person is asked how the guests travel.
+export function farLegs(plan: Plan, ctx: BuilderContext): { from: string; to: string; key: string }[] {
+  if (!plan.flights?.length) return [];
+  const segs = segments(plan);
+  const regions = roadRegions(ctx);
+  const out: { from: string; to: string; key: string }[] = [];
+  segs.forEach((s, k) => {
+    const prev = segs[k - 1];
+    if (s.kind !== "lodge" || prev?.kind !== "lodge") return;
+    const a = locationOfProperty(ctx, prev.stop.property_id);
+    const b = locationOfProperty(ctx, s.stop.property_id);
+    if (a && b && farApart(ctx, a, b, regions)) out.push({ from: prev.stop.property_id, to: s.stop.property_id, key: `far:${prev.stop.property_id}>${s.stop.property_id}` });
+  });
+  return out;
 }
 
 // ---------------- titles and text ----------------

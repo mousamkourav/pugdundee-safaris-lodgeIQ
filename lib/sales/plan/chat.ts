@@ -13,7 +13,7 @@ import { priceTrip } from "@/lib/sales/pricing/engine";
 import type { ISODate } from "@/lib/sales/pricing/types";
 import { ROOM_MATCH, aliasesOf, extractTrip, lodgeNamedIn, locationAliases, matchByName, roomWishIn, type Ask, type ParsedTrip, type RoomWish } from "./parse-text";
 import { fillGaps, mergeMemory, sourceNote, type Filled } from "./reading";
-import { buildDays, defaultStop, defaultVehicle, emptyPlan, lodgesInPark, masterHotelRate, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems, segments } from "./planner";
+import { buildDays, defaultStop, defaultVehicle, emptyPlan, farLegs, lodgesInPark, masterHotelRate, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems, segments } from "./planner";
 import { addDays } from "@/lib/sales/pricing/dates";
 import type { BuilderContext, Plan, PlanStop } from "./types";
 import { cityHotelNamed, cityHotels, safariOnly, sameCity, stayKey, stayWhere } from "./cities";
@@ -34,6 +34,7 @@ export interface ChatFlags {
   nationalitySet?: boolean; // Indian / foreign (or the country) was said
   legAsked?: boolean; // "our car or own vehicle between the lodges?" has been answered
   asks?: Ask[]; // what the reader found unclear, asked one by one before the price
+  farAsked?: string[]; // lodges far apart ("far:PTL>IORA") whose way between them has been asked
   askFor?: string | null; // the ask the last question was
   pending: "parks" | "nights" | "date" | "adults" | "arrival" | "departure" | "lodge" | "room" | "hotel" | "name" | "leg" | "ask" | null;
 }
@@ -724,6 +725,21 @@ export function chatTurn(
   if (routeChanged) {
     // the days need every hotel (Roseate House for its rates and transfers), not only the safari lodges
     next.days = next.stops.length && !routeProblems(next, ctx).length ? buildDays(next, full) : [];
+  }
+
+  // Two lodges far apart with nothing between them (Pench, then Iora Retreat) in a trip with
+  // flights: no drive is planned between them (planner); ask how the guests travel, once.
+  for (const leg of farLegs(next, full)) {
+    if ((f.farAsked ?? []).includes(leg.key)) continue;
+    f.farAsked = [...(f.farAsked ?? []), leg.key];
+    const name = (id: string) => full.properties.find((p) => p.id === id)?.name ?? "the lodge";
+    f.asks = [
+      ...(f.asks ?? []),
+      {
+        key: leg.key,
+        text: `How do the guests get from ${name(leg.from)} to ${name(leg.to)}? They are far apart (no road between them in Master data) and the enquiry has flights, so I did not plan a drive. Tell me the way, e.g. "drive to Nagpur, fly to Delhi, 1 night Roseate House, then fly to Jorhat".`,
+      },
+    ];
   }
 
   // questions that close on their own once the plan has the answer

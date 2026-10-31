@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chatTurn, initialFlags, type ChatFlags } from "./chat";
-import { buildDays, emptyPlan, masterHotel, planToTrip } from "./planner";
+import { buildDays, emptyPlan, farApart, masterHotel, planToTrip } from "./planner";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 import { mealCode } from "@/lib/sales/pricing/meal";
 import { detailedBreakdown, inTripOrder } from "@/lib/sales/pricing/breakdown";
@@ -151,4 +151,57 @@ test("a price corrected by hand on a saved quote still finds its room line (key 
   const line = r.lines.find((l) => l.lkey === key);
   assert.equal(line?.amount, 30000);
   assert.equal(line?.description, "Tree House Hideaway, Tree House, full board");
+});
+
+// ---- a city hotel named on its own is a city night, also in the middle of the trip;
+// two lodges far apart are never joined by a drive when the enquiry has flights
+const GERMANY =
+  "2 adults from Germany, arriving Delhi 20 April 2027, 1 night Roseate House, next morning flight to Jabalpur, then Tree House Hideaway 3 nights with 4 safaris all with naturalist, then Kanha 2 nights bush dinner on last night, then Pench 2 nights, then drive to Nagpur and fly to Delhi, 1 night Roseate again, next day flight to Jorhat, Kaziranga Iora Retreat 2 nights with 2 jeep safaris and 1 camera, then fly Jorhat to Delhi and go home";
+
+test("the German enquiry: Roseate House at the start and again in the middle, flights in between, no Pench - Iora drive", () => {
+  const r = conversation()(GERMANY);
+  const p = r.plan;
+  assert.deepEqual(p.stops.map((s) => `${s.property_id} ${s.nights}`), ["THH 3", "KEL 2", "PTL 2", "IORA 2"]);
+  // "1 night Roseate House" and "1 night Roseate again": Delhi nights at Roseate House
+  assert.deepEqual(p.city_stays?.map((c) => [c.when, c.city, c.hotel, c.at ?? null]), [["before", "Delhi", "Roseate House", null], ["after", "Delhi", "Roseate House", 3]]);
+  assert.deepEqual(p.flights?.map((f) => `${f.from}>${f.to}`), ["Delhi>Jabalpur", "Nagpur>Delhi", "Delhi>Jorhat", "Jorhat>Delhi"]);
+  assert.equal(p.arrival_date, "2027-04-21"); // the first lodge; Delhi the night before
+  assert.deepEqual(roads(p), [
+    "04-20 DEL>L_ROS",
+    "04-21 JLR>L_THH",
+    "04-21 L_ROS>DEL",
+    "04-24 L_THH>L_KEL",
+    "04-26 L_KEL>L_PTL",
+    "04-28 L_PTL>NAG",
+    "04-28 DEL>L_ROS",
+    "04-29 JRH>L_IORA",
+    "04-29 L_ROS>DEL",
+    "05-01 L_IORA>JRH",
+  ]);
+  assert.ok(!roads(p).some((x) => x.includes("L_PTL>L_IORA")));
+  // both Delhi nights priced from Roseate House's rates
+  assert.deepEqual(hotelNights(p), ["2027-04-20 20060", "2027-04-28 20060"]);
+  assert.ok(!(r.flags.asks ?? []).some((a) => a.key.startsWith("far:")));
+});
+
+test("lodges far apart with nothing between them: no drive, and the way between them is asked once", () => {
+  const say = conversation();
+  const r = say("2 adults from Germany, 20 April 2027 fly Delhi to Jabalpur, Tree House Hideaway 3 nights, Kanha 2 nights, Pench 2 nights, then fly to Jorhat, Iora Retreat 2 nights, fly Jorhat to Delhi");
+  assert.ok(!roads(r.plan).some((x) => x.includes("L_PTL>L_IORA")));
+  const ask = (r.flags.asks ?? []).find((a) => a.key === "far:PTL>IORA");
+  assert.ok(ask, "the way from Pench Tree Lodge to Iora Retreat is asked");
+  assert.match(ask!.text, /How do the guests get from Pench Tree Lodge to Iora Retreat\?/);
+  const iora = r.plan.days.find((d) => d.property_id === "IORA");
+  assert.ok(iora?.notes.some((n) => /far apart/.test(n)));
+  // later messages never add it again (it is asked once, then answered or dropped)
+  const r2 = say("name is Mr Weber");
+  assert.ok((r2.flags.asks ?? []).filter((a) => a.key === "far:PTL>IORA").length <= 1);
+  assert.deepEqual(r2.flags.farAsked, ["far:PTL>IORA"]);
+});
+
+test("regions come from the roads in Master data: Kanha - Waghoba is one region (a missing rate), Pench - Iora two", () => {
+  assert.equal(farApart(ctx, "L_KEL", "L_WEL"), false);
+  assert.equal(farApart(ctx, "L_PTL", "L_IORA"), true);
+  // so Test Jorhat keeps its Kanha Earth Lodge -> Waghoba drive (a price to type)
+  assert.ok(roads(conversation()(TEST_JORHAT).plan).includes("04-27 L_KEL>L_WEL"));
 });

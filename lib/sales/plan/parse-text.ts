@@ -751,7 +751,9 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
       stays.push({ when, city, nights: toNum(m.groups!.n), at: m.index! } as (typeof stays)[number] & { at: number });
     }
   }
-  // a night at a city hotel from Master data without the city's name: "1 night stay at Roseate House"
+  // a night at a city hotel from Master data without the city's name, anywhere in the trip (also
+  // in the middle): "1 night stay at Roseate House", "1 night Roseate House", "1 night Roseate
+  // again", "Roseate House 1 night". The hotel stands for its city (Delhi).
   const GENERIC_HOTEL = new Set(["hotel", "the", "house", "resort", "inn", "lodge", "palace", "grand", "new", "jass"]);
   for (const h of hotels) {
     const full = h.name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -760,7 +762,8 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     const city = cityName(h.city.toLowerCase().trim());
     const N = NUM.slice(1, -1);
     const res = [
-      new RegExp(`\\b(?<n>${N})\\s*(?:nights?|n)\\s+(?:stay\\s+|halt\\s+)?(?:in|at)\\s+(?:the\\s+)?(?:${alias})\\b`, "g"),
+      new RegExp(`\\b(?<n>${N})\\s*(?:nights?|n)\\s+(?:stay\\s+|halt\\s+)?(?:(?:in|at)\\s+)?(?:the\\s+)?(?:${alias})\\b`, "g"),
+      new RegExp(`\\b(?:${alias})\\s*(?:again\\s*)?(?:[-:(]\\s*|for\\s+)?(?<n>${N})\\s*nights?\\b`, "g"),
       new RegExp(`\\b(?:stay(?:ing)?|overnight)\\s+(?:in|at)\\s+(?:the\\s+)?(?:${alias})\\b[^.;]{0,30}?\\b(?:for\\s+)?(?<n>${N})\\s*nights?\\b`, "g"),
     ];
     for (const re of res) {
