@@ -84,7 +84,18 @@ Middleware (`middleware.ts`) only routes; it is not the security boundary.
   browser's numbers.
 
 ## AI assistant (Sales builder)
-Gemini reads the enquiry first; the built-in reader (`parse-text.ts`) is the fallback.
+One reading flow (`lib/sales/plan/reading.ts`), so the reader and the AI never disagree:
+1. Memory: `sales_reading_patterns` (Master data > Reading memory), saved when a quote is
+   saved for the guest. The same enquiry (normalised), or the same with only dates/numbers
+   changed, is read from there: no AI call.
+2. The built-in reader (`parse-text.ts`) fills the trip checklist.
+3. Gemini only when the checklist has gaps AND the message has words the reader could not
+   place. It fills empty fields only (`fillGaps`); where it differs from the reader, the
+   sales person is asked one question (the reader's value stays until answered).
+The chat shows where a reading came from ("from memory", "built-in reader", "AI helped with").
+Server action: `assistReading` in `app/(dashboard)/sales/new/ai-actions.ts`; model from
+GEMINI_MODEL (default gemini-3.1-flash-lite), thinking off, temperature 0, 20 s, one retry on
+429/503; every call logged in `sales_chat_log` (model, duration, source, gaps).
 `GEMINI_API_KEY` (and optional `GEMINI_MODEL`) live in Vercel env, never in the DB; the
 "AI reading" switch is in Sales settings. Before sending: `scrubForAI()` removes emails,
 phone numbers and guest names (incl. the name in the guest fields). Gemini's answer is

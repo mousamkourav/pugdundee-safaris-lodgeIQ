@@ -121,10 +121,14 @@ export function MasterSearchTable({
           <button type="button" className="font-semibold text-olive-600 underline" onClick={() => setQuery("")}>
             Clear the search
           </button>{" "}
-          or{" "}
-          <Link href={newHref} className="font-semibold text-olive-600 underline">
-            add a new {singular}
-          </Link>
+          {newHref && (
+            <>
+              or{" "}
+              <Link href={newHref} className="font-semibold text-olive-600 underline">
+                add a new {singular}
+              </Link>
+            </>
+          )}
           .
         </div>
       ) : (

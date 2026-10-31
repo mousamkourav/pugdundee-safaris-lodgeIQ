@@ -67,6 +67,8 @@ export function buildPrompt(input: {
   glossary: GlossaryRow[];
   examples: Example[];
   today: string;
+  // the checklist questions the built-in reader could not answer: the AI is asked for these only
+  gaps?: string[];
 }): string {
   const { ctx } = input;
   return [
@@ -96,6 +98,10 @@ export function buildPrompt(input: {
     ' "city_stays": [{"when": "before"|"after", "city": city, "nights": n, "hotel": name, "price": n}], "meal_plan": "AP"|"MAP"|"CP"|"EP"}',
     "",
     input.examples.length ? `EXAMPLES OF ENQUIRIES THIS TEAM HAS QUOTED (message -> correct JSON):\n${input.examples.map((e) => `Message: ${e.message}\nJSON: ${e.expected}`).join("\n\n")}` : "",
+    "",
+    input.gaps?.length
+      ? `ONLY THESE DETAILS ARE MISSING (our own reader has read everything else; answer only these if the message says them, and use null or empty arrays for every other key):\n${input.gaps.map((g) => `- ${g}`).join("\n")}`
+      : "",
     "",
     `TRIP SO FAR: ${planSummary(input.plan, ctx)}`,
     input.history.length ? `CONVERSATION:\n${input.history.map((h) => `${h.role === "user" ? "Sales" : "Assistant"}: ${scrubForAI(h.text, [input.plan.guest.name]).slice(0, 400)}`).join("\n")}` : "",

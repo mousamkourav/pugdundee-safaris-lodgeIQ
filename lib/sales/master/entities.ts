@@ -600,6 +600,26 @@ export const ENTITIES: EntityDef[] = [
     order: [{ column: "seen", ascending: false }],
     review: { field: "status", pending: "suggested", approve: "approved", reject: "rejected", requires: "meaning", stamp: true, show: ["phrase", "meaning", "seen", "example"] },
   },
+  {
+    key: "reading-memory",
+    table: "sales_reading_patterns",
+    title: "Reading memory",
+    singular: "pattern",
+    group: "AI assistant",
+    icon: "clipboard",
+    noCreate: true,
+    description:
+      "Enquiries already quoted, remembered with the trip that was sent (names, emails and phone numbers removed). When the same enquiry is typed again, or the same with only dates or numbers changed, the assistant reads it from here without the AI. Delete one that would read something wrong.",
+    fields: [
+      { name: "key", label: "Enquiry (normalised)", type: "textarea", required: true, wide: true },
+      { name: "reading", label: "The trip it is read as", type: "json", required: true, wide: true, help: "The quote that was saved for it. The next quote of the same enquiry replaces it." },
+      { name: "hits", label: "Times used", type: "int", empty: 0 },
+      { name: "last_used_at", label: "Last used", type: "date" },
+    ],
+    list: ["key", "hits", "last_used_at"],
+    order: [{ column: "hits", ascending: false }, { column: "created_at", ascending: false }],
+    deleteWarning: "The next time this enquiry is typed, the reader (and the AI if needed) reads it again.",
+  },
 ];
 
 export const ENTITY_GROUPS = ["Pugdundee tariff", "Places", "Stay", "Safaris & travel", "Commercial", "Content", "AI assistant"];

@@ -73,7 +73,7 @@ export default async function EntityListPage({
     : [];
 
   const filterQs = new URLSearchParams(Object.entries(active).map(([k, v]) => [`f_${k}`, v])).toString();
-  const newHref = `/sales/admin/${entity.key}/new${filterQs ? "?" + filterQs : ""}`;
+  const newHref = entity.noCreate ? "" : `/sales/admin/${entity.key}/new${filterQs ? "?" + filterQs : ""}`;
 
   return (
     <div className="space-y-6">
@@ -85,9 +85,11 @@ export default async function EntityListPage({
           <h1 className="mt-1 text-2xl">{entity.title}</h1>
           <p className="mt-1 text-sm text-sand-500">{entity.description}</p>
         </div>
-        <Link href={newHref} className={ui.btnPrimary}>
-          Add {entity.singular}
-        </Link>
+        {newHref && (
+          <Link href={newHref} className={ui.btnPrimary}>
+            Add {entity.singular}
+          </Link>
+        )}
       </div>
 
       {(entity.filters ?? []).length > 0 && (
@@ -123,7 +125,7 @@ export default async function EntityListPage({
       {rows.length === 0 ? (
         <div className={ui.empty}>
           {filterQs ? "Nothing matches these filters." : "Nothing here yet."}{" "}
-          <Link href={newHref} className="font-semibold text-olive-600 underline">Add {filterQs ? "one" : `the first ${entity.singular}`}</Link>.
+          {newHref && <><Link href={newHref} className="font-semibold text-olive-600 underline">Add {filterQs ? "one" : `the first ${entity.singular}`}</Link>.</>}
         </div>
       ) : (
         <MasterSearchTable

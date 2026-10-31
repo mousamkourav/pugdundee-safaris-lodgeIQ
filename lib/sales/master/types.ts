@@ -73,6 +73,7 @@ export interface EntityDef {
   afterSave?: "property-location";
   media?: { owner: MediaOwner; max: number }; // photo gallery on the edit page
   deleteWarning?: string;
+  noCreate?: boolean; // rows are made by the app only (Reading memory): no "Add" button
   // rows waiting for a decision, shown above the list with Approve / Reject buttons
   // (field holds the status; "requires" must be filled in before a row can be approved)
   review?: { field: string; pending: string; approve: string; reject: string; requires?: string; show: string[]; stamp?: boolean }; // stamp: approved_by / approved_at

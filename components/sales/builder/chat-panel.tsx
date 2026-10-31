@@ -45,7 +45,7 @@ export function ChatPanel({
         </span>
         <div className="min-w-0">
           <p className="text-sm font-semibold text-olive-800">Trip assistant</p>
-          <p className="text-xs text-sand-500">{aiAvailable ? "Gemini AI, checked against your master data" : "Built-in reader (AI assistant is off)"}</p>
+          <p className="text-xs text-sand-500">{aiAvailable ? "Built-in reader and memory first; the AI only fills gaps" : "Built-in reader and memory (AI assistant is off)"}</p>
         </div>
       </header>
 
@@ -72,6 +72,7 @@ export function ChatPanel({
                   </div>
                 )}
                 <p className="whitespace-pre-line rounded-2xl rounded-tl-sm border border-sand-200 bg-white px-3.5 py-2 text-sm">{m.text}</p>
+                {m.source && <p className="px-1 text-[11px] text-sand-400">Read: {m.source}</p>}
                 {m.warnings && m.warnings.length > 0 && (
                   <ul className="space-y-1 rounded-lg border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning">
                     {m.warnings.map((w, k) => (

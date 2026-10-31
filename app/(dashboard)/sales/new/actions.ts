@@ -5,6 +5,7 @@ import { makeShareSlug } from "@/lib/sales/share-slug";
 import { planToExample } from "@/lib/sales/plan/ai";
 import { scrubForAI, unknownWords } from "@/lib/sales/plan/parse-text";
 import { readerRows, suggestRules } from "@/lib/sales/plan/learn";
+import { patternFromPlan } from "@/lib/sales/plan/reading";
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, isSalesUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -113,7 +114,10 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
       const fin = await supabase.from("sales_queries").update({ status: "open" }).eq("id", queryId);
       if (fin.error) return { error: "Saved, but the draft could not be finalised: " + fin.error.message };
     }
-    if (mode === "final") await learnFrom(supabase, enquiry, plan, ctx, queryId, cu.user.id);
+    if (mode === "final") {
+      await learnFrom(supabase, enquiry, plan, ctx, queryId, cu.user.id);
+      await rememberReading(enquiry, plan, ctx, today, queryId, cu.user.id);
+    }
     await teachReader(typed, enquiry, plan, ctx, today, cu.user.id, mode);
     revalidatePath(`/sales/queries/${queryId}`);
     revalidatePath("/sales", "layout");
@@ -134,7 +138,10 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
     await createAdminClient().from("sales_queries").delete().eq("id", id);
     return { error: "Could not save the itinerary: " + ins.error.message };
   }
-  if (mode === "final") await learnFrom(supabase, enquiry, plan, ctx, id, cu.user.id);
+  if (mode === "final") {
+    await learnFrom(supabase, enquiry, plan, ctx, id, cu.user.id);
+    await rememberReading(enquiry, plan, ctx, today, id, cu.user.id);
+  }
   await teachReader(typed, enquiry, plan, ctx, today, cu.user.id, mode);
   revalidatePath("/sales", "layout");
   return { id };
@@ -156,6 +163,30 @@ async function learnFrom(
     .from("sales_chat_examples")
     .insert({ message: text, expected: planToExample(plan, ctx), query_id: queryId, created_by: userId })
     .then(() => undefined, () => undefined); // the table may not exist yet: never block a save
+}
+
+// The reading memory (Master data > Reading memory): the enquiry, normalised (names and
+// contacts removed), with the trip that was quoted. The same enquiry typed again is read
+// from here without the AI (assistReading). A newer quote of the same enquiry replaces
+// the reading and keeps the count. Written with the service key; never blocks a save.
+async function rememberReading(
+  enquiry: string | undefined,
+  plan: Plan,
+  ctx: Awaited<ReturnType<typeof loadBuilderContext>>["ctx"],
+  today: string,
+  queryId: string,
+  userId: string
+) {
+  try {
+    const p = enquiry ? patternFromPlan(enquiry.slice(0, 2000), plan, ctx, today, ctx.readerRules ?? []) : null;
+    if (!p) return;
+    await createAdminClient()
+      .from("sales_reading_patterns")
+      .upsert({ key: p.key, structure: p.structure, tokens: p.tokens, reading: p.reading, query_id: queryId, created_by: userId }, { onConflict: "key" })
+      .then(() => undefined, () => undefined); // the table may not exist yet (sales_reading_patterns.sql)
+  } catch {
+    // never block a save
+  }
 }
 
 // Teaching the built-in reader (Master data > Reader rules / Unknown words): the words it

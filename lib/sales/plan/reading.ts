@@ -236,7 +236,7 @@ export function pickPattern(rows: ReadingPattern[], key: string, tokens: Token[]
 // words the reader could not place (or the reader found no trip at all). When every word
 // was read and something is still missing, it was not in the message: the sales person
 // is asked, and the AI would only guess.
-export function aiShouldHelp(input: { gaps: CheckItem[]; unknownWords: string[]; stops: number }): boolean {
+export function aiShouldHelp(input: { gaps: readonly unknown[]; unknownWords: string[]; stops: number }): boolean {
   if (!input.gaps.length) return false;
   return input.unknownWords.length > 0 || input.stops === 0;
 }

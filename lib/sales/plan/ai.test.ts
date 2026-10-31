@@ -147,3 +147,9 @@ test("learning: a saved quote becomes an example, and similar enquiries find it"
   ];
   assert.equal(similarExamples(all, "3 log tadoba 2 raat phir pench 2 raat nagpur se")[0].expected, "A");
 });
+
+test("the AI is told only what is missing", () => {
+  const prompt = buildPrompt({ message: "kanha teen raat", history: [], plan: emptyPlan(TODAY), ctx, glossary: [], examples: [], today: TODAY, gaps: ["Stop 1: Kanha: how many nights?"] });
+  assert.match(prompt, /ONLY THESE DETAILS ARE MISSING[^\n]*\n- Stop 1: Kanha: how many nights\?/);
+  assert.doesNotMatch(buildPrompt({ message: "x", history: [], plan: emptyPlan(TODAY), ctx, glossary: [], examples: [], today: TODAY }), /ONLY THESE/);
+});

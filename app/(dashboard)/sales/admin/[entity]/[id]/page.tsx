@@ -20,6 +20,7 @@ export default async function EntityEditPage({
   const entity = getEntity(key);
   if (!entity) notFound();
   const isNew = id === "new";
+  if (isNew && entity.noCreate) notFound();
   const sp = await searchParams;
 
   let values: Record<string, unknown> = {};

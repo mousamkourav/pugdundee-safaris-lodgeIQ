@@ -13,7 +13,10 @@ import { chatTurn, greeting, initialFlags, nextQuestion, type ChatFlags, type Ch
 import { closureFor } from "@/lib/sales/pricing/engine";
 import type { BuilderContext, Plan } from "@/lib/sales/plan/types";
 import { saveItinerary } from "@/app/(dashboard)/sales/new/actions";
-import { aiUnderstand } from "@/app/(dashboard)/sales/new/ai-actions";
+import { assistReading } from "@/app/(dashboard)/sales/new/ai-actions";
+import { aiToParsed } from "@/lib/sales/plan/ai";
+import { unknownWords } from "@/lib/sales/plan/parse-text";
+import { aiShouldHelp, gapText, gapsOf } from "@/lib/sales/plan/reading";
 import { ChatPanel } from "./chat-panel";
 import { TripDetails, EMAIL_RE } from "./trip-details";
 import { PlanStep } from "./plan-step";
@@ -127,6 +130,8 @@ export function Builder({
   const [daysEdited, setDaysEdited] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [chatBusy, setChatBusy] = useState(false);
+  // the enquiry typed into an empty trip: saved with the quote as the reading memory
+  const [firstEnquiry, setFirstEnquiry] = useState<string | null>(null);
   const [restore, setRestore] = useState<Stored | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveProblems, setSaveProblems] = useState<string[]>([]);
@@ -277,24 +282,33 @@ export function Builder({
     setMessages((m) => [...m, { role: "user", text }]);
     setChatBusy(true);
     try {
+      // One reading (lib/sales/plan/reading.ts). The built-in reader first, here and at once.
+      // Then, in one call: the memory of saved quotes (a new trip only), and the AI only for
+      // what is still missing when the message has words the reader could not place. Short
+      // replies to the assistant's own questions ("cottage", "3") never go to the AI.
       let r = chatTurn(plan, flags, text, ctx, today);
-      // With the AI assistant on, Gemini reads every message first (with the conversation
-      // and the trip so far); the built-in reader fills gaps and takes over if the AI is
-      // unavailable. Short replies to the assistant's own questions ("cottage", "same",
-      // "3") are handled by the built-in reader alone: instant, and they save AI quota.
       const shortAnswer = !!flags.pending && flags.pending !== "parks" && text.trim().length <= 30;
-      if (aiAvailable && !shortAnswer && text.trim().length > 3) {
+      const fresh = !plan.stops.length && text.trim().length >= 15;
+      const gaps = gapsOf(r.reply.checklist);
+      const unknown = unknownWords(text, ctx);
+      const wantAI = aiAvailable && !shortAnswer && text.trim().length > 3 && aiShouldHelp({ gaps, unknownWords: unknown, stops: r.plan.stops.length });
+      if (fresh) setFirstEnquiry((e) => e ?? text);
+      if (fresh || wantAI) {
         try {
           const history = messages.filter((m) => m.text).map((m) => ({ role: m.role, text: m.text }));
-          // never wait longer than 35 s: then the built-in reader's answer is shown
-          const ai = await Promise.race([
-            aiUnderstand({ message: text, history, planJson: JSON.stringify(plan) }),
-            new Promise<{ parsed?: undefined; error: string }>((ok) => setTimeout(() => ok({ error: "The AI took too long; the built-in reader was used." }), 35_000)),
+          // never wait longer than 50 s: then the built-in reader's answer is shown
+          const more = await Promise.race([
+            assistReading({ message: text, history, planJson: JSON.stringify(plan), gaps: gapText(gaps), unknownWords: unknown, wantAI }),
+            new Promise<{ source: "reader"; reading?: undefined; error: string }>((ok) => setTimeout(() => ok({ source: "reader", error: "The AI took too long; the built-in reader was used." }), 50_000)),
           ]);
-          if (ai.parsed) r = chatTurn(plan, flags, text, ctx, today, { parsed: ai.parsed, source: "ai" });
-          else if (ai.error) r = { ...r, reply: { ...r.reply, warnings: [...(r.reply.warnings ?? []), ai.error] } };
+          if ((more.source === "memory" || more.source === "ai") && more.reading) {
+            r = chatTurn(plan, flags, text, ctx, today, { parsed: aiToParsed(more.reading, ctx), source: more.source });
+          } else if (more.error && wantAI) {
+            // the reader's reading stands; said quietly, the assistant keeps working
+            r = { ...r, reply: { ...r.reply, source: "built-in reader (AI not available)" } };
+          }
         } catch {
-          r = { ...r, reply: { ...r.reply, warnings: [...(r.reply.warnings ?? []), "The AI is not reachable right now; the built-in reader was used."] } };
+          if (wantAI) r = { ...r, reply: { ...r.reply, source: "built-in reader (AI not reachable)" } };
         }
       }
       if (r.routeChanged && daysEdited) {
@@ -352,8 +366,9 @@ export function Builder({
     }
     startSave(async () => {
       try {
-        // the first enquiry typed in this session teaches the AI assistant once the quote is saved
-        const enquiry = messages.find((m) => m.role === "user" && m.text.trim().length > 15)?.text;
+        // the enquiry typed into the empty trip is remembered with the quote (Reading memory);
+        // a change typed into a saved quote ("make Pench 2 nights") is not an enquiry
+        const enquiry = firstEnquiry ?? (initial.stops.length ? undefined : messages.find((m) => m.role === "user" && m.text.trim().length >= 15)?.text);
         // everything typed in this session: the reader logs the words it could not place
         const typed = messages.filter((m) => m.role === "user").map((m) => m.text);
         const res = await saveItinerary(JSON.stringify(plan), currentId, mode, enquiry, typed);
