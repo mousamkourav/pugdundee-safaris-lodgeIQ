@@ -65,23 +65,31 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
   if (!qData) notFound();
   const q = qData as unknown as QueryFull;
 
-  const [{ data: vData }, { data: eData }] = await Promise.all([
+  // the version list without its plans (small), the latest version in full, events and
+  // corrections: all at once
+  const [{ data: vData }, { data: latest }, { data: eData }, audit] = await Promise.all([
     supabase
       .from("sales_itinerary_versions")
-      .select("id, version_no, total_amount, currency, created_by, created_at, share_token, share_slug, plan, pricing")
+      .select("id, version_no, total_amount, currency, created_by, created_at, share_token, share_slug")
       .eq("query_id", id)
       .order("version_no", { ascending: false }),
+    supabase.from("sales_itinerary_versions").select("id, plan, pricing").eq("query_id", id).order("version_no", { ascending: false }).limit(1).maybeSingle(),
     supabase
       .from("sales_query_events")
       .select("event_type, from_status, to_status, remark, actor, created_at, extra")
       .eq("query_id", id)
       .order("created_at", { ascending: false }),
+    // "Update the current version" corrections (sales_version_audit.sql; none before it is run)
+    supabase.from("sales_version_audit").select("version_id, changed_by, changed_at").eq("query_id", id).order("changed_at", { ascending: false }),
   ]);
-  const versions = (vData ?? []) as { id: string; version_no: number; total_amount: number; currency: string; created_by: string | null; created_at: string; share_token: string; share_slug: string | null; plan: Plan; pricing: PriceResult }[];
+  const list = (vData ?? []) as { id: string; version_no: number; total_amount: number; currency: string; created_by: string | null; created_at: string; share_token: string; share_slug: string | null }[];
+  const full = latest as { id: string; plan: Plan; pricing: PriceResult } | null;
+  const versions = list.map((v) => (full && v.id === full.id ? { ...v, plan: full.plan, pricing: full.pricing } : { ...v, plan: undefined, pricing: undefined }));
   const events = (eData ?? []) as { event_type: string; from_status: string | null; to_status: string | null; remark: string | null; actor: string | null; created_at: string }[];
+  const corrections = (audit.error ? [] : audit.data ?? []) as { version_id: string; changed_by: string | null; changed_at: string }[];
   const current = versions[0];
 
-  const people = [q.assigned_to, q.created_by, ...versions.map((v) => v.created_by), ...events.map((e) => e.actor)].filter((x): x is string => !!x);
+  const people = [q.assigned_to, q.created_by, ...versions.map((v) => v.created_by), ...events.map((e) => e.actor), ...corrections.map((c) => c.changed_by)].filter((x): x is string => !!x);
   const memberInfo = await getMemberNames(people);
   const names = memberInfo.names;
   if (profile?.id && profile?.full_name) names[profile.id] = profile.full_name;
@@ -335,6 +343,15 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
                     <td className="whitespace-nowrap px-4 py-3">
                       {fmtDate(v.created_at)}
                       <span className="ml-1 text-xs text-sand-500">{new Date(v.created_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}</span>
+                      {corrections
+                        .filter((c) => c.version_id === v.id)
+                        .slice(0, 3)
+                        .map((c, k) => (
+                          <span key={k} className="block text-xs text-sand-500">
+                            Updated {fmtDate(c.changed_at)} {new Date(c.changed_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}
+                            {c.changed_by && names[c.changed_by] ? ` by ${names[c.changed_by]}` : ""}
+                          </span>
+                        ))}
                     </td>
                     <td className="px-4 py-3">{(v.created_by && names[v.created_by]) || "-"}</td>
                     <td className="tabular px-4 py-3 text-right">{rupees(v.total_amount)}</td>

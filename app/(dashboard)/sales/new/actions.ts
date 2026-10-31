@@ -6,6 +6,7 @@ import { planToExample } from "@/lib/sales/plan/ai";
 import { scrubForAI, unknownWords } from "@/lib/sales/plan/parse-text";
 import { readerRows, suggestRules } from "@/lib/sales/plan/learn";
 import { patternFromPlan } from "@/lib/sales/plan/reading";
+import { canUpdateInPlace, type VersionMode } from "@/lib/sales/versions";
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, isSalesUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -15,6 +16,7 @@ import { sanitizePlan } from "@/lib/sales/plan/sanitize";
 import type { Plan } from "@/lib/sales/plan/types";
 import { planToTrip, routeProblems } from "@/lib/sales/plan/planner";
 import { priceTrip } from "@/lib/sales/pricing/engine";
+import { timed } from "@/lib/timing";
 
 export type SaveResult = { id?: string; error?: string; problems?: string[] };
 export type SaveMode = "draft" | "final";
@@ -40,7 +42,7 @@ async function insertVersion(
 // mode "final": the full checks, then the query is Open with a client link.
 // The price is always recalculated here from current master data and the
 // prices the sales person typed; the browser's numbers are never trusted.
-async function saveItineraryUnsafe(planJson: string, queryId: string | null, mode: SaveMode = "final", enquiry?: string, typed?: unknown): Promise<SaveResult> {
+async function saveItineraryUnsafe(planJson: string, queryId: string | null, mode: SaveMode = "final", enquiry?: string, typed?: unknown, versionMode: VersionMode = "new"): Promise<SaveResult> {
   const cu = await getCurrentUser();
   if (!cu?.user || !isSalesUser(cu.profile?.role)) return { error: "You do not have access to Sales." };
 
@@ -106,10 +108,23 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
       return { error: "This quote has already been sent, so it cannot go back to draft. Save it as a new version instead." };
     }
 
+    // "Update the current version": a correction before sending; same client link, with an audit row
+    const inPlace = versionMode === "update" && mode === "final";
+    if (inPlace && !canUpdateInPlace(status)) return { error: "A booked or cancelled quote cannot be changed in place. Save it as a new version." };
+
     const up = await supabase.from("sales_queries").update(queryFields).eq("id", queryId);
     if (up.error) return { error: up.error.message };
-    const ins = await insertVersion(supabase, queryId, (existing as { query_no: string }).query_no, queryFields.guest_name, version);
-    if (ins.error) return { error: ins.error.message };
+    if (inPlace) {
+      const res = await updateLatestVersion(supabase, queryId, version, cu.user.id);
+      if (res.error) return { error: res.error };
+      if (!res.updated) {
+        const ins = await insertVersion(supabase, queryId, (existing as { query_no: string }).query_no, queryFields.guest_name, version);
+        if (ins.error) return { error: ins.error.message };
+      }
+    } else {
+      const ins = await insertVersion(supabase, queryId, (existing as { query_no: string }).query_no, queryFields.guest_name, version);
+      if (ins.error) return { error: ins.error.message };
+    }
     if (mode === "final" && status === "draft") {
       const fin = await supabase.from("sales_queries").update({ status: "open" }).eq("id", queryId);
       if (fin.error) return { error: "Saved, but the draft could not be finalised: " + fin.error.message };
@@ -145,6 +160,29 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
   await teachReader(typed, enquiry, plan, ctx, today, cu.user.id, mode);
   revalidatePath("/sales", "layout");
   return { id };
+}
+
+// Overwrites the latest version of a query (the user's own client has just found the query,
+// so they may open it). Versions are written with the service key: members have no update
+// right on versions. The client link (share_slug / share_token) stays the same. Who changed
+// it and when goes to sales_version_audit (if that table exists yet).
+async function updateLatestVersion(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  queryId: string,
+  version: Record<string, unknown>,
+  userId: string
+): Promise<{ updated: boolean; error?: string }> {
+  const { data: latest } = await supabase.from("sales_itinerary_versions").select("id, version_no, total_amount").eq("query_id", queryId).order("version_no", { ascending: false }).limit(1).maybeSingle();
+  if (!latest) return { updated: false };
+  const v = latest as { id: string; version_no: number; total_amount: number | null };
+  const admin = createAdminClient();
+  const { error } = await admin.from("sales_itinerary_versions").update(version).eq("id", v.id).eq("query_id", queryId);
+  if (error) return { updated: false, error: "Could not update the current version: " + error.message };
+  await admin
+    .from("sales_version_audit")
+    .insert({ version_id: v.id, query_id: queryId, version_no: v.version_no, action: "update", old_total: v.total_amount, new_total: version.total_amount, changed_by: userId })
+    .then(() => undefined, () => undefined); // the table may not exist yet (sales_version_audit.sql)
+  return { updated: true };
 }
 
 // A quote saved for the guest becomes an example for the AI assistant: the
@@ -223,6 +261,6 @@ async function teachReader(
 }
 
 // Public actions: same as above, but failures come back as { error } instead of crashing.
-export async function saveItinerary(planJson: string, queryId: string | null, mode: SaveMode = "final", enquiry?: string, typed?: string[]): Promise<SaveResult> {
-  return safe("saveItinerary", () => saveItineraryUnsafe(planJson, queryId, mode, enquiry, typed));
+export async function saveItinerary(planJson: string, queryId: string | null, mode: SaveMode = "final", enquiry?: string, typed?: string[], versionMode: VersionMode = "new"): Promise<SaveResult> {
+  return timed("saveItinerary", () => safe("saveItinerary", () => saveItineraryUnsafe(planJson, queryId, mode, enquiry, typed, versionMode === "update" ? "update" : "new")));
 }

@@ -17,6 +17,7 @@ import { assistReading } from "@/app/(dashboard)/sales/new/ai-actions";
 import { aiToParsed } from "@/lib/sales/plan/ai";
 import { unknownWords } from "@/lib/sales/plan/parse-text";
 import { aiShouldHelp, gapText, gapsOf } from "@/lib/sales/plan/reading";
+import { canUpdateInPlace, defaultVersionMode, type VersionMode } from "@/lib/sales/versions";
 import { ChatPanel } from "./chat-panel";
 import { TripDetails, EMAIL_RE } from "./trip-details";
 import { PlanStep } from "./plan-step";
@@ -134,6 +135,8 @@ export function Builder({
   const [chatBusy, setChatBusy] = useState(false);
   // the enquiry typed into an empty trip: saved with the quote as the reading memory
   const [firstEnquiry, setFirstEnquiry] = useState<string | null>(null);
+  const [versionAsk, setVersionAsk] = useState(false);
+  const [versionMode, setVersionMode] = useState<VersionMode>("new");
   const [restore, setRestore] = useState<Stored | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveProblems, setSaveProblems] = useState<string[]>([]);
@@ -339,7 +342,7 @@ export function Builder({
   }
 
   // ---- save
-  function save(mode: "draft" | "final", after?: () => void) {
+  function save(mode: "draft" | "final", after?: () => void, versionMode: VersionMode = "new") {
     setSaveError(null);
     setSaveProblems([]);
     setNameError(null);
@@ -373,7 +376,7 @@ export function Builder({
         const enquiry = firstEnquiry ?? (initial.stops.length ? undefined : messages.find((m) => m.role === "user" && m.text.trim().length >= 15)?.text);
         // everything typed in this session: the reader logs the words it could not place
         const typed = messages.filter((m) => m.role === "user").map((m) => m.text);
-        const res = await saveItinerary(JSON.stringify(plan), currentId, mode, enquiry, typed);
+        const res = await saveItinerary(JSON.stringify(plan), currentId, mode, enquiry, typed, versionMode);
         if (res.error) setSaveError(res.error);
         else if (res.problems?.length) setSaveProblems(res.problems);
         else if (res.id) {
@@ -399,7 +402,9 @@ export function Builder({
   }
 
   // ---------------------------------------------------------------- bottom bar
-  const nextLabel = step === 0 ? "Next: Plan & price" : step === 1 ? "Next: Final draft" : currentStatus && currentStatus !== "draft" ? "Save as new version" : "Save and get the client link";
+  // editing a quote that is not a draft: asked whether it is a new version or a correction
+  const editingSaved = !!currentId && !!currentStatus && currentStatus !== "draft";
+  const nextLabel = step === 0 ? "Next: Plan & price" : step === 1 ? "Next: Final draft" : editingSaved ? "Save changes" : "Save and get the client link";
   const nextBlockedBy =
     step < 2
       ? !plan.stops.length
@@ -415,7 +420,10 @@ export function Builder({
   const onNext = () => {
     if (nextBlockedBy) return;
     if (step < 2) go(step + 1);
-    else save("final");
+    else if (editingSaved) {
+      setVersionMode(canUpdateInPlace(currentStatus) ? defaultVersionMode(currentStatus) : "new");
+      setVersionAsk(true);
+    } else save("final");
   };
   const closedSafaris = result?.errors.some((e) => e.includes("park closed")) ?? false;
 
@@ -553,6 +561,50 @@ export function Builder({
           </div>
         </div>
       </div>
+
+      {/* ---------------- saving an edited quote: new version or a correction ---------------- */}
+      {versionAsk && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-olive-800/35 p-4 backdrop-blur-sm sm:items-center" role="dialog" aria-modal="true" aria-label="How to save the changes">
+          <div className="w-full max-w-md space-y-4 rounded-xl bg-white p-5 shadow-overlay">
+            <h2 className="text-lg">How should the changes be saved?</h2>
+            <div className="space-y-2">
+              {(
+                [
+                  ["new", "Save as a new version", "The current version and its client link are kept; the new version gets its own link."],
+                  ["update", "Update the current version", "For a correction before sending: the same client link shows the change. Who changed it and when is recorded."],
+                ] as const
+              ).map(([value, title, help]) => {
+                const locked = value === "update" && !canUpdateInPlace(currentStatus);
+                return (
+                  <label key={value} className={`flex gap-3 rounded-lg border p-3 text-sm ${versionMode === value ? "border-olive-600 bg-olive-50" : "border-sand-200"} ${locked ? "opacity-60" : "cursor-pointer"}`}>
+                    <input type="radio" name="versionMode" className="mt-1" checked={versionMode === value} disabled={locked} onChange={() => setVersionMode(value)} />
+                    <span>
+                      <span className="block font-semibold text-olive-800">{title}</span>
+                      <span className="block text-xs text-sand-500">{locked ? "Not for a booked or cancelled quote." : help}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} onClick={() => setVersionAsk(false)} disabled={saving}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={`${ui.btnPrimary} ${ui.btnSm}`}
+                disabled={saving}
+                onClick={() => {
+                  setVersionAsk(false);
+                  save("final", undefined, versionMode);
+                }}
+              >
+                {versionMode === "update" ? "Update the current version" : "Save as a new version"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ---------------- leaving with unsaved work ---------------- */}
       {leaveTo && (

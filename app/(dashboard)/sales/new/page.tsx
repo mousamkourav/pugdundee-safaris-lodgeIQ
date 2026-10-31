@@ -56,12 +56,12 @@ export default async function NewItineraryPage({
     <div className="space-y-6">
       <div>
         <p className="eyebrow">Sales</p>
-        <h1 className="mt-1 text-xl">{queryNo ? (queryStatus === "draft" ? `Draft ${queryNo}` : `New version of ${queryNo}`) : "Create itinerary"}</h1>
+        <h1 className="mt-1 text-xl">{queryNo ? (queryStatus === "draft" ? `Draft ${queryNo}` : `Edit ${queryNo}`) : "Create itinerary"}</h1>
         {queryNo && (
           <p className="mt-1 text-sm text-sand-500">
             {queryStatus === "draft"
               ? "Continue where you left off. Save draft keeps your work; when it is ready, go to Final draft and save it for the guest."
-              : "Saving creates a new version; earlier versions are kept, and the old client links keep working."}
+              : "When you save, choose: a new version (earlier versions and their client links are kept), or an update of the current version (a correction before sending, same link)."}
           </p>
         )}
       </div>
