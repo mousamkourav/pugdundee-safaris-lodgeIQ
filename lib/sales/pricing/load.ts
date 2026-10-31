@@ -4,6 +4,7 @@ import { compileTariff, type CalendarRange, type RateCategory, type TariffRow } 
 // Server-side only (uses the signed-in user's client; sales users can read
 // all sales_* master tables through RLS).
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   Addon,
   ChildRate,
@@ -42,8 +43,10 @@ function hikeOf(v: unknown): RateHike | null {
   return out.hotels_pct || out.safaris_pct || out.transfers_pct || out.addons_pct ? out : null;
 }
 
-export async function loadPricingData(): Promise<{ data: PricingData; error: string | null }> {
-  const supabase = await createClient();
+// The client defaults to the signed-in user (RLS); the cached builder context passes the
+// service client after checking the user is in Sales (lib/sales/plan/load-context.ts).
+export async function loadPricingData(client?: SupabaseClient): Promise<{ data: PricingData; error: string | null }> {
+  const supabase = client ?? (await createClient());
   const q = (table: string, active = true) => {
     const base = supabase.from(table).select("*");
     return active ? base.eq("active", true) : base;

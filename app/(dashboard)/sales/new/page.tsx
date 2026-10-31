@@ -9,6 +9,7 @@ import { defaultVehicle, emptyPlan } from "@/lib/sales/plan/planner";
 import { sanitizePlan } from "@/lib/sales/plan/sanitize";
 import type { Plan } from "@/lib/sales/plan/types";
 import { aiEnabled } from "./ai-actions";
+import { logTiming } from "@/lib/timing";
 
 // The trip assistant's AI reading runs as a server action on this page: allow it up to
 // 60 s (Vercel's default can be 10 s, and a slow AI answer then reloaded the page).
@@ -24,29 +25,28 @@ export default async function NewItineraryPage({
   const fromId = sp.from ?? null;
   const startStep = sp.step === "draft" ? 2 : sp.step === "plan" ? 1 : 0;
   const today = todayIST();
-  const { ctx, error } = await loadBuilderContext();
+  // master data, the query being edited (with its latest version) and the AI switch: all at once
+  const supabase = await createClient();
+  const started = performance.now();
+  const [{ ctx, error }, q, v, aiAvailable] = await Promise.all([
+    loadBuilderContext(),
+    fromId ? supabase.from("sales_queries").select("id, query_no, status").eq("id", fromId).is("deleted_at", null).maybeSingle() : null,
+    fromId ? supabase.from("sales_itinerary_versions").select("plan").eq("query_id", fromId).order("version_no", { ascending: false }).limit(1).maybeSingle() : null,
+    aiEnabled(),
+  ]);
+  logTiming("page /sales/new data", performance.now() - started);
 
   let initial: Plan = emptyPlan(today);
   let queryNo: string | null = null;
   let queryStatus: string | null = null;
   if (fromId) {
-    const supabase = await createClient();
-    const { data: q } = await supabase.from("sales_queries").select("id, query_no, status").eq("id", fromId).is("deleted_at", null).maybeSingle();
-    if (!q) notFound();
-    const { data: v } = await supabase
-      .from("sales_itinerary_versions")
-      .select("plan")
-      .eq("query_id", fromId)
-      .order("version_no", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const plan = sanitizePlan((v as { plan?: unknown } | null)?.plan);
+    if (!q?.data) notFound();
+    const plan = sanitizePlan((v?.data as { plan?: unknown } | null)?.plan);
     if (plan) initial = plan;
-    queryNo = (q as { query_no: string }).query_no;
-    queryStatus = (q as { status: string }).status;
+    queryNo = (q.data as { query_no: string }).query_no;
+    queryStatus = (q.data as { status: string }).status;
   }
 
-  const aiAvailable = await aiEnabled();
   const ready = ctx.pricing.parks.length > 0 && ctx.properties.length > 0 && ctx.pricing.roomRates.length > 0;
 
   // a new itinerary starts with the Innova (saved ones keep their own choice)

@@ -2,6 +2,7 @@
 
 import { safe } from "@/lib/sales/safe";
 import { revalidatePath } from "next/cache";
+import { revalidateMasterData } from "@/lib/sales/master/cache";
 import { getCurrentUser, isSalesAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { MEDIA_BUCKET, type ActionResult, type MediaOwner } from "@/lib/sales/master/types";
@@ -37,6 +38,7 @@ async function getRow(id: string) {
 
 function done(): ActionResult {
   revalidatePath("/sales/admin", "layout");
+  revalidateMasterData();
   return { ok: true };
 }
 

@@ -2,6 +2,7 @@
 
 import { safe } from "@/lib/sales/safe";
 import { revalidatePath } from "next/cache";
+import { revalidateMasterData } from "@/lib/sales/master/cache";
 import { getCurrentUser, isSalesAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getEntity } from "@/lib/sales/master/entities";
@@ -56,6 +57,7 @@ async function saveRecordUnsafe(entityKey: string, id: string | null, fd: FormDa
   }
 
   revalidatePath(`/sales/admin/${entity.key}`);
+  revalidateMasterData(); // the builder reads the change at once
   revalidatePath("/sales/admin");
   return { ok: true, id: savedId ?? undefined };
 }
@@ -71,6 +73,7 @@ async function deleteRecordUnsafe(entityKey: string, id: string): Promise<Action
   if (error) return { error: explain(error.message) };
 
   revalidatePath(`/sales/admin/${entity.key}`);
+  revalidateMasterData(); // the builder reads the change at once
   revalidatePath("/sales/admin");
   return { ok: true };
 }
@@ -100,6 +103,7 @@ async function saveSettingsUnsafe(fd: FormData): Promise<ActionResult> {
   if (error) return { error: error.message };
 
   revalidatePath("/sales/admin/settings");
+  revalidateMasterData();
   return { ok: true };
 }
 
@@ -121,6 +125,7 @@ async function reviewRecordUnsafe(entityKey: string, id: string, decision: "appr
   const { error } = await supabase.from(entity.table).update(row).eq("id", id);
   if (error) return { error: explain(error.message) };
   revalidatePath(`/sales/admin/${entity.key}`);
+  revalidateMasterData(); // the builder reads the change at once
   return { ok: true };
 }
 

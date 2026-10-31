@@ -1,5 +1,11 @@
 // Server-side: everything the itinerary builder needs, as plain data.
+import { unstable_cache } from "next/cache";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getCurrentUser, isSalesUser } from "@/lib/auth";
+import { MASTER_TAG, MASTER_TTL } from "@/lib/sales/master/cache";
+import { timed } from "@/lib/timing";
 import { loadPricingData } from "@/lib/sales/pricing/load";
 import type { BuilderContext } from "./types";
 
@@ -8,10 +14,38 @@ const s = (v: unknown) => (v === null || v === undefined ? "" : String(v));
 const sn = (v: unknown) => (v === null || v === undefined || v === "" ? null : String(v));
 const n = (v: unknown, f = 0) => (v === null || v === undefined || v === "" ? f : Number(v));
 
+// Master data changes rarely but is read by every builder page and action: kept for a few
+// minutes (MASTER_TTL) and dropped as soon as anything in Master data is saved
+// (revalidateMasterData). Read with the service key, so only after checking the user is in
+// Sales; anyone else (and any failure) reads it the normal way, through RLS.
+const cachedContext = unstable_cache(
+  async () => {
+    const r = await readContext(createAdminClient());
+    if (r.error) throw new Error(r.error); // an error is never cached
+    console.log(`[timing] builder context read from the database: ${Math.round(JSON.stringify(r.ctx).length / 1024)}KB`);
+    return r.ctx;
+  },
+  ["sales-builder-context-v1"],
+  { revalidate: MASTER_TTL, tags: [MASTER_TAG] }
+);
+
 export async function loadBuilderContext(): Promise<{ ctx: BuilderContext; error: string | null }> {
-  const supabase = await createClient();
+  return timed("loadBuilderContext", async () => {
+    const cu = await getCurrentUser();
+    if (cu?.user && isSalesUser(cu.profile?.role)) {
+      try {
+        return { ctx: await cachedContext(), error: null };
+      } catch {
+        // fall back to a direct read below
+      }
+    }
+    return readContext(await createClient());
+  });
+}
+
+async function readContext(supabase: SupabaseClient): Promise<{ ctx: BuilderContext; error: string | null }> {
   const [{ data: pricing, error: pricingError }, props, locs, rooms, tpl, content, settings, flights, rules, glossary] = await Promise.all([
-    loadPricingData(),
+    loadPricingData(supabase),
     supabase.from("sales_properties").select("*").eq("active", true),
     supabase.from("sales_locations").select("id, name, type, property_id, code").eq("active", true).order("name"),
     supabase.from("sales_room_categories").select("id, property_id, name, sort").eq("active", true),

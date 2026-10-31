@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { revalidateMasterData } from "@/lib/sales/master/cache";
 import { safe } from "@/lib/sales/safe";
 import { getCurrentUser, isSalesAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -143,6 +144,7 @@ async function applyUnsafe(input: {
   }
 
   revalidatePath("/sales/admin", "layout");
+  revalidateMasterData();
   return { ok: true, applied, skipped };
 }
 

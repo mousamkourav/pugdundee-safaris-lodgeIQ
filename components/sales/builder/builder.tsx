@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { paxText } from "@/lib/sales/pricing/pax";
 import { useRouter } from "next/navigation";
 import { ui } from "@/components/ui";
@@ -9,7 +9,7 @@ import { rupees, fmtDate } from "@/lib/sales/format";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 import type { PriceResult } from "@/lib/sales/pricing/types";
 import { buildDays, planToTrip, routeKey, routeProblems } from "@/lib/sales/plan/planner";
-import { chatTurn, greeting, initialFlags, nextQuestion, type ChatFlags, type ChatMessage, type QuickReply } from "@/lib/sales/plan/chat";
+import { chatTurn, greeting, initialFlags, nextQuestion, type ChatFlags, type ChatMessage, type ChatResult, type QuickReply } from "@/lib/sales/plan/chat";
 import { closureFor } from "@/lib/sales/pricing/engine";
 import type { BuilderContext, Plan } from "@/lib/sales/plan/types";
 import { saveItinerary } from "@/app/(dashboard)/sales/new/actions";
@@ -24,6 +24,8 @@ import { PlanStep } from "./plan-step";
 import { FinalDraft } from "./final-draft";
 
 const STEPS = ["Trip", "Plan & price", "Final draft"];
+// A small spinner for a button that waits for the server.
+const Spinner = () => <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />;
 const OFFLINE = "Could not reach the server. Your work is kept on this computer; check the connection and try again.";
 
 interface Stored {
@@ -174,14 +176,17 @@ export function Builder({
     // When days were edited by hand, wait for the user to choose (banner below).
   }, [key, builtKey, problems.length, plan.stops.length, plan.days.length, daysEdited, ctx]);
 
+  // Priced from a deferred copy of the plan: a keystroke shows at once, and the total follows
+  // as soon as the browser is free (React skips the pricing of plans already typed over).
+  const pricedPlan = useDeferredValue(plan);
   const result = useMemo<PriceResult | null>(() => {
-    if (!plan.days.length || problems.length || stale) return null;
+    if (!pricedPlan.days.length || problems.length || stale) return null;
     try {
-      return priceTrip(planToTrip(plan, today), ctx.pricing);
+      return priceTrip(planToTrip(pricedPlan, today), ctx.pricing);
     } catch {
       return null;
     }
-  }, [plan, problems, stale, ctx, today]);
+  }, [pricedPlan, problems, stale, ctx, today]);
   const blockers = stale ? ["The route changed. Update the day plan first."] : [...problems, ...(result?.errors ?? [])];
   const ready = !!result && !blockers.length;
   const pricesNeeded = (result?.missing ?? []).filter((m) => plan.manual_prices?.[m.key] === undefined);
@@ -283,6 +288,25 @@ export function Builder({
   }
 
   // ---- chat
+  // The plan as last shown, to know whether a later, better reading may replace it.
+  const planRef = useRef(plan);
+  useEffect(() => {
+    planRef.current = plan;
+  }, [plan]);
+  // Shows a chat result; with "over", in place of that earlier result (same message).
+  function apply(res: ChatResult, over?: ChatResult): ChatResult {
+    const r = res.routeChanged && daysEdited ? { ...res, reply: { ...res.reply, warnings: [...(res.reply.warnings ?? []), "The route changed, so the day texts were rewritten."] } } : res;
+    setPlan(() => r.plan);
+    setFlags(r.flags);
+    if (r.routeChanged || over) {
+      setBuiltKey(routeKey(r.plan));
+      setDaysEdited(false);
+    }
+    setMessages((m) => (over ? m.map((x) => (x === over.reply ? r.reply : x)) : [...m, r.reply]));
+    if (r.reply.action === "review") go(1);
+    return r;
+  }
+
   async function send(text: string) {
     setMessages((m) => [...m, { role: "user", text }]);
     setChatBusy(true);
@@ -291,42 +315,34 @@ export function Builder({
       // Then, in one call: the memory of saved quotes (a new trip only), and the AI only for
       // what is still missing when the message has words the reader could not place. Short
       // replies to the assistant's own questions ("cottage", "3") never go to the AI.
-      let r = chatTurn(plan, flags, text, ctx, today);
+      const r = chatTurn(plan, flags, text, ctx, today);
       const shortAnswer = !!flags.pending && flags.pending !== "parks" && text.trim().length <= 30;
       const fresh = !plan.stops.length && text.trim().length >= 15;
       const gaps = gapsOf(r.reply.checklist);
       const unknown = unknownWords(text, ctx);
       const wantAI = aiAvailable && !shortAnswer && text.trim().length > 3 && aiShouldHelp({ gaps, unknownWords: unknown, stops: r.plan.stops.length });
       if (fresh) setFirstEnquiry((e) => e ?? text);
-      if (fresh || wantAI) {
-        try {
-          const history = messages.filter((m) => m.text).map((m) => ({ role: m.role, text: m.text }));
-          // never wait longer than 50 s: then the built-in reader's answer is shown
-          const more = await Promise.race([
-            assistReading({ message: text, history, planJson: JSON.stringify(plan), gaps: gapText(gaps), unknownWords: unknown, wantAI }),
-            new Promise<{ source: "reader"; reading?: undefined; error: string }>((ok) => setTimeout(() => ok({ source: "reader", error: "The AI took too long; the built-in reader was used." }), 50_000)),
-          ]);
-          if ((more.source === "memory" || more.source === "ai") && more.reading) {
-            r = chatTurn(plan, flags, text, ctx, today, { parsed: aiToParsed(more.reading, ctx), source: more.source });
-          } else if (more.error && wantAI) {
-            // the reader's reading stands; said quietly, the assistant keeps working
-            r = { ...r, reply: { ...r.reply, source: "built-in reader (AI not available)" } };
-          }
-        } catch {
-          if (wantAI) r = { ...r, reply: { ...r.reply, source: "built-in reader (AI not reachable)" } };
-        }
+      // the reader's answer is shown at once; a better reading (memory, AI) replaces it below
+      const later = fresh || wantAI;
+      const shown = apply(later ? { ...r, reply: { ...r.reply, source: wantAI ? "built-in reader; asking the AI about the gaps..." : "built-in reader; checking the memory..." } } : r);
+      if (!later) return;
+      let better: ChatResult | null = null;
+      let note = "built-in reader";
+      try {
+        const history = messages.filter((m) => m.text).map((m) => ({ role: m.role, text: m.text }));
+        // never wait longer than 50 s: then the built-in reader's answer stays
+        const more = await Promise.race([
+          assistReading({ message: text, history, planJson: JSON.stringify(plan), gaps: gapText(gaps), unknownWords: unknown, wantAI }),
+          new Promise<{ source: "reader"; reading?: undefined; error: string }>((ok) => setTimeout(() => ok({ source: "reader", error: "The AI took too long; the built-in reader was used." }), 50_000)),
+        ]);
+        if ((more.source === "memory" || more.source === "ai") && more.reading) better = chatTurn(plan, flags, text, ctx, today, { parsed: aiToParsed(more.reading, ctx), source: more.source });
+        else if (more.error && wantAI) note = "built-in reader (AI not available)"; // said quietly: the assistant keeps working
+      } catch {
+        if (wantAI) note = "built-in reader (AI not reachable)";
       }
-      if (r.routeChanged && daysEdited) {
-        r = { ...r, reply: { ...r.reply, warnings: [...(r.reply.warnings ?? []), "The route changed, so the day texts were rewritten."] } };
-      }
-      setPlan(() => r.plan);
-      setFlags(r.flags);
-      if (r.routeChanged) {
-        setBuiltKey(routeKey(r.plan));
-        setDaysEdited(false);
-      }
-      setMessages((m) => [...m, r.reply]);
-      if (r.reply.action === "review") go(1);
+      // replaced only if nothing was changed by hand in the meantime
+      if (better && planRef.current === shown.plan) apply(better, shown);
+      else setMessages((m) => m.map((x) => (x === shown.reply ? { ...shown.reply, source: note } : x)));
     } catch {
       setMessages((m) => [...m, { role: "assistant", text: "Something went wrong while reading that. Please try again, or use the form on the right." }]);
     } finally {
@@ -551,10 +567,12 @@ export function Builder({
             {canDraft && (
               <button type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} disabled={saving} onClick={() => save("draft")}>
                 <Icon name="fileText" className="h-4 w-4" />
+                {saving && <Spinner />}
                 {saving ? "Saving..." : "Save draft"}
               </button>
             )}
             <button type="button" className={`${ui.btnPrimary} ${ui.btnSm}`} disabled={saving || !!nextBlockedBy} onClick={onNext} title={nextBlockedBy ?? ""}>
+              {saving && step === 2 && <Spinner />}
               {saving && step === 2 ? "Saving..." : nextLabel}
               {step < 2 && <Icon name="chevronLeft" className="h-4 w-4 rotate-180" />}
             </button>
