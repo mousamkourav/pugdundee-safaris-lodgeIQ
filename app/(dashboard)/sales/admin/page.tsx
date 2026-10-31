@@ -46,6 +46,10 @@ export default async function MasterDataHub() {
             <Icon name="fileSearch" className="h-[18px] w-[18px]" />
             Import rates from Excel
           </Link>
+          <Link href="/sales/admin/missing-transfers" className={ui.btnSecondary}>
+            <Icon name="car" className="h-[18px] w-[18px]" />
+            Missing transfer rates
+          </Link>
           <Link href="/sales/admin/import-photos" className={ui.btnPrimary}>
             <Icon name="image" className="h-[18px] w-[18px]" />
             Import photos

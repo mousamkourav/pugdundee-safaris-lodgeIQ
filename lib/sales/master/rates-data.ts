@@ -6,6 +6,7 @@ import { withOptions, formatCell } from "./load";
 import { RATE_SHEETS, fromCell, isEditable, sameValue, toCell, type CancellationRow, type CellIn, type PaymentRow } from "./rates-sheet";
 import type { SheetData, readRatesWorkbook } from "./rates-workbook";
 import type { FieldDef } from "./types";
+import type { NewTransfer } from "./missing-transfers-workbook";
 
 type Row = Record<string, unknown>;
 
@@ -83,6 +84,7 @@ export interface ImportPreview {
   notes: string[]; // e.g. new rows that were ignored
   payment?: { old: PaymentRow[]; new: PaymentRow[] } | null;
   cancellation?: { old: CancellationRow[]; new: CancellationRow[] } | null;
+  newTransfers?: NewTransfer[]; // from the Missing transfer rates sheet: rates to add
 }
 
 const show = (f: FieldDef, v: unknown) => (v === null || v === undefined || v === "" || (Array.isArray(v) && !v.length) ? "(empty)" : formatCell(f, v));

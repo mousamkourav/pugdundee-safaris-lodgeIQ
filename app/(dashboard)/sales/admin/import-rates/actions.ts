@@ -7,6 +7,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getEntity } from "@/lib/sales/master/entities";
 import { RATE_SHEETS, fromCell, isEditable, sameValue, toCell, type CancellationRow, type PaymentRow } from "@/lib/sales/master/rates-sheet";
 import { checkCancellationRows, checkPaymentRows } from "@/lib/sales/master/slabs";
+import { hasRoad } from "@/lib/sales/master/missing-transfers";
+import type { NewTransfer } from "@/lib/sales/master/missing-transfers-workbook";
 
 type Change = { entity: string; id: string; field: string; old: unknown; new: unknown };
 export type ApplyResult = { ok?: boolean; error?: string; applied?: number; skipped?: string[] };
@@ -18,6 +20,7 @@ async function applyUnsafe(input: {
   changes: Change[];
   payment?: PaymentRow[] | null;
   cancellation?: CancellationRow[] | null;
+  newTransfers?: NewTransfer[] | null;
 }): Promise<ApplyResult> {
   const cu = await getCurrentUser();
   if (!cu?.user || !isSalesAdmin(cu.profile?.role)) return { error: "Only Sales admins can import rates." };
@@ -91,10 +94,58 @@ async function applyUnsafe(input: {
     }
   }
 
+  // new transfer rates from the Missing transfer rates sheet (checked again: places, numbers, no rate yet)
+  const adds = (Array.isArray(input.newTransfers) ? input.newTransfers : []).slice(0, 2000);
+  if (adds.length) {
+    const [locs, rates] = await Promise.all([
+      supabase.from("sales_locations").select("id").eq("active", true),
+      supabase.from("sales_transfer_rates").select("from_location_id, to_location_id, active").eq("active", true),
+    ]);
+    const known = new Set(((locs.data ?? []) as { id: string }[]).map((l) => l.id));
+    const have = [...((rates.data ?? []) as { from_location_id: string; to_location_id: string; active: boolean }[])];
+    const rows = [];
+    for (const t of adds) {
+      const rate = Math.round(Number(t.rate));
+      const capacity = Math.round(Number(t.capacity) || 4);
+      const hours = t.drive_hours == null ? null : Number(t.drive_hours);
+      if (!known.has(String(t.from_location_id)) || !known.has(String(t.to_location_id)) || t.from_location_id === t.to_location_id) {
+        skipped.push(`Transfers: ${t.from_name} to ${t.to_name}: a place is not in Master data.`);
+        continue;
+      }
+      if (!(rate > 0 && rate < 1_000_000) || !(capacity >= 1 && capacity <= 60) || (hours !== null && !(hours > 0 && hours < 48))) {
+        skipped.push(`Transfers: ${t.from_name} to ${t.to_name}: the rate, capacity or drive time is not a sensible number.`);
+        continue;
+      }
+      if (hasRoad(have, t.from_location_id, t.to_location_id)) {
+        skipped.push(`Transfers: ${t.from_name} to ${t.to_name} already has a rate.`);
+        continue;
+      }
+      have.push({ from_location_id: t.from_location_id, to_location_id: t.to_location_id, active: true });
+      rows.push({
+        from_location_id: t.from_location_id,
+        to_location_id: t.to_location_id,
+        vehicle_type: String(t.vehicle_type || "Toyota Innova Crysta").slice(0, 80),
+        capacity,
+        rate,
+        drive_hours: hours,
+        night_surcharge: 0,
+        bidirectional: true,
+        tax_pct: 0, // the sheet asks for the rate incl. GST
+        notes: "Added from the Missing transfer rates sheet (rate incl. GST).",
+        active: true,
+      });
+    }
+    if (rows.length) {
+      const { error } = await supabase.from("sales_transfer_rates").insert(rows);
+      if (error) skipped.push("Transfers: " + error.message);
+      else applied += rows.length;
+    }
+  }
+
   revalidatePath("/sales/admin", "layout");
   return { ok: true, applied, skipped };
 }
 
-export async function applyRatesImport(input: { changes: Change[]; payment?: PaymentRow[] | null; cancellation?: CancellationRow[] | null }): Promise<ApplyResult> {
+export async function applyRatesImport(input: { changes: Change[]; payment?: PaymentRow[] | null; cancellation?: CancellationRow[] | null; newTransfers?: NewTransfer[] | null }): Promise<ApplyResult> {
   return safe("applyRatesImport", () => applyUnsafe(input));
 }

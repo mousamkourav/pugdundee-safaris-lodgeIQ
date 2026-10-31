@@ -6,6 +6,7 @@ import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { applyRatesImport, type ApplyResult } from "@/app/(dashboard)/sales/admin/import-rates/actions";
 import type { ImportPreview } from "@/lib/sales/master/rates-data";
+import { rupees } from "@/lib/sales/format";
 
 const pctList = (rows: { label?: string; pct: number; days_before_arrival?: number | null; min_days?: number; max_days?: number | null }[]) =>
   rows
@@ -52,6 +53,7 @@ export function RatesImporter() {
           changes: preview.changes.map((c) => ({ entity: c.entity, id: c.id, field: c.field, old: c.old, new: c.new })),
           payment: preview.payment?.new ?? null,
           cancellation: preview.cancellation?.new ?? null,
+          newTransfers: preview.newTransfers ?? null,
         });
         if (res.error) setError(res.error);
         else {
@@ -65,7 +67,7 @@ export function RatesImporter() {
     });
   }
 
-  const total = (preview?.changes.length ?? 0) + (preview?.payment ? 1 : 0) + (preview?.cancellation ? 1 : 0);
+  const total = (preview?.changes.length ?? 0) + (preview?.payment ? 1 : 0) + (preview?.cancellation ? 1 : 0) + (preview?.newTransfers?.length ?? 0);
   const sheets = preview ? [...new Set(preview.changes.map((c) => c.sheet))] : [];
 
   return (
@@ -151,6 +153,24 @@ export function RatesImporter() {
                     </tr>
                   </thead>
                   <tbody>
+                    {!!preview.newTransfers?.length && (
+                      <>
+                        <tr className="border-t border-sand-300 bg-sand-50">
+                          <td colSpan={5} className="px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-sand-600">
+                            New transfer rates &middot; {preview.newTransfers.length} to add (both directions)
+                          </td>
+                        </tr>
+                        {preview.newTransfers.map((t) => (
+                          <tr key={`nt-${t.line}`} className="border-t border-sand-100 align-top">
+                            <td className="px-4 py-2 text-olive-800">{t.from_name} to {t.to_name}</td>
+                            <td className="px-4 py-2">{t.vehicle_type}, {t.capacity} guests{t.drive_hours ? `, ${t.drive_hours} h` : ""}</td>
+                            <td className="px-4 py-2 text-right text-sand-500">(none)</td>
+                            <td className="px-2 py-2 text-sand-400">&rarr;</td>
+                            <td className="tabular px-4 py-2 font-semibold text-olive-800">{rupees(t.rate)} one way</td>
+                          </tr>
+                        ))}
+                      </>
+                    )}
                     {sheets.map((sheet) => (
                       <SheetRows key={sheet} sheet={sheet} rows={preview.changes.filter((c) => c.sheet === sheet)} />
                     ))}

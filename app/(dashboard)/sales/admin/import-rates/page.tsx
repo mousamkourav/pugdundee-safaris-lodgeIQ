@@ -10,7 +10,7 @@ export default function ImportRatesPage() {
         <Link href="/sales/admin" className="text-xs font-medium text-sand-500 hover:text-olive-600">Master data</Link>
         <h1 className="mt-1 text-2xl">Import rates from Excel</h1>
         <p className="mt-1 text-sm text-sand-500">
-          Choose the workbook from <a href="/api/sales/rates-export" className="font-semibold text-olive-600 underline">Export all rates</a> after the yellow cells were changed. You see every change before anything is saved.
+          Choose the workbook from <a href="/api/sales/rates-export" className="font-semibold text-olive-600 underline">Export all rates</a> after the yellow cells were changed, or the filled <Link href="/sales/admin/missing-transfers" className="font-semibold text-olive-600 underline">Missing transfer rates</Link> sheet (new rates are added). You see every change before anything is saved.
         </p>
       </div>
       <RatesImporter />
