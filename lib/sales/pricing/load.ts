@@ -3,6 +3,7 @@ import { compileTariff, type CalendarRange, type RateCategory, type TariffRow } 
 // Loads master data from Supabase in the shape the pricing engine expects.
 // Server-side only (uses the signed-in user's client; sales users can read
 // all sales_* master tables through RLS).
+import { mealCode } from "@/lib/sales/pricing/meal";
 import { createClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
@@ -102,7 +103,7 @@ export async function loadPricingData(client?: SupabaseClient): Promise<{ data: 
             season: (["shoulder", "high", "peak"].includes(str(r.season)) ? str(r.season) : "all") as TariffRow["season"],
             valid_from: date(r.valid_from)!,
             valid_to: date(r.valid_to)!,
-            meal_plan: str(r.meal_plan) || "AP",
+            meal_plan: mealCode(r.meal_plan) || "AP",
             rate_single: numOrNull(r.rate_single),
             rate_double: num(r.rate_double),
             weekend_rate_single: numOrNull(r.weekend_rate_single),
@@ -128,7 +129,7 @@ export async function loadPricingData(client?: SupabaseClient): Promise<{ data: 
         room_category_id: str(r.room_category_id),
         valid_from: date(r.valid_from)!,
         valid_to: date(r.valid_to)!,
-        meal_plan: str(r.meal_plan),
+        meal_plan: mealCode(r.meal_plan),
         rate_single: numOrNull(r.rate_single),
         rate_double: num(r.rate_double),
         extra_adult: numOrNull(r.extra_adult),

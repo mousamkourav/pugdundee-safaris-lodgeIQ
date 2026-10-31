@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { rupees, fmtDate, fmtDay } from "@/lib/sales/format";
-import { closedAt, describe, routeOf, roomsFor, segments, stayAt } from "@/lib/sales/plan/planner";
+import { closedAt, describe, masterHotelRate, routeOf, roomsFor, segments, stayAt } from "@/lib/sales/plan/planner";
 import { cityParkIds, sameCity } from "@/lib/sales/plan/cities";
 import { detailedBreakdown } from "@/lib/sales/pricing/breakdown";
 import { FLIGHT_BAGGAGE } from "@/lib/sales/plan/draft";
@@ -474,6 +474,10 @@ export function PlanStep({
                   {d.stay_index !== undefined && stays[d.stay_index] && plan.days.findIndex((x) => x.stay_index === d.stay_index) === i && (() => {
                     const k = d.stay_index!;
                     const c = stays[k];
+                    // the night priced from the hotel's rates in Master data (Roseate House), if it is there
+                    const masterLine = d.city_hotel ? result?.lines.find((l) => l.kind === "room" && l.date === d.date && l.property_id === d.city_hotel!.property_id) : undefined;
+                    const masterRate = masterLine && !masterLine.missing ? masterLine.amount : null;
+                    const inMaster = !!c.price && !!masterHotelRate(ctx, c.hotel, { date: d.date, nationality: plan.guest.nationality });
                     return (
                       <li className="flex flex-wrap items-center gap-1.5 bg-sand-50 px-3 py-2 text-xs">
                         <Icon name="building" className="h-4 w-4 shrink-0 text-sand-500" />
@@ -497,14 +501,19 @@ export function PlanStep({
                             type="number"
                             min={0}
                             className="tabular w-24 rounded border border-sand-200 bg-white px-1.5 py-1 text-right"
-                            placeholder={d.city_hotel ? "Master rate" : "per night"}
-                            title={d.city_hotel ? "Priced from this hotel's rates in Master data. Type a price to use your own instead." : "Price per night for all rooms, incl. tax"}
+                            placeholder={d.city_hotel ? (masterRate !== null ? `${masterRate} (Master)` : "no Master rate") : "per night"}
+                            title={d.city_hotel ? "Priced from this hotel's rates in Master data (incl. GST). Type a price to use your own instead." : "Price per night for all rooms, incl. tax"}
                             value={c.price ?? ""}
                             onChange={(e) => updateStay(k, { price: e.target.value === "" ? null : Math.max(0, Math.round(Number(e.target.value))) })}
                             aria-label="Hotel price per night, all rooms"
                           />
                           /night
                         </label>
+                        {inMaster && (
+                          <button type="button" className="rounded border border-olive-300 px-1.5 py-1 text-olive-700 hover:bg-olive-50" onClick={() => updateStay(k, { price: null })} title="This hotel has rates in Master data: price its nights from them">
+                            Use Master rate
+                          </button>
+                        )}
                         <label className="flex items-center gap-1 text-sand-500">
                           Nights
                           <input

@@ -346,7 +346,7 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
     const next = segs[k + 1];
     const real = !c.blank && !!c.city; // a city from the trip, not an added day: transfers are worked out
     // a hotel from Master data with rooms and rates is priced from them, unless a price is typed
-    const master = c.price ? null : masterHotel(ctx, c.hotel);
+    const masterOn = (date: ISODate) => (c.price ? null : masterHotel(ctx, c.hotel, { date, nationality: plan.guest.nationality }));
     // experiences asked for here (sightseeing, guide, entrances): on the first full day, else the first
     const extras = cityExtras(ctx, c, plan.guest.nationality);
     const extrasDay = c.nights >= 2 ? 1 : 0;
@@ -424,9 +424,9 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
               if (road) d = { ...d, transfer: { from_location_id: from, to_location_id: hotelLoc } };
             }
             const h = d.transfer ? driveHours(ctx, d.transfer.from_location_id, d.transfer.to_location_id, plan.vehicle_type) : null;
-            return withTransfer({ ...d, title, text: text.replace("{hours}", h ? ` (about ${h} hours)` : ""), items: [...d.items, ...hotel, ...extraItems], stay_index: seg.index, ...(master ? { city_hotel: master } : {}) }, transfer);
+            return withTransfer({ ...d, title, text: text.replace("{hours}", h ? ` (about ${h} hours)` : ""), items: [...d.items, ...hotel, ...extraItems], stay_index: seg.index, ...(masterOn(date) ? { city_hotel: masterOn(date)! } : {}) }, transfer);
           }
-          return withTransfer({ ...d, title, text: text.replace("{hours}", ""), items: [...d.items, ...hotel, ...extraItems], stay_index: seg.index, ...(master ? { city_hotel: master } : {}) }, transfer);
+          return withTransfer({ ...d, title, text: text.replace("{hours}", ""), items: [...d.items, ...hotel, ...extraItems], stay_index: seg.index, ...(masterOn(date) ? { city_hotel: masterOn(date)! } : {}) }, transfer);
         }
       );
     }
@@ -454,17 +454,42 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
 
 // A city hotel in Master data (Roseate House) with a room and rates: what its nights are priced with.
 // The first room category, and its meal plan (a city hotel is usually B&B: CP).
-export function masterHotel(ctx: BuilderContext, name: string | undefined) {
-  const n = (name ?? "").trim().toLowerCase();
-  if (!n) return null;
-  const props = ctx.properties;
-  const prop = props.find((p) => p.name.toLowerCase() === n) ?? props.find((p) => p.name.toLowerCase().startsWith(n) || n.startsWith(p.name.toLowerCase()));
-  if (!prop) return null;
-  for (const room of roomsOf(ctx, prop.id)) {
-    const plans = mealPlansOf(ctx, room.id);
-    if (plans.length) return { property_id: prop.id, room_category_id: room.id, meal_plan: plans.includes("CP") ? "CP" : plans[0] };
-  }
-  return null;
+// Every hotel row with that name is looked at (Master data can have two, one without rooms
+// or rates), city hotels first. The room and meal plan with a rate for the night and the
+// guest's nationality win; then any room with rates (the night then shows as missing).
+export function masterHotel(ctx: BuilderContext, name: string | undefined, want: { date?: ISODate; nationality?: string } = {}) {
+  const { priced, options } = masterHotelOptions(ctx, name, want);
+  return priced ?? options[0] ?? null;
+}
+
+// Only a room and meal plan with a rate for the night (and nationality), else null.
+export const masterHotelRate = (ctx: BuilderContext, name: string | undefined, want: { date?: ISODate; nationality?: string } = {}) =>
+  masterHotelOptions(ctx, name, want).priced ?? null;
+
+function masterHotelOptions(ctx: BuilderContext, name: string | undefined, want: { date?: ISODate; nationality?: string }) {
+  const n = (name ?? "").trim().toLowerCase().replace(/^the\s+/, "");
+  if (!n) return { priced: undefined, options: [] };
+  const low = (p: { name: string }) => p.name.toLowerCase().replace(/^the\s+/, "");
+  const exact = ctx.properties.filter((p) => low(p) === n);
+  const props = (exact.length ? exact : ctx.properties.filter((p) => low(p).startsWith(n) || n.startsWith(low(p)))).sort(
+    (a, b) => Number(b.kind === "city_hotel") - Number(a.kind === "city_hotel")
+  );
+  const options = props.flatMap((prop) =>
+    roomsOf(ctx, prop.id).flatMap((room) => {
+      const plans = mealPlansOf(ctx, room.id).sort((a, b) => Number(b === "CP") - Number(a === "CP")); // a city hotel is usually B&B: CP
+      return plans.map((meal) => ({ property_id: prop.id, room_category_id: room.id, meal_plan: meal }));
+    })
+  );
+  const hasRate = (o: (typeof options)[number]) =>
+    ctx.pricing.roomRates.some(
+      (r) =>
+        r.active !== false &&
+        r.room_category_id === o.room_category_id &&
+        r.meal_plan === o.meal_plan &&
+        (!want.date || (r.valid_from <= want.date && r.valid_to >= want.date)) &&
+        (!want.nationality || !r.nationality || r.nationality === "all" || r.nationality === want.nationality)
+    );
+  return { priced: options.find(hasRate), options };
 }
 
 // The add-ons of a city stay's hotel (or of its city) for what was asked: one each for

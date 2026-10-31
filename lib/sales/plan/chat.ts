@@ -13,7 +13,7 @@ import { priceTrip } from "@/lib/sales/pricing/engine";
 import type { ISODate } from "@/lib/sales/pricing/types";
 import { ROOM_MATCH, aliasesOf, extractTrip, lodgeNamedIn, locationAliases, matchByName, roomWishIn, type Ask, type ParsedTrip, type RoomWish } from "./parse-text";
 import { fillGaps, mergeMemory, sourceNote, type Filled } from "./reading";
-import { buildDays, defaultStop, defaultVehicle, emptyPlan, lodgesInPark, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems, segments } from "./planner";
+import { buildDays, defaultStop, defaultVehicle, emptyPlan, lodgesInPark, masterHotelRate, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems, segments } from "./planner";
 import { addDays } from "@/lib/sales/pricing/dates";
 import type { BuilderContext, Plan, PlanStop } from "./types";
 import { cityHotelNamed, cityHotels, safariOnly, sameCity, stayKey, stayWhere } from "./cities";
@@ -579,7 +579,7 @@ export function chatTurn(
       // "same" / "same hotel": copy the other stay in this city
       const same = /^(same|same hotel|same as before|same one|same as the other)\b/.test(low) ? (next.city_stays ?? []).find((c) => c !== stay && c.city === stay.city && c.hotel) : undefined;
       if (same) {
-        next.city_stays = (next.city_stays ?? []).map((c) => (c === stay ? { ...c, hotel: same.hotel, ...(same.price ? { price: same.price } : {}) } : c));
+        next.city_stays = (next.city_stays ?? []).map((c) => (c === stay ? { ...c, hotel: same.hotel, ...(same.price && !masterHotelRate(full, same.hotel) ? { price: same.price } : {}) } : c));
         f.hotelAsked = [...new Set([...(f.hotelAsked ?? []), f.hotelFor])];
         chips.push(`${stay.city}: ${same.hotel}${same.price ? `, ${rupees(same.price)} a night` : ""}`);
       }
@@ -892,11 +892,12 @@ export function nextQuestion(
   if (hotelStay) {
     const other = (plan.city_stays ?? []).find((c) => c !== hotelStay && c.city === hotelStay.city && c.hotel);
     return {
-      text: `Which hotel in ${hotelStay.city} (${hotelStay.nights} night${hotelStay.nights === 1 ? "" : "s"} ${stayWhere(hotelStay, plan.stops, ctx.pricing.parks)})? Give the name and the price per night for all rooms, e.g. "The Imperial, 18000", or say "to be confirmed".`,
+      text: `Which hotel in ${hotelStay.city} (${hotelStay.nights} night${hotelStay.nights === 1 ? "" : "s"} ${stayWhere(hotelStay, plan.stops, ctx.pricing.parks)})? Give the name (a hotel in Master data is priced from its rates), or a name and the price per night for all rooms, e.g. "The Imperial, 18000", or say "to be confirmed".`,
       pending: "hotel",
       hotelFor: stayKey(hotelStay),
       quick: [
-        ...(other ? [{ label: `Same: ${other.hotel}`, text: `${other.hotel}${other.price ? `, ${other.price}` : ""}` }] : []),
+        // a Master data hotel with rates is priced from them, so its typed price is not copied
+        ...(other ? [{ label: `Same: ${other.hotel}`, text: `${other.hotel}${other.price && !masterHotelRate(full, other.hotel) ? `, ${other.price}` : ""}` }] : []),
         // the hotels in this city from Master data
         ...cityHotels(full)
           .filter((h) => sameCity(h.city, hotelStay.city) && h.name !== other?.hotel)

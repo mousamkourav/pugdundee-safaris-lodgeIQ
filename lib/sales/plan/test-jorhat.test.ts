@@ -5,7 +5,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chatTurn, initialFlags, type ChatFlags } from "./chat";
-import { buildDays, emptyPlan, planToTrip } from "./planner";
+import { buildDays, emptyPlan, masterHotel, planToTrip } from "./planner";
+import { priceTrip } from "@/lib/sales/pricing/engine";
+import { mealCode } from "@/lib/sales/pricing/meal";
 import { roseateCtx as ctx, TEST_JORHAT, TEST_JORHAT_1, TEST_JORHAT_2 } from "./reader-fixture";
 import type { Plan } from "./types";
 
@@ -67,4 +69,34 @@ test("a wrong arrival point (a later flight's airport) never becomes the first l
   const days = buildDays(wrong, ctx);
   const first = days.find((d) => d.property_id === "THH");
   assert.deepEqual(first?.transfer, { from_location_id: "JLR", to_location_id: "L_THH" });
+});
+
+// ---- Roseate House: the city-hotel nights are priced from Master data
+const priced = (p: Plan, c = ctx) => priceTrip(planToTrip(p, TODAY), c.pricing);
+const hotelNights = (p: Plan, c = ctx) =>
+  priced(p, c).lines.filter((l) => l.kind === "room" && l.property_id === "ROS").map((l) => `${l.date} ${l.amount}${l.missing ? " missing" : ""}`);
+
+test("Roseate House nights: AC Deluxe B&B (CP) from Master data, Rs 17,000 + 18% from 1 Apr 2027", () => {
+  const p = conversation()(TEST_JORHAT).plan;
+  assert.deepEqual(hotelNights(p), ["2027-04-20 20060", "2027-05-01 20060"]);
+  const night = p.days.find((d) => d.date === "2027-04-20");
+  assert.deepEqual(night?.city_hotel, { property_id: "ROS", room_category_id: "ROS_D", meal_plan: "CP" });
+});
+
+test("a night before 1 Apr 2027 takes the Rs 23,000 rate", () => {
+  const april = conversation()(TEST_JORHAT).plan;
+  const march = { ...april, arrival_date: "2027-03-21" };
+  const p = { ...march, days: buildDays(march, ctx) };
+  assert.equal(hotelNights(p)[0], "2027-03-20 27140");
+});
+
+test("a second hotel row with the same name (no rooms) does not hide the one with rates", () => {
+  const dup = { id: "ROS_OLD", name: "Roseate House", park_id: "DLI", kind: "partner_lodge", fallback_priority: 1, sort: 0, city: "Delhi" };
+  const twice = { ...ctx, properties: [dup, ...ctx.properties], pricing: { ...ctx.pricing, properties: [{ id: "ROS_OLD", name: "Roseate House", park_id: "DLI", kind: "partner_lodge" }, ...ctx.pricing.properties] } };
+  assert.equal(masterHotel(twice, "Roseate House", { date: "2027-04-20", nationality: "foreign" })?.property_id, "ROS");
+  assert.equal(masterHotel(twice, "the roseate house")?.property_id, "ROS");
+});
+
+test("meal plans saved as B&B, FB, HB or Room only are read as CP, AP, MAP, EP", () => {
+  assert.deepEqual(["B&B", "bb", "Bed & Breakfast", "CP", "FB", "Full board", "HB", "map", "Room only", "EP"].map(mealCode), ["CP", "CP", "CP", "CP", "AP", "AP", "MAP", "MAP", "EP", "EP"]);
 });
