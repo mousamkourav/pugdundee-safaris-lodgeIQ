@@ -79,7 +79,7 @@ export default async function NewItineraryPage({
           )}
         </div>
       ) : (
-        <Builder ctx={ctx} initial={initial} queryId={fromId} queryNo={queryNo} today={today} aiAvailable={aiAvailable} startStep={startStep} queryStatus={queryStatus} />
+        <Builder ctx={ctx} initial={initial} queryId={fromId} queryNo={queryNo} today={today} aiAvailable={aiAvailable} startStep={startStep} queryStatus={queryStatus} isAdmin={isSalesAdmin(profile?.role)} />
       )}
     </div>
   );

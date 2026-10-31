@@ -11,6 +11,9 @@ import { detailedBreakdown } from "@/lib/sales/pricing/breakdown";
 import { FLIGHT_BAGGAGE } from "@/lib/sales/plan/draft";
 import type { PriceResult } from "@/lib/sales/pricing/types";
 import type { BuilderContext, CityStay, DaySafari, Plan, PlanDay, PlanItem } from "@/lib/sales/plan/types";
+import type { MissingPrice } from "@/lib/sales/pricing/types";
+import { parseTransferKey } from "@/lib/sales/master/missing-transfers";
+import { saveTransferRate } from "@/app/(dashboard)/sales/new/rate-actions";
 
 type SetPlan = (u: (p: Plan) => Plan) => void;
 const DRAG_TYPE = "application/x-lodgeiq-item";
@@ -46,11 +49,13 @@ export function PlanStep({
   setPlan,
   ctx,
   result,
+  isAdmin = false,
 }: {
   plan: Plan;
   setPlan: SetPlan;
   ctx: BuilderContext;
   result: PriceResult | null;
+  isAdmin?: boolean;
 }) {
   const [targetDay, setTargetDay] = useState(0);
   const [overDay, setOverDay] = useState<number | null>(null);
@@ -404,7 +409,8 @@ export function PlanStep({
           </div>
           <div className="mt-2 grid gap-2 md:grid-cols-2">
             {result.missing.map((m) => (
-              <label key={m.key} className="flex items-center gap-2 rounded-lg border border-sand-200 bg-white px-2.5 py-1.5 text-sm">
+              <div key={m.key} className="rounded-lg border border-sand-200 bg-white px-2.5 py-1.5">
+              <label className="flex items-center gap-2 text-sm">
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium text-olive-800" title={m.label}>{m.label}</span>
                   <span className="block text-[11px] text-sand-500">{m.unit}</span>
@@ -426,6 +432,8 @@ export function PlanStep({
                   aria-label={`Price for ${m.label}`}
                 />
               </label>
+              <MissingFix m={m} plan={plan} ctx={ctx} isAdmin={isAdmin} />
+              </div>
             ))}
           </div>
         </section>
@@ -1231,4 +1239,64 @@ export function PlanStep({
       )}
     </div>
   );
+}
+
+// Under a price that is not in master data: where to fix it, in one click. A transfer price
+// typed here can be saved as the rate for that road (a Sales admin's at once, a member's as a
+// suggestion an admin approves); rooms and safaris open the right Master data screen.
+function MissingFix({ m, plan, ctx, isAdmin }: { m: MissingPrice; plan: Plan; ctx: BuilderContext; isAdmin: boolean }) {
+  const [state, setState] = useState<{ busy?: boolean; done?: string; error?: string }>({});
+  const link = (href: string, text: string) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="font-semibold text-olive-600 underline">
+      {text}
+    </a>
+  );
+  const parts = m.key.split("|");
+  if (m.kind === "transfer") {
+    const road = parseTransferKey(m.key);
+    if (!road || road.from.startsWith("@") || road.to.startsWith("@")) return <p className="mt-1 text-[11px] text-sand-500">A place typed by hand: add it in Master data to save a rate for it.</p>;
+    const typed = plan.manual_prices?.[m.key];
+    const guests = plan.guest.adults + plan.guest.children.length;
+    const vehicles = plan.route_vehicles?.[routeOf(road.from, road.to)] || plan.transfer_vehicles || Math.max(1, Math.ceil(guests / 4));
+    const vehicle = plan.vehicle_type || "Toyota Innova Crysta";
+    async function save() {
+      setState({ busy: true });
+      try {
+        const res = await saveTransferRate({ from: road!.from, to: road!.to, price: typed!, vehicles, vehicle_type: vehicle, label: m.label });
+        if (res.error) setState({ error: res.error });
+        else
+          setState({
+            done:
+              res.mode === "saved"
+                ? `Saved in Master data: ${rupees(res.rate)} one way per ${vehicle}, both directions. Next quotes are priced with it.`
+                : `Sent to a Sales admin: ${rupees(res.rate)} one way per ${vehicle}. Once approved, next quotes are priced with it.`,
+          });
+      } catch {
+        setState({ error: "Could not reach the server. Your price stays in this quote." });
+      }
+    }
+    if (state.done) return <p className="mt-1 text-[11px] text-success">{state.done}</p>;
+    return (
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-sand-500">
+        {typed !== undefined && typed > 0 ? (
+          <button type="button" onClick={save} disabled={state.busy} className="inline-flex items-center gap-1 font-semibold text-olive-600 underline disabled:opacity-60">
+            {state.busy && <span className="h-3 w-3 animate-spin rounded-full border-2 border-olive-600 border-t-transparent" aria-hidden />}
+            {isAdmin ? "Also save this rate in Master data" : "Also suggest this rate for Master data"}
+          </button>
+        ) : (
+          <span>Type the price to save it as the rate for this road too.</span>
+        )}
+        {isAdmin && link(`/sales/admin/transfers/new?f_from_location_id=${encodeURIComponent(road.from)}&f_to_location_id=${encodeURIComponent(road.to)}`, "Add it in Master data")}
+        {state.error && <span className="text-error">{state.error}</span>}
+      </div>
+    );
+  }
+  if (!isAdmin) return <p className="mt-1 text-[11px] text-sand-500">Ask a Sales admin to add this rate to Master data.</p>;
+  if (m.kind === "room") {
+    const room = parts[2];
+    const roomName = ctx.rooms.find((r) => r.id === room)?.name ?? "the room";
+    return <p className="mt-1 text-[11px] text-sand-500">{link(`/sales/admin/rooms/${encodeURIComponent(room)}`, `Fix ${roomName} in Master data`)} (its rate category), or the {link("/sales/admin/tariff", "Room tariff")}.</p>;
+  }
+  // safari and naturalist keys: "safari|<park>|...", "naturalist|<park>"
+  return <p className="mt-1 text-[11px] text-sand-500">{link(`/sales/admin/safari-rates?f_park_id=${encodeURIComponent(parts[1] ?? "")}`, "Fix in Master data: Safari rates")}</p>;
 }

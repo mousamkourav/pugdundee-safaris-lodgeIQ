@@ -97,6 +97,7 @@ export function Builder({
   queryNo = null,
   today,
   aiAvailable = false,
+  isAdmin = false,
   startStep = 0,
   queryStatus = null,
 }: {
@@ -106,6 +107,7 @@ export function Builder({
   queryNo?: string | null;
   today: string;
   aiAvailable?: boolean;
+  isAdmin?: boolean; // Sales admin: a typed rate is saved straight into Master data
   startStep?: number;
   queryStatus?: string | null;
 }) {
@@ -502,7 +504,7 @@ export function Builder({
         </div>
       )}
 
-      {step === 1 && <PlanStep plan={plan} setPlan={setPlan} ctx={ctx} result={result} />}
+      {step === 1 && <PlanStep plan={plan} setPlan={setPlan} ctx={ctx} result={result} isAdmin={isAdmin} />}
 
       {step === 2 && (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
