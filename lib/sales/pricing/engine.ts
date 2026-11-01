@@ -342,6 +342,11 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
       lines.push({ kind: "safari", group: "naturalist", date: s.date, description: label, quantity: vehicles, unit_price: addon.rate, amount, tax, tax_pct: addon.tax_pct, property_id: billTo, ref_id: addon.id });
       return;
     }
+    // the safari price already includes the naturalist (Kaziranga: Rs 15,000 a jeep with naturalist)
+    if (rate?.includes_naturalist) {
+      lines.push({ kind: "safari", group: "naturalist", date: s.date, description: `${label} (included in the safari)`, quantity: vehicles, unit_price: 0, amount: 0, tax: 0, tax_pct: rate.tax_pct, property_id: billTo, ref_id: s.park_id });
+      return;
+    }
     const key = `naturalist|${s.park_id}`;
     needPrice({ key, kind: "naturalist", label: `Naturalist in ${parkName(s.park_id)}`, unit: "per safari, all jeeps, incl. tax", date: s.date }, "no naturalist rate");
     const amount = manual[key] !== undefined ? round(manual[key]) : 0;

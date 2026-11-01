@@ -210,3 +210,21 @@ test("a multi-lodge offer counts the nights at our own lodges only: Iora Retreat
   assert.ok(r.warnings.some((w) => /needs at least 5 nights at our own lodges; this trip has 4/.test(w)));
   assert.ok(!priceTrip({ ...four, offer_ids: [] }, withOffer).warnings.some((w) => /qualifies for/.test(w)));
 });
+
+test("a safari rate that includes the naturalist: ticking the naturalist adds nothing and needs no price", () => {
+  // Kaziranga: Rs 15,000 a jeep including the naturalist; no naturalist fee, no naturalist add-on
+  const kaz = { ...data.safariRates[0], id: "KAZ_m", park_id: "KAZ", weekday_rate: 15000, weekend_rate: 15000, naturalist_fee: 0, guide_fee: 0, tax_pct: 0 };
+  const withKaz = { ...data, safariRates: [...data.safariRates, { ...kaz, includes_naturalist: true }], addons: data.addons.filter((a) => !/naturalist/i.test(a.name)) };
+  const t = trip({ safaris: [{ date: "2027-01-18", park_id: "KAZ", zone: "core", session: "morning", naturalist: true }] });
+  const r = priceTrip(t, withKaz);
+  assert.ok(!r.missing.some((m) => m.kind === "naturalist"));
+  const line = r.lines.find((l) => l.group === "naturalist")!;
+  assert.equal(line.amount, 0);
+  assert.match(line.description, /included in the safari/);
+  // without the tick it is a price to type, as before
+  const without = priceTrip(t, { ...withKaz, safariRates: [...data.safariRates, kaz] });
+  assert.ok(without.missing.some((m) => m.kind === "naturalist"));
+  // a naturalist fee on the rate is still charged even when ticked (Bandhavgarh: Rs 3,000)
+  const ban = priceTrip(trip(), { ...data, safariRates: data.safariRates.map((x) => ({ ...x, includes_naturalist: true })) });
+  assert.equal(ban.lines.find((l) => l.group === "naturalist")!.unit_price, 3000);
+});

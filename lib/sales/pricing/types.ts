@@ -83,6 +83,7 @@ export interface SafariRate {
   weekend_days: number[];
   max_pax: number;
   naturalist_fee: number;
+  includes_naturalist?: boolean; // the safari price includes the naturalist (Kaziranga): ticked, it costs nothing extra
   guide_fee: number;
   tax_pct: number;
   active: boolean;
