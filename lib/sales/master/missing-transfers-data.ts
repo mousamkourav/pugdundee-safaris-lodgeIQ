@@ -11,12 +11,14 @@ const VERSIONS = 2000;
 
 export async function loadMissingTransfers(): Promise<{ pairs: MissingPair[]; vehicle: string; error: string | null }> {
   const supabase = await createClient();
-  const [props, locs, rates, versions] = await Promise.all([
+  const [props, locs, rates, versions, parks] = await Promise.all([
     supabase.from("sales_properties").select("id, name, park_id, kind, city").eq("active", true),
     supabase.from("sales_locations").select("id, name, type, property_id").eq("active", true),
     supabase.from("sales_transfer_rates").select("from_location_id, to_location_id, vehicle_type, active").eq("active", true),
     // only the two small parts of each version: what had no rate, and the prices typed
     supabase.from("sales_itinerary_versions").select("missing:pricing->missing, manual:plan->manual_prices").order("created_at", { ascending: false }).limit(VERSIONS),
+    // a city hotel's city can be its place in Parks (Delhi, Agra)
+    supabase.from("sales_parks").select("id, name"),
   ]);
   const error = [props, locs, rates].find((r) => r.error)?.error?.message ?? null;
   const rows = (r: { data: unknown }) => (r.data ?? []) as Row[];
@@ -29,6 +31,7 @@ export async function loadMissingTransfers(): Promise<{ pairs: MissingPair[]; ve
     properties: rows(props).map((r) => ({ id: s(r.id), name: s(r.name), park_id: r.park_id ? s(r.park_id) : null, kind: s(r.kind), city: r.city ? s(r.city) : null })),
     locations: rows(locs).map((r) => ({ id: s(r.id), name: s(r.name), type: s(r.type), property_id: r.property_id ? s(r.property_id) : null })),
     rates: rateRows,
+    parks: rows(parks).map((r) => ({ id: s(r.id), name: s(r.name) })),
     quoteMisses: quoteMissesOf([...rows(versions)].reverse().map((v) => ({ missing: v.missing, manual: v.manual }))),
   });
   return { pairs, vehicle, error };

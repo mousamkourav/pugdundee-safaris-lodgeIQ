@@ -5,7 +5,12 @@
 //   - lodge <-> airport / station: the gateways of its park (a place that already has a
 //     rate to another lodge in the same park: Jabalpur for Kings Lodge -> also for Tree House)
 //   - city hotel <-> its city's airport and station
+//   - city hotel <-> the lodges its city is a gateway for (Radisson Khajuraho <-> Ken River Lodge)
+//   - city <-> city by road (DRIVE_CITIES: Delhi - Agra - Jaipur...): hotel to hotel, and each
+//     city's hotels to the other city's airport ("drive direct to Agra", "drive back to Delhi
+//     for the homebound flight")
 //   - every road that saved quotes needed and had no rate for (a price typed by hand)
+// So every road the circuit can use is checked against Master data in one list.
 // A rate entered in either direction covers the road (the engine uses it both ways).
 // Sorted by how often quotes needed it. Pure, so it is tested without a database.
 // =====================================================================
@@ -35,7 +40,7 @@ export interface QuoteMiss {
   price?: number | null;
 }
 
-export type PairKind = "lodge-lodge" | "lodge-place" | "hotel-place" | "quote";
+export type PairKind = "lodge-lodge" | "lodge-place" | "hotel-place" | "hotel-lodge" | "city-city" | "quote";
 export interface MissingPair {
   from_id: string;
   to_id: string;
@@ -50,8 +55,24 @@ export const PAIR_KIND_LABEL: Record<PairKind, string> = {
   "lodge-lodge": "Lodge to lodge",
   "lodge-place": "Lodge to airport / station",
   "hotel-place": "City hotel to airport / station",
+  "hotel-lodge": "City hotel to lodge",
+  "city-city": "City to city by road",
   quote: "Needed in a quote",
 };
+
+// Cities the guests are driven between (the road, not a flight). Add a pair here when the team
+// starts selling a new road trip; every hotel and airport of the two cities is then checked.
+export const DRIVE_CITIES: [string, string][] = [
+  ["Delhi", "Agra"],
+  ["Agra", "Jaipur"],
+  ["Delhi", "Jaipur"],
+  ["Agra", "Orchha"],
+  ["Orchha", "Khajuraho"],
+  ["Bagdogra", "Siliguri"],
+  ["Siliguri", "Darjeeling"],
+  ["Siliguri", "Gangtok"],
+  ["Darjeeling", "Gangtok"],
+];
 
 const roadKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
@@ -66,8 +87,9 @@ export function parseTransferKey(key: string): { from: string; to: string } | nu
   return m ? { from: m[1], to: m[2] } : null;
 }
 
-export function missingTransferPairs(input: { properties: MtProperty[]; locations: MtLocation[]; rates: MtRate[]; quoteMisses: QuoteMiss[] }): MissingPair[] {
+export function missingTransferPairs(input: { properties: MtProperty[]; locations: MtLocation[]; rates: MtRate[]; quoteMisses: QuoteMiss[]; parks?: { id: string; name: string }[]; driveCities?: [string, string][] }): MissingPair[] {
   const { properties, locations, rates } = input;
+  const parkName = new Map((input.parks ?? []).map((p) => [p.id, p.name]));
   const locById = new Map(locations.map((l) => [l.id, l]));
   const locOfProperty = new Map(locations.filter((l) => l.property_id).map((l) => [l.property_id!, l]));
   const places = locations.filter((l) => l.type === "airport" || l.type === "railway");
@@ -105,6 +127,38 @@ export function missingTransferPairs(input: { properties: MtProperty[]; location
     for (const pl of places.filter((x) => x.name.toLowerCase().includes(city))) add(pl.id, locOfProperty.get(h.id)!.id, "hotel-place");
   }
 
+  // a city hotel's city: as typed on the hotel, else its place in Parks (Delhi)
+  const cityOf = (h: MtProperty) => (h.city || (h.park_id ? parkName.get(h.park_id) : "") || "").toLowerCase().trim();
+  const cityHotels = properties.filter((p) => p.kind === "city_hotel" && locOfProperty.has(p.id) && cityOf(p));
+  const placesOfCity = (city: string) => places.filter((x) => x.name.toLowerCase().split(/[^a-z]+/).includes(city.split(" ")[0]));
+  const hotelsOfCity = (city: string) => cityHotels.filter((h) => cityOf(h).split(" ")[0] === city.split(" ")[0]);
+  // the hotel's own airport and station (when the city is a park, the code above missed it)
+  for (const h of cityHotels) for (const pl of placesOfCity(cityOf(h))) add(pl.id, locOfProperty.get(h.id)!.id, "hotel-place");
+
+  // city hotel <-> the lodges its city is a gateway for (Khajuraho Airport -> Ken River Lodge:
+  // the Radisson Khajuraho <-> Ken River Lodge drive)
+  for (const h of cityHotels) {
+    const gates = placesOfCity(cityOf(h));
+    for (const lodge of lodges) {
+      const sameParkLocs = lodges.filter((l) => l.park_id === lodge.park_id).map((l) => locOfProperty.get(l.id)!.id);
+      const hotelLoc = locOfProperty.get(h.id)!.id;
+      // also: a road from the hotel to another lodge in the same park (Kings Lodge -> Radisson: Tree House Hideaway too)
+      if (gates.some((g) => sameParkLocs.some((loc) => hasRoad(rates, g.id, loc))) || sameParkLocs.some((loc) => hasRoad(rates, hotelLoc, loc))) add(hotelLoc, locOfProperty.get(lodge.id)!.id, "hotel-lodge");
+    }
+  }
+
+  // city <-> city by road: hotel to hotel, and each city's hotels to the other city's airport
+  for (const [a, b] of input.driveCities ?? DRIVE_CITIES) {
+    const ca = a.toLowerCase();
+    const cb = b.toLowerCase();
+    const ha = hotelsOfCity(ca).map((h) => locOfProperty.get(h.id)!.id);
+    const hb = hotelsOfCity(cb).map((h) => locOfProperty.get(h.id)!.id);
+    const airports = (city: string) => placesOfCity(city).filter((x) => x.type === "airport").map((x) => x.id);
+    for (const x of ha) for (const y of hb) add(x, y, "city-city");
+    for (const x of ha) for (const y of airports(cb)) add(x, y, "city-city");
+    for (const x of hb) for (const y of airports(ca)) add(x, y, "city-city");
+  }
+
   // what saved quotes needed: counted (both directions are one road), with the last price typed
   for (const q of input.quoteMisses) {
     const p = add(q.from, q.to, "quote") ?? out.get(roadKey(q.from, q.to));
@@ -113,7 +167,7 @@ export function missingTransferPairs(input: { properties: MtProperty[]; location
     if (typeof q.price === "number" && q.price > 0) p.last_price = q.price;
   }
 
-  const order: PairKind[] = ["quote", "lodge-place", "lodge-lodge", "hotel-place"];
+  const order: PairKind[] = ["quote", "lodge-place", "lodge-lodge", "hotel-place", "city-city", "hotel-lodge"];
   return [...out.values()].sort((a, b) => b.needed - a.needed || order.indexOf(a.kind) - order.indexOf(b.kind) || a.from_name.localeCompare(b.from_name) || a.to_name.localeCompare(b.to_name));
 }
 

@@ -95,3 +95,18 @@ test("Test Jorhat: Kanha Earth Lodge -> Waghoba Eco Lodge has no rate, so it is 
   assert.equal(r.lines[0].missing, true);
   assert.deepEqual(r.missing.map((m) => m.label), ["Transfer Kanha Earth Lodge to Waghoba Eco Lodge"]);
 });
+
+test("the whole circuit is checked: city to city by road, city hotel to lodge (1 Nov 2026)", async () => {
+  const { citiesCtx } = await import("@/lib/sales/plan/reader-fixture");
+  const pairs = missingTransferPairs({ properties: citiesCtx.properties, locations: citiesCtx.locations, rates: citiesCtx.pricing.transferRates, quoteMisses: [], parks: citiesCtx.pricing.parks });
+  const of = (kind: string) => pairs.filter((p) => p.kind === kind).map((p) => [p.from_id, p.to_id].sort().join("-"));
+  // "drive direct to Agra" from Delhi airport, and "drive back to Delhi for the homebound flight"; Delhi hotel to Agra hotel
+  assert.deepEqual(of("city-city").sort(), ["DEL-L_DBT", "L_DBT-L_ROS"]);
+  // Radisson Khajuraho: Ken River (Khajuraho Airport is its gateway) and Tree House Hideaway (Kings Lodge, same park, has the road)
+  assert.deepEqual(of("hotel-lodge").sort(), ["L_KRL-L_RAD", "L_RAD-L_THH"]);
+  // a road that has a rate is never listed (Kings Lodge - Radisson, Delhi Airport - Roseate)
+  assert.ok(!pairs.some((p) => [p.from_id, p.to_id].sort().join("-") === "L_KL-L_RAD"));
+  assert.ok(!pairs.some((p) => [p.from_id, p.to_id].sort().join("-") === "DEL-L_ROS"));
+  // never across regions: no Delhi or Agra hotel to an MP lodge, no Kaziranga to anything here
+  assert.ok(!pairs.some((p) => (p.from_id === "L_IORA" || p.to_id === "L_IORA") && p.kind !== "lodge-place"));
+});
