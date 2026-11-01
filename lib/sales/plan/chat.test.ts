@@ -378,3 +378,17 @@ test("the whole Delhi - lodges - Khajuraho - Delhi trip from one message: natura
   assert.equal(last.title, "Depart from Delhi");
   assert.deepEqual(last.city_transfers!.map((t) => `${t.from_label} > ${t.to_label}`), ["Roseate House > Delhi Airport (IGI)"]);
 });
+
+test("a reply that answers something else is not taken as the hotel name ('australian', 'foreign')", () => {
+  for (const reply of ["australian", "foreign"]) {
+    const say = conversation();
+    let r = say("2 adults, land in delhi, stay one night at delhi then fly to nagpur on 16 Jan 2027, Tadoba 4 nights then Pench 3 nights, leave from nagpur");
+    assert.match(r.reply.text, /Which hotel in Delhi/);
+    r = say(reply);
+    assert.equal(r.plan.guest.nationality, "foreign");
+    assert.equal(r.plan.city_stays![0].hotel ?? null, null, reply);
+    assert.match(r.reply.text, /Which hotel in Delhi/); // asked again
+    r = say("The Imperial, 18k");
+    assert.equal(r.plan.city_stays![0].hotel, "The Imperial");
+  }
+});

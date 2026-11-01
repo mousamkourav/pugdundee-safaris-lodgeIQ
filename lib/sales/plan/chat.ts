@@ -597,7 +597,14 @@ export function chatTurn(
   // ---- the hotel for a city stay (answer to "Which hotel in Delhi?")
   if (f.pending === "hotel" && f.hotelFor && !parsed.parks.length) {
     const stay = (next.city_stays ?? []).find((c) => stayKey(c) === f.hotelFor);
-    if (stay) {
+    // A reply that answers something else ("australian", "foreign", "2 adults", a date) is not a
+    // hotel name: it is read as what it is, and the hotel is asked again.
+    const priceOnly = /\d{3,}|\d+\s*k\b/i.test(msg);
+    const answersOther =
+      !cityHotelNamed(msg, full, stay?.city) &&
+      !priceOnly &&
+      !!(parsed.country || parsed.nationality || parsed.adults || parsed.children?.length || parsed.rooms || parsed.arrival_date || parsed.flights?.length || parsed.cityStays?.length || parsed.meal_plan);
+    if (stay && !answersOther) {
       const tbc = /\b(tbc|to be confirmed|later|not sure|skip|no idea|none|own|their own)\b/.test(low);
       // "same" / "same hotel": copy the other stay in this city
       const same = /^(same|same hotel|same as before|same one|same as the other)\b/.test(low) ? (next.city_stays ?? []).find((c) => c !== stay && c.city === stay.city && c.hotel) : undefined;
