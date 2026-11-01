@@ -23,7 +23,7 @@ export default async function NewItineraryPage({
   const { profile } = await requireUser();
   const sp = await searchParams;
   const fromId = sp.from ?? null;
-  const startStep = sp.step === "draft" ? 2 : sp.step === "plan" ? 1 : 0;
+  const startStep = sp.step === "draft" ? 3 : sp.step === "plan" ? 2 : sp.step === "confirm" ? 1 : 0;
   const today = todayIST();
   // master data, the query being edited (with its latest version) and the AI switch: all at once
   const supabase = await createClient();

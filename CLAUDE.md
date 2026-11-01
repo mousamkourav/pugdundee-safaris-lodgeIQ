@@ -123,6 +123,20 @@ Route rules (do not patch phrases around them):
 - Travel days are shown in time order (`day-order.ts`): to the airport, flight, from the
   airport, safaris.
 Every enquiry the team reports becomes a test (`enquiries.test.ts`, `multi-region.test.ts`).
+
+Quotes safe even when the reader misreads (builder steps: Trip, Confirm, Plan & price, Final draft):
+- Confirm step (`lib/sales/plan/confirm.ts`, `components/sales/builder/confirm-step.tsx`): the
+  trip in plain words, in order (`tripSummary`), with one-click corrections (`editStop`,
+  `editStay`, `removeFlight`). "Correct, continue" sets `plan.confirmed.key = confirmKey(plan)`;
+  Plan & price opens only while the route is unchanged. Quotes saved before the step existed
+  count as confirmed when opened. Corrections teach the reader at once
+  (`learnFromConfirmation`: Reading memory + suggested reader rules).
+- Hard checks before saving for the guest (`lib/sales/plan/checks.ts`, `quoteChecks`), in the
+  browser and again in `saveItinerary`: confirmed route, complete stops, continuous days, no
+  road between regions, a way in and out of every lodge (a transfer or their own vehicle),
+  every price from Master data or typed. A draft can always be saved.
+- "Build with a form" on the Trip step (`lib/sales/plan/form.ts`, `trip-form.tsx`): stops,
+  city nights and flights added one by one, no reading involved; checked on Confirm like any trip.
 Server action: `assistReading` in `app/(dashboard)/sales/new/ai-actions.ts`; model from
 GEMINI_MODEL (default gemini-3.1-flash-lite), thinking off, temperature 0, 20 s, one retry on
 429/503; every call logged in `sales_chat_log` (model, duration, source, gaps).

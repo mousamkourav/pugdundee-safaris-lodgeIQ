@@ -15,6 +15,7 @@ import { loadBuilderContext, todayIST } from "@/lib/sales/plan/load-context";
 import { sanitizePlan } from "@/lib/sales/plan/sanitize";
 import type { Plan } from "@/lib/sales/plan/types";
 import { planToTrip, routeProblems } from "@/lib/sales/plan/planner";
+import { quoteChecks } from "@/lib/sales/plan/checks";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 import { timed } from "@/lib/timing";
 
@@ -63,14 +64,11 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
 
   if (mode === "final") {
     if (!plan.guest.name) return { error: "Enter the guest name." };
-    if (!plan.days.length) return { error: "Build the day plan first." };
-    if (problems.length) return { problems };
-    if (!result) return { error: "The trip could not be priced." };
-    if (result.errors.length) return { problems: result.errors };
-    const stillEmpty = result.missing.filter((m) => plan.manual_prices[m.key] === undefined);
-    if (stillEmpty.length) {
-      return { problems: stillEmpty.map((m) => `Price needed: ${m.label} (${m.unit}). Type it on the Plan & price step, or save a draft.`) };
-    }
+    // the hard checks (lib/sales/plan/checks.ts), again here: the browser is never trusted.
+    // Confirmed route, complete stops, continuous days, no road between regions, a way in and
+    // out of every lodge, every price from Master data or typed.
+    const checks = quoteChecks(plan, ctx, result);
+    if (checks.length) return { problems: checks };
   }
 
   const parkNames = [...new Set(plan.stops.map((s) => ctx.pricing.parks.find((p) => p.id === s.park_id)?.name).filter(Boolean))] as string[];
@@ -212,7 +210,7 @@ async function rememberReading(
   plan: Plan,
   ctx: Awaited<ReturnType<typeof loadBuilderContext>>["ctx"],
   today: string,
-  queryId: string,
+  queryId: string | null,
   userId: string
 ) {
   try {
@@ -263,4 +261,27 @@ async function teachReader(
 // Public actions: same as above, but failures come back as { error } instead of crashing.
 export async function saveItinerary(planJson: string, queryId: string | null, mode: SaveMode = "final", enquiry?: string, typed?: string[], versionMode: VersionMode = "new"): Promise<SaveResult> {
   return timed("saveItinerary", () => safe("saveItinerary", () => saveItineraryUnsafe(planJson, queryId, mode, enquiry, typed, versionMode === "update" ? "update" : "new")));
+}
+
+// "Correct, continue" on the Confirm step after the sales person corrected the reading:
+// the corrected trip teaches the reader at once (Reading memory, and reader rules suggested
+// for a Sales admin to approve), even if the quote is never saved for the guest.
+// Never blocks the confirmation: failures are ignored.
+export async function learnFromConfirmation(planJson: string, enquiry: string, typed?: string[]): Promise<{ ok: boolean }> {
+  return timed("learnFromConfirmation", async () => {
+    try {
+      const cu = await getCurrentUser();
+      if (!cu?.user || !isSalesUser(cu.profile?.role)) return { ok: false };
+      const plan = sanitizePlan(JSON.parse(planJson));
+      if (!plan || !plan.stops.length || enquiry.trim().length < 15) return { ok: false };
+      const { ctx, error } = await loadBuilderContext();
+      if (error) return { ok: false };
+      const today = todayIST();
+      await rememberReading(enquiry, plan, ctx, today, null, cu.user.id);
+      await teachReader(typed, enquiry, plan, ctx, today, cu.user.id, "final");
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
+  });
 }

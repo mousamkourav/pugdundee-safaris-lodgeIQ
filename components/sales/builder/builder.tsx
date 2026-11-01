@@ -12,18 +12,23 @@ import { buildDays, planToTrip, routeKey, routeProblems } from "@/lib/sales/plan
 import { chatTurn, greeting, initialFlags, nextQuestion, type ChatFlags, type ChatMessage, type ChatResult, type QuickReply } from "@/lib/sales/plan/chat";
 import { closureFor } from "@/lib/sales/pricing/engine";
 import type { BuilderContext, Plan } from "@/lib/sales/plan/types";
-import { saveItinerary } from "@/app/(dashboard)/sales/new/actions";
+import { learnFromConfirmation, saveItinerary } from "@/app/(dashboard)/sales/new/actions";
 import { assistReading } from "@/app/(dashboard)/sales/new/ai-actions";
 import { aiToParsed } from "@/lib/sales/plan/ai";
 import { unknownWords } from "@/lib/sales/plan/parse-text";
 import { aiShouldHelp, gapText, gapsOf } from "@/lib/sales/plan/reading";
 import { canUpdateInPlace, defaultVersionMode, type VersionMode } from "@/lib/sales/versions";
+import { isConfirmed, markConfirmed } from "@/lib/sales/plan/confirm";
+import { quoteChecks } from "@/lib/sales/plan/checks";
 import { ChatPanel } from "./chat-panel";
 import { TripDetails, EMAIL_RE } from "./trip-details";
 import { PlanStep } from "./plan-step";
 import { FinalDraft } from "./final-draft";
+import { ConfirmStep } from "./confirm-step";
+import { TripForm } from "./trip-form";
 
-const STEPS = ["Trip", "Plan & price", "Final draft"];
+// Trip -> Confirm (the trip in plain words, corrected and confirmed) -> Plan & price -> Final draft
+const STEPS = ["Trip", "Confirm", "Plan & price", "Final draft"];
 // A small spinner for a button that waits for the server.
 const Spinner = () => <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />;
 const OFFLINE = "Could not reach the server. Your work is kept on this computer; check the connection and try again.";
@@ -117,7 +122,8 @@ export function Builder({
   const router = useRouter();
   const storageKey = `lq-itinerary-draft:${queryId ?? "new"}`;
 
-  const [plan, setPlanState] = useState<Plan>(initial);
+  // a quote saved before the Confirm step existed was checked when it was made: confirmed as it is
+  const [plan, setPlanState] = useState<Plan>(() => (initial.days.length && !initial.confirmed ? markConfirmed(initial, new Date().toISOString()) : initial));
   const [flags, setFlags] = useState<ChatFlags>(() => initialFlags(initial));
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     const first = [greeting(initial, queryNo)];
@@ -130,7 +136,12 @@ export function Builder({
       return first;
     }
   });
-  const [step, setStep] = useState(initial.days.length ? startStep : 0);
+  // Plan & price and Final draft open only for a confirmed route
+  const [step, setStep] = useState(initial.days.length ? (startStep >= 2 && initial.confirmed && !isConfirmed(initial) ? 1 : startStep) : 0);
+  // the Trip step: the assistant (chat) or the form
+  const [tripMode, setTripMode] = useState<"chat" | "form">("chat");
+  // corrections made on the Confirm step since it was last confirmed (the reader learns from them)
+  const [confirmEdited, setConfirmEdited] = useState(false);
   const [builtKey, setBuiltKey] = useState(initial.days.length ? routeKey(initial) : "");
   const [daysEdited, setDaysEdited] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -190,6 +201,9 @@ export function Builder({
   const blockers = stale ? ["The route changed. Update the day plan first."] : [...problems, ...(result?.errors ?? [])];
   const ready = !!result && !blockers.length;
   const pricesNeeded = (result?.missing ?? []).filter((m) => plan.manual_prices?.[m.key] === undefined);
+  const confirmed = isConfirmed(plan);
+  // the route can be shown in plain words once it is complete and its days are built
+  const routeReady = plan.stops.length > 0 && !problems.length && plan.days.length > 0 && !stale;
   const canDraft = currentStatus === null || currentStatus === "draft";
 
   // ---- autosave on this computer, and offer to restore after a crash or a closed tab
@@ -280,7 +294,7 @@ export function Builder({
   }
 
   // ---- navigation
-  const canGo = (n: number) => n === 0 || (n <= 2 && ready);
+  const canGo = (n: number) => n === 0 || (n === 1 && routeReady) || (n <= 3 && ready && confirmed);
   function go(n: number) {
     if (!canGo(n)) return;
     setStep(n);
@@ -303,7 +317,7 @@ export function Builder({
       setDaysEdited(false);
     }
     setMessages((m) => (over ? m.map((x) => (x === over.reply ? r.reply : x)) : [...m, r.reply]));
-    if (r.reply.action === "review") go(1);
+    if (r.reply.action === "review") setStep(1); // "check the trip": the Confirm step
     return r;
   }
 
@@ -352,7 +366,7 @@ export function Builder({
 
   function quick(q: QuickReply) {
     if (q.action === "review") {
-      if (ready) go(1);
+      if (routeReady) go(1);
       else setMessages((m) => [...m, { role: "assistant", text: "The plan is not ready yet.", warnings: blockers }]);
     } else if (q.text) void send(q.text);
   }
@@ -366,7 +380,14 @@ export function Builder({
     if (mode === "final") {
       if (!plan.guest.name.trim()) {
         setNameError("Enter the guest's name to save.");
-        go(2);
+        go(3);
+        return;
+      }
+      // the hard checks (lib/sales/plan/checks.ts); the server runs them again
+      const checks = quoteChecks(plan, ctx, result);
+      if (checks.length) {
+        setSaveProblems(checks);
+        if (!confirmed) setStep(1);
         return;
       }
       if (pricesNeeded.length) {
@@ -420,22 +441,39 @@ export function Builder({
   // ---------------------------------------------------------------- bottom bar
   // editing a quote that is not a draft: asked whether it is a new version or a correction
   const editingSaved = !!currentId && !!currentStatus && currentStatus !== "draft";
-  const nextLabel = step === 0 ? "Next: Plan & price" : step === 1 ? "Next: Final draft" : editingSaved ? "Save changes" : "Save and get the client link";
+  const nextLabel = step === 0 ? "Next: Confirm the trip" : step === 1 ? "Correct, continue" : step === 2 ? "Next: Final draft" : editingSaved ? "Save changes" : "Save and get the client link";
+  // the hard checks, shown on the last step before saving for the guest
+  const finalChecks = step === 3 && ready ? quoteChecks(plan, ctx, result) : [];
   const nextBlockedBy =
-    step < 2
+    step === 0
       ? !plan.stops.length
-        ? "Add at least one park (tell the assistant, or use Route on the right)."
-        : !ready
+        ? "Add at least one park (tell the assistant, use the form, or Route on the right)."
+        : !routeReady
           ? blockers[0] ?? "The plan is not ready yet."
           : null
       : !ready
         ? blockers[0] ?? "The plan is not ready yet."
-        : pricesNeeded.length
-          ? `${pricesNeeded.length} price${pricesNeeded.length === 1 ? " is" : "s are"} still needed on Plan & price.`
+        : step === 3
+          ? finalChecks[0] ?? null
           : null;
+  // "Correct, continue": this route is confirmed; corrections made here teach the reader
+  function confirmTrip() {
+    if (!ready) return;
+    const done = markConfirmed(plan, new Date().toISOString());
+    setPlan(() => done);
+    const enquiry = firstEnquiry ?? messages.find((m) => m.role === "user" && m.text.trim().length >= 15)?.text;
+    if (confirmEdited && enquiry) {
+      const typed = messages.filter((m) => m.role === "user").map((m) => m.text);
+      void learnFromConfirmation(JSON.stringify(done), enquiry, typed).catch(() => undefined);
+    }
+    setConfirmEdited(false);
+    setStep(2);
+    topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   const onNext = () => {
     if (nextBlockedBy) return;
-    if (step < 2) go(step + 1);
+    if (step === 1) confirmTrip();
+    else if (step < 3) go(step + 1);
     else if (editingSaved) {
       setVersionMode(canUpdateInPlace(currentStatus) ? defaultVersionMode(currentStatus) : "new");
       setVersionAsk(true);
@@ -485,7 +523,7 @@ export function Builder({
       )}
 
       {/* what stops the next step, with a fix where possible */}
-      {step < 2 && plan.stops.length > 0 && blockers.length > 0 && (
+      {step < 3 && plan.stops.length > 0 && blockers.length > 0 && (
         <div className="mb-3 rounded-xl border border-error-border bg-error-bg p-3 text-sm text-error">
           <p className="font-semibold">Before you continue</p>
           <ul className="mt-1 list-disc space-y-0.5 pl-5">{blockers.map((b, i) => <li key={i}>{b}</li>)}</ul>
@@ -520,7 +558,21 @@ export function Builder({
 
       {step === 0 && (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_400px]">
-          <ChatPanel messages={messages} busy={chatBusy} onSend={send} onQuick={quick} aiAvailable={aiAvailable} />
+          <div className="space-y-2">
+            {/* describe the trip to the assistant, or build it with a form (no reading involved) */}
+            <div className="flex gap-2" role="tablist" aria-label="How to build the trip">
+              {([["chat", "Describe it (assistant)"], ["form", "Build with a form"]] as const).map(([m, label]) => (
+                <button key={m} type="button" role="tab" aria-selected={tripMode === m} className={`${tripMode === m ? ui.btnPrimary : ui.btnSecondary} ${ui.btnSm}`} onClick={() => setTripMode(m)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {tripMode === "chat" ? (
+              <ChatPanel messages={messages} busy={chatBusy} onSend={send} onQuick={quick} aiAvailable={aiAvailable} />
+            ) : (
+              <TripForm plan={plan} setPlan={setPlan} ctx={ctx} />
+            )}
+          </div>
           <div className="space-y-3">
             <PriceBar plan={plan} result={result} blockers={plan.stops.length ? blockers : []} />
             <TripDetails plan={plan} setPlan={setPlan} ctx={ctx} today={today} markFlag={markFlag} />
@@ -528,9 +580,11 @@ export function Builder({
         </div>
       )}
 
-      {step === 1 && <PlanStep plan={plan} setPlan={setPlan} ctx={ctx} result={result} isAdmin={isAdmin} />}
+      {step === 1 && <ConfirmStep plan={plan} setPlan={setPlan} ctx={ctx} confirmed={confirmed} onConfirm={onNext} onEdited={() => setConfirmEdited(true)} />}
 
-      {step === 2 && (
+      {step === 2 && <PlanStep plan={plan} setPlan={setPlan} ctx={ctx} result={result} isAdmin={isAdmin} />}
+
+      {step === 3 && (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <FinalDraft plan={plan} setPlan={setPlan} ctx={ctx} result={result} onDayEdited={() => setDaysEdited(true)} nameError={nameError} />
           <aside className="space-y-3 lg:sticky lg:top-36 lg:self-start">
@@ -572,9 +626,9 @@ export function Builder({
               </button>
             )}
             <button type="button" className={`${ui.btnPrimary} ${ui.btnSm}`} disabled={saving || !!nextBlockedBy} onClick={onNext} title={nextBlockedBy ?? ""}>
-              {saving && step === 2 && <Spinner />}
-              {saving && step === 2 ? "Saving..." : nextLabel}
-              {step < 2 && <Icon name="chevronLeft" className="h-4 w-4 rotate-180" />}
+              {saving && step === 3 && <Spinner />}
+              {saving && step === 3 ? "Saving..." : nextLabel}
+              {step < 3 && <Icon name="chevronLeft" className="h-4 w-4 rotate-180" />}
             </button>
           </div>
         </div>

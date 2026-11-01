@@ -168,6 +168,9 @@ export interface Plan {
   departure_mode?: TravelMode; // how they leave at the end
   between_lodges?: "ours" | "own"; // lodge to lodge: our car, or their own vehicle (no charge)
   requests?: string[]; // special requests: "honeymoon", "vegetarian", "photographers"...
+  // The sales person checked the trip in plain words (Confirm step) for this route (confirmKey);
+  // Plan & price opens, and a quote is saved for the guest, only while the route is unchanged.
+  confirmed?: { key: string; at: string };
 }
 
 // flight / train: to or from that airport or station (with our transfer to the lodge);

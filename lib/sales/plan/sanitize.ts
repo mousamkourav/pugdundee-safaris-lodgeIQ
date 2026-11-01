@@ -166,6 +166,9 @@ export function sanitizePlan(input: unknown): Plan | null {
     ...(MODES.includes(p.departure_mode as TravelMode) ? { departure_mode: p.departure_mode as TravelMode } : {}),
     ...(p.between_lodges === "ours" || p.between_lodges === "own" ? { between_lodges: p.between_lodges } : {}),
     ...(Array.isArray(p.requests) && p.requests.length ? { requests: [...new Set(p.requests.map((x) => str(x, 60).trim()).filter(Boolean))].slice(0, 12) } : {}),
+    ...(p.confirmed && typeof p.confirmed === "object" && typeof (p.confirmed as { key?: unknown }).key === "string"
+      ? { confirmed: { key: str((p.confirmed as { key: string }).key, 20000), at: str((p.confirmed as { at?: unknown }).at, 40) } }
+      : {}),
     ...(Number.isInteger(Number(p.transfer_vehicles)) && p.transfer_vehicles !== null && p.transfer_vehicles !== undefined && Number(p.transfer_vehicles) >= 1 ? { transfer_vehicles: Math.min(20, Number(p.transfer_vehicles)) } : {}),
     ...(p.route_vehicles && typeof p.route_vehicles === "object"
       ? {
