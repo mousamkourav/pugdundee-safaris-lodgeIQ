@@ -190,3 +190,23 @@ test("offers: a multi-lodge offer takes % off our own lodges' rooms only, never 
   const d = r.lines.filter((l) => l.kind === "discount").map((l) => [l.property_id, l.amount]);
   assert.deepEqual(d, [["KL", -12626], ["THH", -4248]]);
 });
+
+test("a multi-lodge offer counts the nights at our own lodges only: Iora Retreat's nights never make up the minimum", () => {
+  // the trip: Kings Lodge 3 nights (ours), Iora Retreat 2 nights (partner); an offer for 2 lodges, 5 nights or more
+  const multi: Offer = {
+    id: "ML5", name: "Any 2 Pugdundee lodges, 5 nights or more", offer_type: "multi_lodge", value: 15, stay_nights: null, pay_nights: null, applies_to: ["room"],
+    property_ids: [], room_category_ids: [], book_from: null, book_to: null, travel_from: null, travel_to: null, min_nights: 5, min_lodges: 2, combinable: false, active: true,
+  };
+  const withOffer = { ...data, offers: [multi] };
+  const t = trip();
+  t.stays = t.stays.filter((s) => s.property_id === "KL" || s.property_id === "IORA");
+  // not suggested (1 own lodge, 3 own nights; Iora's 2 do not count)
+  assert.ok(!priceTrip(t, withOffer).warnings.some((w) => /qualifies for/.test(w)));
+  // Kings Lodge 3 + Tree House Hideaway 1 = 4 own nights (+ Iora 2): not enough, said so
+  const four = trip({ offer_ids: ["ML5"] });
+  four.stays = [four.stays.find((s) => s.property_id === "KL")!, { property_id: "THH", room_category_id: "THH_T", meal_plan: "AP", check_in: "2027-01-17", nights: 1, rooms: 1 }, { property_id: "IORA", room_category_id: "IORA_D", meal_plan: "AP", check_in: "2027-01-18", nights: 2, rooms: 1 }];
+  const r = priceTrip(four, withOffer);
+  assert.equal(r.appliedOffers.length, 0);
+  assert.ok(r.warnings.some((w) => /needs at least 5 nights at our own lodges; this trip has 4/.test(w)));
+  assert.ok(!priceTrip({ ...four, offer_ids: [] }, withOffer).warnings.some((w) => /qualifies for/.test(w)));
+});
