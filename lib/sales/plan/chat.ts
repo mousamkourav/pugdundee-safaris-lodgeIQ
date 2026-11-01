@@ -219,7 +219,7 @@ export function chatTurn(
   const ruleParsed = parsed;
   let filled: Filled[] = [];
   if (extra?.source === "memory") parsed = mergeMemory(extra.parsed, parsed);
-  else if (extra?.source === "ai") ({ parsed, filled } = fillGaps(parsed, extra.parsed));
+  else if (extra?.source === "ai") ({ parsed, filled } = fillGaps(parsed, extra.parsed, msg));
   // A lodge counts only when the message names it. The AI sometimes picks one by itself
   // (Kings Lodge for "Bandhavgarh 3 nights"); then the guest is asked which lodge instead.
   if (extra?.source === "ai") {
@@ -331,6 +331,25 @@ export function chatTurn(
     warnings.push(`${n} is not one of our parks, so it cannot be quoted here. Our parks: ${ours.join(", ")}.`);
   }
 
+  // ---- the airport for a lodge with several ("Which airport for Kaziranga: Jorhat or Guwahati?"):
+  // the answer, or that airport named any time later, changes the flights and the way in / out
+  for (const a of (f.asks ?? []).filter((x) => x.key.startsWith("airport:"))) {
+    const pick = (a.quick ?? []).find((q) => new RegExp(`\\b${q.toLowerCase()}\\b`).test(low));
+    if (!pick || parsed.parks.length) continue;
+    const others = (a.quick ?? []).filter((q) => q !== pick);
+    const swap = (city: string) => (others.some((o) => sameCity(o, city)) ? pick : city);
+    next.flights = (next.flights ?? []).map((fl) => ({ ...fl, from: swap(fl.from), to: swap(fl.to) }));
+    const newPort = ctx.locations.find((l) => l.type === "airport" && sameCity(l.name, pick));
+    const isOther = (id: string | null) => !!id && others.some((o) => sameCity(ctx.locations.find((l) => l.id === id)?.name ?? "", o));
+    if (newPort && isOther(next.arrival_location_id)) next.arrival_location_id = newPort.id;
+    if (newPort && isOther(next.departure_location_id)) next.departure_location_id = newPort.id;
+    f.asks = (f.asks ?? []).filter((x) => x !== a);
+    if (f.askFor === a.key) f.askFor = null;
+    chips.push(`${shortName(a.key.slice(8))}: via ${pick} Airport`);
+    // the airport named here is this answer, not a new arrival point
+    parsed = { ...parsed, arrival_place: undefined, departure_place: undefined };
+  }
+
   // ---- the answer to the reader's own question (fishing, flight time, ages...)
   const answering = f.pending === "ask" ? f.asks?.find((a) => a.key === f.askFor) : undefined;
   if (answering) {
@@ -420,9 +439,13 @@ export function chatTurn(
       warnings.push(`By the nights planned, this part of the trip starts on ${tripEnd}, not ${parsed.arrival_date}. The trip still starts on ${next.arrival_date}; change the nights or the start date if that is wrong.`);
   } else if (parsed.arrival_date) {
     if (parsed.arrival_date < today) warnings.push(`${parsed.arrival_date} is in the past. Please check the date.`);
-    next.arrival_date = parsed.arrival_date;
+    // the answer to "When do they arrive in Delhi?": the day they land, so the first lodge is
+    // reached after the Delhi nights (the plan's date is the first lodge's)
+    const firstNights = (next.city_stays ?? []).filter((c) => c.when === "before").reduce((t, c) => t + c.nights, 0);
+    const landing = f.pending === "date" && !parsed.parks.length && !parsed.cityStays?.length && firstNights > 0;
+    next.arrival_date = landing ? addDays(parsed.arrival_date, firstNights) : parsed.arrival_date;
     f.dateSet = true;
-    chips.push(`arriving ${parsed.arrival_date}`);
+    chips.push(landing ? `arriving ${parsed.arrival_date} (first lodge ${next.arrival_date})` : `arriving ${parsed.arrival_date}`);
   } else if (/\bdates?\s+not\s+fixed\b|\bno\s+fixed\s+dates?\b|\bdateless\b/.test(low) && !f.dateSet) {
     next.dateless = true;
     f.dateSet = true;
@@ -641,6 +664,20 @@ export function chatTurn(
       chips.push(`${c.city}: ${h.name}`);
       return { ...c, hotel: h.name };
     });
+    // no hotel named: the city's hotel in Master data (Roseate House for Delhi), priced from
+    // there and changed by naming another; with none, the hotel is asked
+    const newStays = new Set((parsed.cityStays ?? []).map((c) => stayKey(c)));
+    const said = new Set<string>(); // one chip per city ("Delhi: Roseate House"), not one per night
+    next.city_stays = (next.city_stays ?? []).map((c) => {
+      if (c.hotel || c.blank || !c.city || !newStays.has(stayKey(c))) return c;
+      const options = cityHotels(full).filter((h) => sameCity(h.city, c.city));
+      if (!options.length) return c;
+      const pick = [...options].sort((a, b) => (full.properties.find((p) => p.name === a.name)?.fallback_priority ?? 100) - (full.properties.find((p) => p.name === b.name)?.fallback_priority ?? 100))[0];
+      if (!said.has(c.city)) chips.push(`${c.city}: ${pick.name} (from Master data${options.length > 1 ? `; or ${options.filter((o) => o !== pick).map((o) => o.name).join(", ")}` : ""})`);
+      said.add(c.city);
+      f.hotelAsked = [...new Set([...(f.hotelAsked ?? []), stayKey(c)])];
+      return { ...c, hotel: pick.name };
+    });
   }
 
   // ---- corrections to the order: "wrong direction", "Pench first", "Kanha then Pench"
@@ -808,8 +845,9 @@ export function nextQuestion(
   }
   if (!f.dateSet) {
     const vague = askOf("date");
+    const firstCity = (plan.city_stays ?? []).find((c) => c.when === "before" && c.city)?.city;
     return {
-      text: vague ? vague.text : "When do they arrive? For example 16 Jan 2027.",
+      text: vague ? vague.text : `When do they arrive${firstCity ? ` in ${firstCity}` : ""}? For example 16 Jan 2027.`,
       pending: "date",
       quick: vague ? [{ label: "Dates not fixed", text: "dates not fixed" }] : undefined,
       warnings: [],

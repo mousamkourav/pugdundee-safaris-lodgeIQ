@@ -258,12 +258,11 @@ test("a city hotel in Master data is a city stay, never a safari stop", async ()
   };
   let r = say("2 adults, Indian, stay one night in delhi then fly to nagpur and reach Tadoba on 16 Jan 2027, Tadoba 4 nights then Pench 3 nights, leave from nagpur");
   assert.deepEqual(plan.stops.map((s) => s.property_id), ["WEL", "PTL"]);
-  assert.match(r.reply.text, /Which hotel in Delhi/);
-  assert.ok(r.reply.quick!.some((q) => q.label === "Roseate House"));
-  r = say("Roseate House, 18000");
-  assert.deepEqual(plan.stops.map((s) => s.property_id), ["WEL", "PTL"]); // still no Roseate stop
-  assert.deepEqual(plan.city_stays!.map((c) => [c.city, c.hotel, c.price]), [["Delhi", "Roseate House", 18000]]);
+  // no hotel named: the city's hotel in Master data is taken (31 Oct 2026), not asked
   assert.doesNotMatch(r.reply.text, /Which hotel in Delhi/);
+  assert.ok(r.reply.chips!.some((c) => /^Delhi: Roseate House \(from Master data/.test(c)));
+  assert.deepEqual(plan.stops.map((s) => s.property_id), ["WEL", "PTL"]); // still no Roseate stop
+  assert.deepEqual(plan.city_stays!.map((c) => [c.city, c.hotel]), [["Delhi", "Roseate House"]]);
   // named in the first message
   plan = emptyPlan(TODAY);
   flags = initialFlags(plan);

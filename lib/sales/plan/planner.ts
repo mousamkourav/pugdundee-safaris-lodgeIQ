@@ -147,7 +147,31 @@ function carryItems(oldDays: PlanDay[], days: PlanDay[]): PlanDay[] {
 export function buildDays(plan: Plan, ctx: BuilderContext): PlanDay[] {
   const fresh = buildDaysFresh(plan, ctx).map((d) => ({ ...d, items: [] as PlanItem[] }));
   if (!fresh.length) return fresh;
-  return carryItems(plan.days ?? [], addFlights(plan, addCityDays(plan, applyWants(plan, ctx, fresh), ctx), ctx));
+  return noDriveBetweenRegions(carryItems(plan.days ?? [], addFlights(plan, addCityDays(plan, applyWants(plan, ctx, fresh), ctx), ctx)), ctx);
+}
+
+// The last guard, whatever the reader or the AI made of the message: a road transfer between
+// two places in different road regions (Delhi and Iora Retreat, Waghoba and Iora Retreat) is
+// never planned. It is left out, and the day says how to fix it (add the flight).
+export function noDriveBetweenRegions(days: PlanDay[], ctx: BuilderContext): PlanDay[] {
+  const regions = roadRegions(ctx);
+  const name = (id: string, label?: string) => label ?? ctx.locations.find((l) => l.id === id)?.name ?? id.replace(/^@/, "");
+  const note = (a: string, b: string) => `No road between ${a} and ${b} in Master data: add the flight (or the way they travel) for this day.`;
+  return days.map((d) => {
+    let out = d;
+    if (d.transfer && farApart(ctx, d.transfer.from_location_id, d.transfer.to_location_id, regions)) {
+      out = { ...out, transfer: null, notes: [...out.notes, note(name(d.transfer.from_location_id), name(d.transfer.to_location_id))] };
+    }
+    const far = (d.city_transfers ?? []).filter((t) => farApart(ctx, t.from_location_id, t.to_location_id, regions));
+    if (far.length) {
+      out = {
+        ...out,
+        city_transfers: (out.city_transfers ?? []).filter((t) => !far.includes(t)),
+        notes: [...out.notes, ...far.map((t) => note(t.from_label ?? name(t.from_location_id), t.to_label ?? name(t.to_location_id)))],
+      };
+    }
+    return out;
+  });
 }
 
 // The add-on at this lodge (else a general one) whose name has all the words, cheapest first.
@@ -522,6 +546,9 @@ function cityExtras(ctx: BuilderContext, c: CityStay, nationality: string) {
 // A city transfer between two places (each a Master data location, or "@name").
 function cityTransfer(_ctx: BuilderContext, from: { id: string; label: string }, to: { id: string; label: string }): CityTransfer | null {
   if (from.id === to.id) return null;
+  // no hotel yet ("hotel in Delhi", to be confirmed): no transfer price box for it; the
+  // transfer comes with the hotel when it is named (a typed hotel's transfer is a price to type)
+  if (/^@hotel in /i.test(from.id) || /^@hotel in /i.test(to.id)) return null;
   return { from_location_id: from.id, to_location_id: to.id, from_label: from.label, to_label: to.label };
 }
 

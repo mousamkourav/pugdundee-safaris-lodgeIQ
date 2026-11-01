@@ -14,6 +14,7 @@ import { addDays } from "@/lib/sales/pricing/dates";
 import { defaultStop, mealPlansOf, roomsOf } from "./planner";
 import type { BuilderContext, Plan, TravelMode } from "./types";
 import { findCountry, countryName } from "@/lib/sales/countries";
+import { resolveRoute, type RouteEntry } from "./route";
 
 export interface ParsedTrip {
   adults?: number;
@@ -273,10 +274,39 @@ export function applyRules(text: string, rules: { phrase: string; meaning: strin
 
 // Correct misspelt park and lodge words ("bandavgarh" -> "bandhavgarh") and
 // expand short forms, before anything else reads the text.
+// The words every enquiry is built on, typed in a hurry: "nigths", "nigts", "nite", "safaries",
+// "adluts", "naturalsit". One slip (a missing, extra or swapped letter) is read as the word;
+// a different first letter never is ("right" is not "night"), nor a real word ("safar" = journey).
+const TRIP_WORDS = ["night", "nights", "safari", "safaris", "adult", "adults", "naturalist", "naturalists", "child", "children"];
+const TRIP_SHORT: Record<string, string> = { nite: "night", nites: "nights", nght: "night", nghts: "nights", nyt: "night", nyts: "nights", nyte: "night", nytes: "nights" };
+const NOT_TRIP_WORDS = new Set(["safar", "adultery", "nigh", "chile", "chill"]);
+export function fixTripWords(text: string, notes: string[] = []) {
+  return text.replace(/\b[a-zA-Z]{3,12}\b/g, (word) => {
+    const w = word.toLowerCase();
+    if (TRIP_WORDS.includes(w) || NOT_TRIP_WORDS.has(w)) return word;
+    let best = TRIP_SHORT[w] ?? null;
+    if (!best && w.length >= 4) {
+      for (const v of TRIP_WORDS) {
+        if (v[0] !== w[0] || Math.abs(v.length - w.length) > 1) continue;
+        const d = editDistance(w, v);
+        const sameLetters = v.length === w.length && [...v].sort().join("") === [...w].sort().join("");
+        // one slip; for long words (10+ letters) two
+        if (d === 1 && (v.length !== w.length || sameLetters || w.length >= 7)) best = v;
+        else if (d === 2 && w.length >= 10) best = v;
+        if (best) break;
+      }
+    }
+    if (!best) return word;
+    notes.push(`Read "${word}" as "${best}".`);
+    return best;
+  });
+}
+
 function normaliseText(input: string, vocabulary: string[], notes: string[], rules: { phrase: string; meaning: string }[] = []) {
   let text = input.replace(/[\u2018\u2019\u02bc]/g, "'").replace(/\s+/g, " ").trim();
   text = applyRules(text, rules, notes);
   text = text.replace(/\b[a-z]{2,3}\b/gi, (w) => ABBREVIATIONS[w.toLowerCase()] ?? w);
+  text = fixTripWords(text, notes);
   const vocab = [...new Set(vocabulary.filter((v) => /^[a-z]+$/.test(v) && v.length >= 5))];
   text = text.replace(/\b[a-zA-Z]{5,}\b/g, (word) => {
     const w = word.toLowerCase();
@@ -722,7 +752,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     // "stay one night at Delhi", "spend 2 nights in Delhi"
     new RegExp(`\\b(?:stay(?:ing)?|spend(?:ing)?)\\s+(?:for\\s+)?(?<n>${NUM.slice(1, -1)})\\s*nights?\\s+(?:in|at)\\s+(?<city>${CITY_RE}|there)\\b`, "g"),
     // "1 night in Delhi", "1 nights stay at delhi", "1 night khajuraho"
-    new RegExp(`\\b(?<n>${NUM.slice(1, -1)})\\s*nights?\\s+(?:stay\\s+|halt\\s+)?(?:(?:in|at)\\s+)?(?<city>${CITY_RE})\\b`, "g"),
+    new RegExp(`\\b(?<n>${NUM.slice(1, -1)})\\s*nights?\\s+(?:stay\\s+|halt\\s+)?(?:(?:in|at|to)\\s+)?(?:the\\s+)?(?<city>${CITY_RE})\\b`, "g"),
     // "Delhi 1 nights stay", "transfer to Khajuraho 2 nights", "Delhi - 1 night", "delhi stay for 2 nights"
     new RegExp(`\\b(?<city>${CITY_RE})\\s*(?:stay(?:ing)?\\s+)?(?:[-:(]\\s*|for\\s+)?(?<n>${NUM.slice(1, -1)})\\s*(?:nights?|n|raat(?:ein|en|e)?)\\b`, "g"),
   ];
@@ -919,6 +949,30 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
         out.notes.push(`${outbound.from} Airport is not in Master data > Places yet.`);
       }
     }
+  }
+
+  // ---- the route: places one after the other that no road joins are joined by a flight,
+  // written or not ("than kaziranga", "come back to delhi", "go to bhopal than satpura").
+  // The airports for each lodge come from the text, else from the roads in Master data.
+  if (order.length && (staysAt.length || flights.length)) {
+    const entries: RouteEntry[] = [
+      // a touring package ("Delhi - Agra - Jaipur") is left from its last city
+      ...staysAt.map((s) => ({ kind: "city" as const, city: s.city.split(/\s+-\s+/).pop() ?? s.city, pos: s.at })),
+      ...order.map(({ p, at }) => {
+        const park = ctx.pricing.parks.find((x) => x.name === p.name);
+        const lodge = p.lodge ? ctx.properties.find((l) => l.name === p.lodge) : undefined;
+        const propertyId = lodge?.id ?? (park ? defaultStop(ctx, park.id, 1).property_id || null : null);
+        return { kind: "lodge" as const, park: p.name, propertyId, pos: at };
+      }),
+    ].sort((a, b) => a.pos - b.pos);
+    const route = resolveRoute({ ctx, entries, cityMentions: cityHits, flights: flights.map((f) => ({ ...f, pos: flightPos.get(f) ?? 0 })) });
+    if (route.flights.length) out.flights = route.flights;
+    const firstIsLodge = entries[0]?.kind === "lodge";
+    if (route.arrival) out.arrival_place = route.arrival;
+    else if (route.arrival === null && !firstIsLodge) delete out.arrival_place;
+    if (route.departure) out.departure_place = route.departure;
+    else if (route.departure === null) delete out.departure_place;
+    for (const a of route.asks) ask(a);
   }
 
   // ---- how they travel: own vehicle, train, flight, our car. Each mention belongs to its own

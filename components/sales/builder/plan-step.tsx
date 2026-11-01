@@ -12,6 +12,7 @@ import type { PriceResult } from "@/lib/sales/pricing/types";
 import type { BuilderContext, CityStay, DaySafari, Plan, PlanDay, PlanItem } from "@/lib/sales/plan/types";
 import type { MissingPrice } from "@/lib/sales/pricing/types";
 import { parseTransferKey } from "@/lib/sales/master/missing-transfers";
+import { DAY_STEP, itemStep, transferStep } from "@/lib/sales/plan/day-order";
 import { saveTransferRate } from "@/app/(dashboard)/sales/new/rate-actions";
 
 type SetPlan = (u: (p: Plan) => Plan) => void;
@@ -470,7 +471,8 @@ export function PlanStep({
                   <span className="truncate text-xs text-sand-500">{d.property_id ? lodgeName(d.property_id) : d.kind === "city" ? d.title || "City stay" : d.title || "Departure"}</span>
                 </button>
 
-                <ul className="divide-y divide-sand-100 text-sm">
+                {/* in the order things happen: check-out and the drive to the airport, the flight, the drive on, then safaris (day-order.ts) */}
+                <ul className="flex flex-col divide-y divide-sand-100 text-sm">
                   {d.stay_index !== undefined && stays[d.stay_index] && plan.days.findIndex((x) => x.stay_index === d.stay_index) === i && (() => {
                     const k = d.stay_index!;
                     const c = stays[k];
@@ -545,7 +547,7 @@ export function PlanStep({
                     </li>
                   ))}
                   {d.transfer && (
-                    <li className="flex items-center gap-2 px-3 py-1.5">
+                    <li className="flex items-center gap-2 px-3 py-1.5" style={{ order: transferStep(locName(d.transfer.from_location_id), locName(d.transfer.to_location_id)) }}>
                       <Icon name="car" className="h-4 w-4 shrink-0 text-sand-500" />
                       <span className="flex-1 truncate">
                         {locName(d.transfer.from_location_id)} to{" "}
@@ -556,7 +558,7 @@ export function PlanStep({
                     </li>
                   )}
                   {(d.city_transfers ?? []).map((t, k) => (
-                    <li key={`ct${k}`} className="flex items-center gap-2 px-3 py-1.5">
+                    <li key={`ct${k}`} className="flex items-center gap-2 px-3 py-1.5" style={{ order: transferStep(t.from_label ?? "", t.to_label ?? "") }}>
                       <Icon name="car" className="h-4 w-4 shrink-0 text-sand-500" />
                       <span className="flex-1 truncate">
                         {t.from_label} to {t.to_label}
@@ -598,7 +600,7 @@ export function PlanStep({
                       { session: "afternoon" as const, label: "Evening safari" },
                     ];
                     return (
-                      <li className="space-y-1 px-3 py-1.5">
+                      <li className="space-y-1 px-3 py-1.5" style={{ order: DAY_STEP.safari }}>
                         {ROWS.map(({ session, label }) => {
                           const closedCore = closed(d.park_id!, "core", session, d.date);
                           const closedBuffer = closed(d.park_id!, "buffer", session, d.date);
@@ -642,6 +644,7 @@ export function PlanStep({
                   {(d.items ?? []).map((it) => (
                     <li
                       key={it.id}
+                      style={{ order: itemStep(it) }}
                       draggable
                       onDragStart={(e) => onDragStart(e, { kind: "move", id: it.id, from: i })}
                       className="group flex items-center gap-2 bg-olive-50/40 px-2 py-1.5"
@@ -735,7 +738,7 @@ export function PlanStep({
                     </li>
                   ))}
                   {!d.items?.length && (
-                    <li className="px-3 py-1.5 text-center text-[11px] italic text-sand-400">{overDay === i ? "Drop here" : "Drag items here, or select this day and click Add"}</li>
+                    <li style={{ order: DAY_STEP.empty }} className="px-3 py-1.5 text-center text-[11px] italic text-sand-400">{overDay === i ? "Drop here" : "Drag items here, or select this day and click Add"}</li>
                   )}
                 </ul>
                 <div className="flex flex-wrap items-center gap-1.5 border-t border-sand-100 px-3 py-1.5">

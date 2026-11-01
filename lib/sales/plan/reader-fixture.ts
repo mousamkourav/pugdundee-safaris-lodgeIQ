@@ -171,6 +171,8 @@ export const roseateCtx: BuilderContext = {
     rooms: [...jorhatCtx.pricing.rooms, { id: "ROS_D", property_id: "ROS", name: "AC Deluxe", max_adults: 2, max_children: 1, extra_bed: true }],
     roomRates: [...jorhatCtx.pricing.roomRates, roseateRate("ROS_1", "2026-04-01", "2027-03-31", 23000), roseateRate("ROS_2", "2027-04-01", "2027-09-30", 17000)],
     locations: [...jorhatCtx.pricing.locations, { id: "L_ROS", name: "Roseate House", property_id: "ROS" }],
+    // the airport transfer, as in the live Master data (Rs 3,000)
+    transferRates: [...jorhatCtx.pricing.transferRates, road("DEL", "L_ROS", 3000, 1)],
   },
 };
 

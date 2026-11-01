@@ -104,6 +104,25 @@ One reading flow (`lib/sales/plan/reading.ts`), so the reader and the AI never d
    place. It fills empty fields only (`fillGaps`); where it differs from the reader, the
    sales person is asked one question (the reader's value stays until answered).
 The chat shows where a reading came from ("from memory", "built-in reader", "AI helped with").
+Where the reader and the AI differ, the message decides first (`fillGaps(rule, ai, text)`): a
+value only one of them read that the message itself says is taken; a fuller list of flights /
+city nights is taken; a question (plain words, "How many nights at Tadoba: 1 or 3?") only when
+the message supports both.
+
+Route rules (do not patch phrases around them):
+- `lib/sales/plan/route.ts` (`resolveRoute`): the places in the order written (city nights and
+  lodges); two in a row that no road joins (different road regions, `roadRegions`) are joined by
+  a flight, written or not. A lodge's airport: named in the text for that leg, else the airport
+  with a road to it in Master data (shortest drive; several = one question, `airport:<park>`).
+  Arrival / departure = the airports of the flights into the first and out of the last lodge.
+- `noDriveBetweenRegions` (planner): the last guard. A road transfer between regions is never
+  planned, whatever the reader or the AI gave; the day gets a note instead.
+- City nights with no hotel named take the city's hotel from Master data (Roseate House for
+  Delhi); "hotel in X" (none yet) gets no transfer price box.
+- Misspelt trip words ("nigths", "safaries", "adluts") are read (`fixTripWords`).
+- Travel days are shown in time order (`day-order.ts`): to the airport, flight, from the
+  airport, safaris.
+Every enquiry the team reports becomes a test (`enquiries.test.ts`, `multi-region.test.ts`).
 Server action: `assistReading` in `app/(dashboard)/sales/new/ai-actions.ts`; model from
 GEMINI_MODEL (default gemini-3.1-flash-lite), thinking off, temperature 0, 20 s, one retry on
 429/503; every call logged in `sales_chat_log` (model, duration, source, gaps).

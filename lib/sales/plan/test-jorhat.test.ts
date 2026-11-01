@@ -109,9 +109,9 @@ test("price lines in trip order, each saying what it is (lodge / hotel, room, me
   p.days = p.days.map((d) => ({ ...d, items: d.items.map((it) => (it.type === "flight" && /Jabalpur/.test(it.title) ? { ...it, flight: { ...it.flight!, fare_pp: 6000 } } : it)) }));
   const r = priced(p);
   const day = (date: string) => inTripOrder(r.lines).filter((l) => l.date === date).map((l) => `${l.kind}: ${l.description}`);
-  assert.deepEqual(day("2027-04-20"), ["transfer: Delhi Airport to Roseate House", "room: Roseate House, AC Deluxe, B&B"]);
+  assert.deepEqual(day("2027-04-20"), ["transfer: Delhi Airport to Roseate House by Innova (about 1 hrs)", "room: Roseate House, AC Deluxe, B&B"]);
   assert.deepEqual(day("2027-04-21"), [
-    "transfer: Roseate House to Delhi Airport",
+    "transfer: Roseate House to Delhi Airport by Innova (about 1 hrs)",
     "addon: Flight Delhi to Jabalpur",
     "transfer: Jabalpur Airport to Tree House Hideaway",
     "room: Tree House Hideaway, Tree House, full board",
