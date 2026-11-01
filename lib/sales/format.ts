@@ -48,6 +48,11 @@ export function startOfMonthIST(now = new Date()) {
   return new Date(Date.UTC(y, m, 1) - 330 * 60_000).toISOString();
 }
 
+// The first moment of last month (IST): the "Last month" view runs from here to startOfMonthIST().
+export function startOfLastMonthIST(now = new Date()) {
+  return startOfMonthIST(new Date(Date.parse(startOfMonthIST(now)) - 60_000));
+}
+
 // A trip day with its weekday and year: "Mon, 16 Jan 2027" (guest page, PDF, builder).
 // Read as a calendar date (no time zone shift).
 const DAY_DATE = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });

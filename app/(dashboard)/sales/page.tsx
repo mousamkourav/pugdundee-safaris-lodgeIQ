@@ -6,10 +6,10 @@ import { Icon } from "@/components/icons";
 import { StatCard } from "@/components/sales/stat-card";
 import { QueriesTable } from "@/components/sales/queries-table";
 import { getMemberNames } from "@/lib/sales/members";
-import { rupees, startOfMonthIST } from "@/lib/sales/format";
+import { fmtDate, rupees, startOfLastMonthIST, startOfMonthIST } from "@/lib/sales/format";
 import { QUERY_LIST_COLUMNS, type QueryRow } from "@/lib/sales/status";
 
-type Range = "month" | "all";
+type Range = "month" | "last" | "all";
 
 interface Totals {
   draft: number;
@@ -52,12 +52,16 @@ export default async function SalesDashboard({
 }) {
   const { user, profile } = await requireUser();
   const admin = isSalesAdmin(profile?.role);
-  const range: Range = (await searchParams).range === "all" ? "all" : "month";
+  const asked = (await searchParams).range;
+  const range: Range = asked === "all" ? "all" : asked === "last" ? "last" : "month";
+  const monthStart = startOfMonthIST();
+  const lastStart = startOfLastMonthIST();
   const supabase = await createClient();
 
   // Period rows (RLS already limits members to their own queries).
   let periodQ = supabase.from("sales_queries").select(QUERY_LIST_COLUMNS).is("deleted_at", null);
-  if (range === "month") periodQ = periodQ.gte("created_at", startOfMonthIST());
+  if (range === "month") periodQ = periodQ.gte("created_at", monthStart);
+  if (range === "last") periodQ = periodQ.gte("created_at", lastStart).lt("created_at", monthStart);
   if (!admin) periodQ = periodQ.eq("assigned_to", user.id);
   const { data: periodData, error } = await periodQ.limit(5000);
   const period = (periodData ?? []) as unknown as QueryRow[];
@@ -91,7 +95,7 @@ export default async function SalesDashboard({
   const first = (profile?.full_name || "").split(" ")[0] || "there";
   const tab = (r: Range, label: string) => (
     <Link
-      href={r === "month" ? "/sales" : "/sales?range=all"}
+      href={r === "month" ? "/sales" : `/sales?range=${r}`}
       className={
         "rounded-md px-3 py-1.5 font-medium transition " +
         (range === r ? "bg-white text-olive-800 shadow-card" : "text-sand-500 hover:text-olive-800")
@@ -107,10 +111,15 @@ export default async function SalesDashboard({
         <div>
           <p className="eyebrow">{admin ? "Sales overview" : "My dashboard"}</p>
           <h1 className="mt-1 text-2xl">{admin ? "All members" : `Hello, ${first}`}</h1>
+          {/* the period counted, so an empty new month is never mistaken for lost data */}
+          <p className="mt-1 text-sm text-sand-500">
+            {range === "month" ? `Queries created from ${fmtDate(monthStart)} to today` : range === "last" ? `Queries created ${fmtDate(lastStart)} to ${fmtDate(new Date(Date.parse(monthStart) - 60_000))}` : "All queries"}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <div className="inline-flex rounded-lg border border-sand-200 bg-sand-100 p-1 text-sm">
             {tab("month", "This month")}
+            {tab("last", "Last month")}
             {tab("all", "All time")}
           </div>
           <Link href="/sales/new" className={ui.btnPrimary}>
@@ -121,6 +130,13 @@ export default async function SalesDashboard({
       </div>
 
       {error && <p className={ui.alertError}>Could not load queries: {error.message}</p>}
+      {!error && range === "month" && !period.length && (
+        <p className={ui.alertWarning}>
+          No queries have been created yet this month (since {fmtDate(monthStart)}). Your earlier queries are safe: see{" "}
+          <Link href="/sales?range=last" className="font-semibold underline">Last month</Link> or{" "}
+          <Link href="/sales?range=all" className="font-semibold underline">All time</Link>.
+        </p>
+      )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <StatCard label="Created" value={t.created} />
