@@ -1,5 +1,5 @@
-// The 30 enquiries the sales team is expected to type (CC_ENGINE_TRAINING.md), read by the
-// built-in reader alone (no Gemini): what goes into the plan, what the trip checklist
+// The enquiries the sales team is expected to type (CC_ENGINE_TRAINING.md), read by the
+// built-in reader (and, in conversation(), checked with a worst-case Gemini too): what goes into the plan, what the trip checklist
 // shows, and what the assistant asks. Any misread reported later becomes a test here.
 // Run with:  npx tsx --test lib/sales/plan/enquiries.test.ts
 import { test } from "node:test";
@@ -7,14 +7,42 @@ import assert from "node:assert/strict";
 import { chatTurn, initialFlags, type ChatFlags, type ChatResult } from "./chat";
 import { emptyPlan, planToTrip } from "./planner";
 import { scrubForAI } from "./parse-text";
+import { aiToParsed } from "./ai";
+import { checkEvidence } from "./evidence";
 import { DELHI_KAZIRANGA, jorhatCtx, readerCtx as ctx, READER_TODAY as TODAY } from "./reader-fixture";
 import type { Plan } from "./types";
 
+// AI first, the worst case (lib/sales/plan/reading.ts): a Gemini that invents a value for every
+// field with words the message does not have, and one that answers nothing. Through the evidence
+// rule both must leave every message's trip exactly as the built-in reader reads it (the reader
+// is the backup), so all 31 enquiries below are checked with the AI on as well.
+const INVENTED = (c: typeof ctx) => ({
+  adults: { value: 9, quote: "nine adultz zq" },
+  children_ages: { value: [3, 15], quote: "kidz 3 15 zq" },
+  rooms: { value: 7, quote: "7 roomz zq" },
+  country: { value: "US", quote: "from amerika zq" },
+  arrival_date: { value: "2027-03-03", quote: "3 march zq" },
+  arrival_place: { value: "Raipur Airport", quote: "raipur zq" },
+  departure_place: { value: "Raipur Airport", quote: "raipur zq" },
+  stops: c.pricing.parks.slice(0, 2).map((p) => ({
+    park: { value: p.name, quote: `${p.name} zq` },
+    lodge: { value: c.properties.find((l) => l.park_id === p.id)?.name, quote: "lodge zq" },
+    nights: { value: 6, quote: "6 nights zq" },
+    room: { value: "suite", quote: "suite zq" },
+  })),
+  city_stays: [{ when: "before", city: { value: "Agra", quote: "agra zq" }, nights: { value: 2, quote: "2 nights zq" } }],
+  flights: [{ from: "Mumbai", to: "Raipur", quote: "fly to raipur zq" }],
+  requests: [{ value: "honeymoon", quote: "honeymoon zq" }],
+});
 function conversation(c: typeof ctx = ctx) {
   let plan: Plan = emptyPlan(TODAY);
   let flags: ChatFlags = initialFlags(plan);
   return (msg: string) => {
     const r = chatTurn(plan, flags, msg, c, TODAY);
+    for (const gemini of [INVENTED(c), {}]) {
+      const withAI = chatTurn(plan, flags, msg, c, TODAY, { parsed: aiToParsed(checkEvidence(gemini, msg, c).reading, c), source: "ai" });
+      assert.deepEqual(withAI.plan, r.plan, `AI first changed the trip for: ${msg}`);
+    }
     plan = r.plan;
     flags = r.flags;
     return r;

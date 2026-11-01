@@ -1,22 +1,21 @@
 // =====================================================================
-// One reading flow for the trip assistant, so the reader and the AI never disagree:
+// One reading flow for the trip assistant, AI first:
 //   1. memory   - a saved reading of the same enquiry (or the same enquiry with only
 //                 dates, numbers or names changed): used as it is, no AI call
-//   2. reader   - the built-in reader (parse-text.ts) fills the trip checklist
-//   3. AI       - only for what is still missing, and only when the message has words
-//                 the reader could not place. The AI may fill empty fields; it never
-//                 overrides the reader. Where they disagree, the sales person is asked.
+//   2. AI       - every message (except a short reply to the assistant's own question).
+//                 Each value must quote the words of the message that say it (evidence.ts);
+//                 what has no valid quote is dropped, never guessed
+//   3. reader   - the built-in reader (parse-text.ts): the whole reading when the AI is off,
+//                 fails or times out; otherwise it fills only what the AI left empty
+//                 (mergeAiFirst). There is no "I read X, the AI read Y" question.
 // Everything from memory or the AI goes through aiToParsed (checked against master data).
 // Pure, so it is tested without a database or the network.
 // =====================================================================
 
 import type { ISODate } from "@/lib/sales/pricing/types";
 import { addDays } from "@/lib/sales/pricing/dates";
-import { countryName } from "@/lib/sales/countries";
-import { fmtDate } from "@/lib/sales/format";
-import { applyRules, aliasesOf, fixTripWords, scrubForAI, type Ask, type ParsedPark, type ParsedTrip } from "./parse-text";
+import { applyRules, scrubForAI, type Ask, type ParsedPark, type ParsedTrip } from "./parse-text";
 import type { BuilderContext, Plan } from "./types";
-import type { CheckItem } from "./checklist";
 
 // ---------------------------------------------------------------- normalising
 
@@ -230,20 +229,13 @@ export function pickPattern(rows: ReadingPattern[], key: string, tokens: Token[]
   return null;
 }
 
-// ---------------------------------------------------------------- when the AI helps
+// ---------------------------------------------------------------- when the AI is asked
 
-// The AI is asked only when the checklist still has open questions AND the message has
-// words the reader could not place (or the reader found no trip at all). When every word
-// was read and something is still missing, it was not in the message: the sales person
-// is asked, and the AI would only guess.
-export function aiShouldHelp(input: { gaps: readonly unknown[]; unknownWords: string[]; stops: number }): boolean {
-  if (!input.gaps.length) return false;
-  return input.unknownWords.length > 0 || input.stops === 0;
+// Every message goes to the AI first (when it is switched on), except a short reply to the
+// assistant's own question ("cottage", "same", "7 and 12", "3"): those are the reader's.
+export function isShortAnswer(text: string, pending: string | null | undefined): boolean {
+  return !!pending && pending !== "parks" && text.trim().length <= 30;
 }
-
-// The checklist questions still open, as told to the AI ("Stop 1: Bandhavgarh: how many nights?").
-export const gapsOf = (checklist: CheckItem[] | undefined) => (checklist ?? []).filter((c) => !c.ok);
-export const gapText = (gaps: CheckItem[]) => gaps.map((g) => `${g.label}: ${g.text}`).slice(0, 12);
 
 // ---------------------------------------------------------------- merging
 
@@ -281,217 +273,150 @@ function defined<T extends object>(o: T): Partial<T> {
   return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && !(Array.isArray(v) && !v.length))) as Partial<T>;
 }
 
-// What the AI filled, in words for the chat ("AI helped with: dates, nights").
-export type Filled = "guests" | "nationality" | "dates" | "arrival" | "departure" | "route" | "nights" | "lodge" | "room" | "safaris" | "experiences" | "flights" | "city nights" | "meal plan";
+// What the built-in reader added to the AI's reading, in words for the chat.
+export type Filled = "guests" | "nationality" | "dates" | "arrival" | "departure" | "route" | "nights" | "lodge" | "room" | "safaris" | "experiences" | "flights" | "city nights" | "meal plan" | "transport" | "requests";
 
-// The AI fills only what the reader left empty. Where both read something and it differs,
-// the reader's value stays in the plan and the sales person gets one clear question (with
-// both answers as one-click replies), asked before the price. Nothing is picked silently.
-// With the message text, the text decides first: a value only one of them read that the message
-// itself says ("3 nigths waghoba": 3 nights) is taken without a question; a list one of them
-// read in full (all the flights or city nights the other found, and more) is taken too. A
-// question is left only when the message supports both readings, in plain words
-// ("How many nights at Tadoba: 1 or 3?").
-const NUM_WORD: Record<number, string> = { 1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten" };
-const numRe = (n: number) => `(?:${n}|${NUM_WORD[n] ?? n})`;
-// does the text say "<n> <unit>" (near one of the names, when given)?
-export function textSays(text: string, n0: number, unit: string, near: string[] = []): boolean {
-  const low = fixTripWords(text).toLowerCase();
-  const re = new RegExp(`\\b${numRe(n0)}\\s*(?:${unit})\\b`);
-  if (!near.length) return re.test(low);
-  // the number written right next to the name: "3 nights (at) Kanha", "Kanha 3 nights",
-  // "Kanha - 3 nights", "Kanha for 3 nights" (after a comma it belongs to the next place)
-  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return near.some((name) => {
-    const n = esc(name);
-    const before = new RegExp(`\\b${numRe(n0)}\\s*(?:${unit})\\s+(?:stay\\s+)?(?:(?:at|in)\\s+)?(?:the\\s+)?${n}\\b`);
-    const after = new RegExp(`\\b${n}\\s*(?:[-:(]\\s*|for\\s+|stay(?:ing)?\\s+(?:for\\s+)?)?${numRe(n0)}\\s*(?:${unit})\\b`);
-    return before.test(low) || after.test(low);
-  });
-}
-// a list that holds every item of the other one, and more
-const holdsAll = (big: string[], small: string[]) => {
-  const left = [...big.map((x) => x.toLowerCase())];
-  for (const x of small.map((y) => y.toLowerCase())) {
-    const i = left.indexOf(x);
-    if (i < 0) return false;
-    left.splice(i, 1);
-  }
-  return big.length > small.length;
+const FIELD_WORD: Partial<Record<keyof ParsedTrip, Filled>> = {
+  adults: "guests",
+  children: "guests",
+  rooms: "guests",
+  nationality: "nationality",
+  country: "nationality",
+  arrival_date: "dates",
+  departure_date: "dates",
+  arrival_place: "arrival",
+  departure_place: "departure",
+  meal_plan: "meal plan",
+  arrival_mode: "transport",
+  departure_mode: "transport",
+  between: "transport",
+  own_all: "transport",
+  requests: "requests",
+  flights: "flights",
+  cityStays: "city nights",
+};
+const PARK_WORD: Partial<Record<keyof ParsedPark, Filled>> = { nights: "nights", lodge: "lodge", room: "room", roomName: "room", safaris: "safaris", naturalists: "safaris", extras: "experiences" };
+
+const empty = (v: unknown) => v === undefined || v === null || (Array.isArray(v) && v.length === 0);
+// the list holds every item of the other, in the same order, and more
+const holdsInOrder = (big: string[], small: string[]) => {
+  let i = 0;
+  for (const x of big) if (i < small.length && x.toLowerCase() === small[i].toLowerCase()) i++;
+  return i === small.length && big.length > small.length;
 };
 
-export function fillGaps(rule: ParsedTrip, ai: ParsedTrip, text = ""): { parsed: ParsedTrip; filled: Filled[]; asks: Ask[] } {
-  const out: ParsedTrip = { ...rule, parks: rule.parks.map((p) => ({ ...p })) };
-  // is the lodge named in the message ("Tree House Bandhavgarh", "kings")?
-  const lowText = text.toLowerCase();
-  const lodgeSaid = (lodge: string) => {
-    const w = lodge.toLowerCase().split(/\s+/);
-    return !!text && [w.join(" "), w.slice(0, -1).join(" ")].some((x) => x.length >= 4 && lowText.includes(x));
-  };
-  // which reading the message itself backs: "ai", "rule", or null (both or neither)
-  const backed = (r: number, a: number, unit: string, near: string[] = []): "ai" | "rule" | null => {
-    if (!text) return null;
-    const sr = textSays(text, r, unit, near);
-    const sa = textSays(text, a, unit, near);
-    return sa && !sr ? "ai" : sr && !sa ? "rule" : null;
-  };
-  const filled = new Set<Filled>();
-  const asks: Ask[] = [];
-  const ask = (key: string, text: string, quick: string[]) => asks.push({ key: `conflict:${key}`, text, quick: [...new Set(quick)] });
-  const short = (park: string) => {
-    const a = aliasesOf(park).filter((x) => !x.includes(" ")).sort((x, y) => x.length - y.length)[0] ?? park;
-    return a.charAt(0).toUpperCase() + a.slice(1);
-  };
-  const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+// AI first. The AI's reading (already through the evidence rule, evidence.ts, and checked
+// against Master data, aiToParsed) is the reading. The built-in reader only fills what the AI
+// left empty: a field, a detail of a stop, a stop or a flight the AI gave no quote for. It
+// never overrides a value the AI quoted from the message. There is no "I read X, the AI read
+// Y" question: what is missing or genuinely unclear is asked by the checklist, in plain words.
+export function mergeAiFirst(ai: ParsedTrip, rule: ParsedTrip): { parsed: ParsedTrip; fromReader: Filled[] } {
+  const added = new Set<Filled>();
+  const out: ParsedTrip = { ...ai, parks: ai.parks.map((p) => ({ ...p })) };
+  const o = out as unknown as Record<string, unknown>;
 
-  // ---- guests
-  if (rule.adults === undefined && ai.adults !== undefined) { out.adults = ai.adults; filled.add("guests"); }
-  else if (rule.adults !== undefined && ai.adults !== undefined && ai.adults !== rule.adults) {
-    const b = backed(rule.adults, ai.adults, "adults?|pax|guests?|people|persons");
-    if (b === "ai") { out.adults = ai.adults; filled.add("guests"); }
-    else if (b !== "rule") ask("adults", `How many adults: ${rule.adults} or ${ai.adults}?`, [plural(rule.adults, "adult"), plural(ai.adults, "adult")]);
-  }
-  if (!rule.children?.length && ai.children?.length) { out.children = ai.children; filled.add("guests"); }
-  else if (rule.children?.length && ai.children?.length && rule.children.join() !== ai.children.join())
-    ask("children", `Which children: aged ${rule.children.join(" and ")}, or aged ${ai.children.join(" and ")}?`, [
-      `${rule.children.length} ${rule.children.length === 1 ? "child" : "children"} aged ${rule.children.join(" and ")}`,
-      `${ai.children.length} ${ai.children.length === 1 ? "child" : "children"} aged ${ai.children.join(" and ")}`,
-    ]);
-  if (rule.rooms === undefined && ai.rooms !== undefined) { out.rooms = ai.rooms; filled.add("guests"); }
-  else if (rule.rooms !== undefined && ai.rooms !== undefined && ai.rooms !== rule.rooms) {
-    const b = backed(rule.rooms, ai.rooms, "rooms?");
-    if (b === "ai") { out.rooms = ai.rooms; filled.add("guests"); }
-    else if (b !== "rule") ask("rooms", `How many rooms: ${rule.rooms} or ${ai.rooms}?`, [plural(rule.rooms, "room"), plural(ai.rooms, "room")]);
+  // ---- every field the AI left empty, from the reader
+  for (const [k, v] of Object.entries(rule) as [keyof ParsedTrip, unknown][]) {
+    if (k === "parks" || k === "flights" || k === "cityStays" || k === "asks" || k === "notes") continue;
+    if (empty(o[k]) && !empty(v) && !(k === "replaceRoute" && v === false)) {
+      o[k] = v;
+      const w = FIELD_WORD[k];
+      if (w) added.add(w);
+    }
   }
 
-  // ---- nationality
-  const nat = (p: ParsedTrip) => p.country ?? p.nationality;
-  if (nat(rule) === undefined && nat(ai) !== undefined) {
-    out.country = ai.country;
-    out.nationality = ai.nationality;
-    filled.add("nationality");
-  } else if (rule.country && ai.country && rule.country !== ai.country) {
-    const say = (c: string) => (c === "IN" ? "Indian guests" : `from ${countryName(c) || c}`);
-    ask("country", `Where are the guests from: ${countryName(rule.country) || rule.country} or ${countryName(ai.country) || ai.country}?`, [say(rule.country), say(ai.country)]);
-  } else if (!rule.country && !ai.country && rule.nationality && ai.nationality && rule.nationality !== ai.nationality) {
-    ask("nationality", `Are the guests ${rule.nationality} or ${ai.nationality}?`, [`${rule.nationality} guests`, `${ai.nationality} guests`]);
-  }
-
-  // ---- date
-  if (!rule.arrival_date && ai.arrival_date) { out.arrival_date = ai.arrival_date; filled.add("dates"); }
-  else if (rule.arrival_date && ai.arrival_date && rule.arrival_date !== ai.arrival_date)
-    ask("date", `When do they arrive: ${fmtDate(rule.arrival_date)} or ${fmtDate(ai.arrival_date)}?`, [`arriving ${fmtDate(rule.arrival_date)}`, `arriving ${fmtDate(ai.arrival_date)}`]);
-
-  // ---- the way in and out
-  // The arrival place is where our car picks them up for the safari part (after any flight).
-  // With a city night before the first lodge and a flight out of that city ("1 night Delhi,
-  // fly to Jabalpur"), an AI that names the city (or its airport) as the arrival means the
-  // same trip: not a disagreement, and not a place to fill in. The same for the way out.
-  const cityNights = rule.cityStays?.length ? rule.cityStays : ai.cityStays ?? [];
-  const flown = rule.flights?.length ? rule.flights : ai.flights ?? [];
-  const lodges = rule.parks.length || ai.parks.length;
-  const inCity = (place: string, city: string) => place.toLowerCase().includes(city.toLowerCase().trim());
-  // In a trip with several cities (Delhi, Kaziranga, Delhi again, Bhopal...), any city the guests
-  // stay in and fly from or to is part of the route, never a second answer for the pick-up.
-  const cityOfTrip = (place: string, way: "from" | "to") =>
-    cityNights.some((c) => !!c.city && inCity(place, c.city) && flown.some((f) => inCity(way === "from" ? f.from : f.to, c.city)));
-  const flyInCity = (place: string) =>
-    cityNights.some((c) => c.when === "before" && !c.at && !!c.city && inCity(place, c.city) && flown.some((f) => inCity(f.from, c.city))) || (lodges > 1 && cityOfTrip(place, "from"));
-  const flyOutCity = (place: string) =>
-    cityNights.some((c) => c.when === "after" && (c.at === undefined || c.at >= lodges) && !!c.city && inCity(place, c.city) && flown.some((f) => inCity(f.to, c.city))) || (lodges > 1 && cityOfTrip(place, "to"));
-  if (!rule.arrival_place && ai.arrival_place && !flyInCity(ai.arrival_place)) { out.arrival_place = ai.arrival_place; filled.add("arrival"); }
-  else if (rule.arrival_place && ai.arrival_place && rule.arrival_place !== ai.arrival_place && !flyInCity(ai.arrival_place))
-    ask("arrival", `Where does our car pick them up for the safari part: ${rule.arrival_place} or ${ai.arrival_place}?`, [`arrive at ${rule.arrival_place}`, `arrive at ${ai.arrival_place}`]);
-  if (!rule.departure_place && ai.departure_place && !flyOutCity(ai.departure_place)) { out.departure_place = ai.departure_place; filled.add("departure"); }
-  else if (rule.departure_place && ai.departure_place && rule.departure_place !== ai.departure_place && !flyOutCity(ai.departure_place))
-    ask("departure", `Where do they leave from: ${rule.departure_place} or ${ai.departure_place}?`, [`leave from ${rule.departure_place}`, `leave from ${ai.departure_place}`]);
-
-  // ---- the route
-  if (!rule.parks.length && ai.parks.length) {
-    out.parks = ai.parks;
-    filled.add("route");
-  } else if (rule.parks.length && ai.parks.length) {
-    const seq = (ps: ParsedPark[]) => ps.map((p) => p.name).join(">");
-    if (seq(rule.parks) !== seq(ai.parks)) {
-      const said = (ps: ParsedPark[]) => ps.map((p) => `${short(p.name)}${p.nights ? ` ${p.nights}n` : ""}`).join(", ");
-      ask("route", `Please check the route: ${said(rule.parks)}. It could also be read as ${said(ai.parks)}. Reply "keep" or type the right route.`, ["Keep this route"]);
+  // ---- the stops: the AI's, each detail it left empty from the reader's same stop. Stops the
+  // AI gave no quote for (it named fewer, in the same order) come from the reader.
+  const fillStop = (a: ParsedPark, r: ParsedPark | undefined): ParsedPark => {
+    if (!r) return a;
+    const p = { ...a } as Record<string, unknown>;
+    for (const [k, v] of Object.entries(r)) {
+      if (empty(p[k]) && !empty(v)) {
+        p[k] = v;
+        const w = PARK_WORD[k as keyof ParsedPark];
+        if (w) added.add(w);
+      }
+    }
+    return p as unknown as ParsedPark;
+  };
+  if (!ai.parks.length) {
+    out.parks = rule.parks;
+    if (rule.parks.length) added.add("route");
+  } else {
+    const sameNames = (ps: ParsedPark[]) => ps.map((p) => p.name);
+    if (holdsInOrder(sameNames(rule.parks), sameNames(ai.parks))) {
+      // the reader found every stop the AI quoted, and more: the reader's list, the AI's details first
+      let i = 0;
+      out.parks = rule.parks.map((r) => {
+        if (i < ai.parks.length && ai.parks[i].name === r.name) return fillStop(ai.parks[i++], r);
+        added.add("route");
+        return r;
+      });
     } else {
-      out.parks = rule.parks.map((r, i) => {
-        const a = ai.parks[i];
-        const p = { ...r };
-        const name = short(r.name);
-        if (r.nights === undefined && a.nights !== undefined) { p.nights = a.nights; filled.add("nights"); }
-        else if (r.nights !== undefined && a.nights !== undefined && r.nights !== a.nights) {
-          const near = [...aliasesOf(r.name), ...(r.lodge ? [r.lodge.toLowerCase(), r.lodge.toLowerCase().split(" ")[0]] : [])];
-          const b = backed(r.nights, a.nights, "n|nts?|nights?", near);
-          if (b === "ai") { p.nights = a.nights; filled.add("nights"); }
-          else if (b !== "rule") ask(`nights:${i}`, `How many nights at ${name}: ${r.nights} or ${a.nights}?`, [`make ${name} ${plural(r.nights, "night")}`, `make ${name} ${plural(a.nights, "night")}`]);
-        }
-        if (!r.lodge && a.lodge) { p.lodge = a.lodge; filled.add("lodge"); }
-        else if (r.lodge && a.lodge && r.lodge !== a.lodge && lodgeSaid(a.lodge) && !lodgeSaid(r.lodge)) { p.lodge = a.lodge; filled.add("lodge"); }
-        else if (r.lodge && a.lodge && r.lodge !== a.lodge && !(lodgeSaid(r.lodge) && !lodgeSaid(a.lodge)))
-          ask(`lodge:${i}`, `Which lodge at ${name}: ${r.lodge} or ${a.lodge}?`, [`${name} at ${r.lodge}`, `${name} at ${a.lodge}`]);
-        if (!r.room && !r.roomName && a.room) { p.room = a.room; filled.add("room"); }
-        if (r.safaris === undefined && a.safaris !== undefined) { p.safaris = a.safaris; filled.add("safaris"); }
-        else if (r.safaris !== undefined && a.safaris !== undefined && r.safaris !== a.safaris && backed(r.safaris, a.safaris, "(?:jeep\\s+)?safaris?", aliasesOf(r.name)) === "ai") { p.safaris = a.safaris; filled.add("safaris"); }
-        else if (r.safaris !== undefined && a.safaris !== undefined && r.safaris !== a.safaris && backed(r.safaris, a.safaris, "(?:jeep\\s+)?safaris?", aliasesOf(r.name)) !== "rule")
-          ask(`safaris:${i}`, `How many safaris at ${name}: ${r.safaris} or ${a.safaris}?`, [`${name} ${plural(r.safaris, "safari")}`, `${name} ${plural(a.safaris, "safari")}`]);
-        if (r.naturalists === undefined && a.naturalists !== undefined) { p.naturalists = a.naturalists; filled.add("safaris"); }
-        if (!r.extras?.length && a.extras?.length) { p.extras = a.extras; filled.add("experiences"); }
-        return p;
+      // the AI's stops; each matched with the reader's stop of the same park (in turn)
+      const used = new Set<number>();
+      out.parks = ai.parks.map((a) => {
+        const j = rule.parks.findIndex((r, k) => !used.has(k) && r.name === a.name && (!a.lodge || !r.lodge || r.lodge === a.lodge));
+        if (j >= 0) used.add(j);
+        return fillStop(a, j >= 0 ? rule.parks[j] : undefined);
       });
     }
   }
-  // edits only the AI understood ("pench pehle karo"): taken when the reader read none
-  if (!rule.order?.length && ai.order?.length) { out.order = ai.order; filled.add("route"); }
-  if (!rule.removeParks?.length && ai.removeParks?.length) { out.removeParks = ai.removeParks; filled.add("route"); }
-  if (rule.reverse === undefined && ai.reverse) { out.reverse = true; filled.add("route"); }
-  // "new plan: ...": a whole new route, when the AI's stops are the ones the reader read too
-  if (!rule.replaceRoute && ai.replaceRoute && out.parks.length && !asks.some((a) => a.key === "conflict:route")) {
-    out.replaceRoute = true;
-    filled.add("route");
+
+  // ---- flights and city nights: the AI's list; the reader's when it holds all of them and more
+  const legs = (f: ParsedTrip["flights"]) => (f ?? []).map((x) => `${x.from}>${x.to}`);
+  if (empty(ai.flights) && !empty(rule.flights)) {
+    out.flights = rule.flights;
+    added.add("flights");
+  } else if (!empty(rule.flights) && holdsInOrder(legs(rule.flights), legs(ai.flights))) {
+    out.flights = rule.flights;
+    added.add("flights");
+  }
+  const stays = (c: ParsedTrip["cityStays"]) => (c ?? []).map((x) => `${x.city}`);
+  if (empty(ai.cityStays) && !empty(rule.cityStays)) {
+    out.cityStays = rule.cityStays;
+    added.add("city nights");
+  } else if (!empty(rule.cityStays) && holdsInOrder(stays(rule.cityStays), stays(ai.cityStays))) {
+    // the reader's list (it knows where each night sits); the AI's hotel for the night it named,
+    // matched in order (each AI night once)
+    const left = [...(ai.cityStays ?? [])];
+    out.cityStays = rule.cityStays!.map((r) => {
+      const k = left.findIndex((x) => x.city.toLowerCase() === r.city.toLowerCase() && x.nights === r.nights);
+      const a = k >= 0 ? left.splice(k, 1)[0] : undefined;
+      return a?.hotel && !r.hotel ? { ...r, hotel: a.hotel } : r;
+    });
+    added.add("city nights");
+  } else if (!empty(ai.cityStays) && !empty(rule.cityStays)) {
+    // the same nights in both: the reader's positions between the lodges, the AI's hotels
+    out.cityStays = ai.cityStays!.map((a, k) => {
+      const r = rule.cityStays![k];
+      return r && r.city.toLowerCase() === a.city.toLowerCase() ? { ...a, at: a.at ?? r.at, hotel: a.hotel ?? r.hotel, want_extras: r.want_extras } : a;
+    });
   }
 
-  // ---- flights and city nights
-  const legs = (f: ParsedTrip["flights"]) => (f ?? []).map((x) => `${x.from}>${x.to}`).join(", ");
-  if (!rule.flights?.length && ai.flights?.length) { out.flights = ai.flights; filled.add("flights"); }
-  else if (rule.flights?.length && ai.flights?.length && legs(rule.flights).toLowerCase() !== legs(ai.flights).toLowerCase()) {
-    const rl = rule.flights.map((x) => `${x.from}>${x.to}`);
-    const al = ai.flights.map((x) => `${x.from}>${x.to}`);
-    if (holdsAll(al, rl)) { out.flights = ai.flights; filled.add("flights"); }
-    else if (!holdsAll(rl, al))
-      ask("flights", `Please check the flights: ${legs(rule.flights).replace(/>/g, " to ")}. They could also be read as ${legs(ai.flights).replace(/>/g, " to ")}. Reply "keep" or type the right flights.`, ["Keep these flights"]);
-  }
-  const stays = (c: ParsedTrip["cityStays"]) => (c ?? []).map((x) => `${x.city} ${x.nights}`).join(", ");
-  if (!rule.cityStays?.length && ai.cityStays?.length) { out.cityStays = ai.cityStays; filled.add("city nights"); }
-  else if (rule.cityStays?.length && ai.cityStays?.length && stays(rule.cityStays).toLowerCase() !== stays(ai.cityStays).toLowerCase()) {
-    const rl = rule.cityStays.map((x) => `${x.city} ${x.nights}`);
-    const al = ai.cityStays.map((x) => `${x.city} ${x.nights}`);
-    if (holdsAll(al, rl)) { out.cityStays = ai.cityStays; filled.add("city nights"); }
-    else if (!holdsAll(rl, al))
-      ask("city", `Please check the city nights: ${stays(rule.cityStays)}. They could also be read as ${stays(ai.cityStays)}. Reply "keep" or type them again.`, ["Keep these city nights"]);
-  }
+  // ---- the trip date is the day they reach the first lodge. "20 Apr 2027 1 night Delhi": an AI
+  // that gives the day they land in Delhi is the same trip as the reader's 21 Apr (that day plus
+  // the city nights before the first lodge): the lodge day is kept.
+  const lead = (out.cityStays ?? []).filter((c) => c.when === "before" && !c.at).reduce((t, c) => t + c.nights, 0);
+  if (ai.arrival_date && rule.arrival_date && lead > 0 && addDays(ai.arrival_date, lead) === rule.arrival_date) out.arrival_date = rule.arrival_date;
 
-  if (!rule.meal_plan && ai.meal_plan) { out.meal_plan = ai.meal_plan; filled.add("meal plan"); }
-
-  // names the AI gave that are not in master data (dropped by aiToParsed): asked, never guessed
-  for (const a of ai.asks ?? []) if (!asks.some((x) => x.key === a.key)) asks.push(a);
-
-  out.asks = [...(rule.asks ?? []), ...asks];
-  return { parsed: out, filled: [...filled], asks };
+  // ---- what is unclear (names not in Master data, the reader's own questions), and its notes.
+  // A question of the reader that the AI's quoted values answer is not asked ("How old are the
+  // children?" when the message says "7 aur 12 saal" and the AI quoted it).
+  const answered = (key: string) =>
+    (key === "ages" && !empty(ai.children)) ||
+    (key === "date" && !!ai.arrival_date) ||
+    (key === "flight-time" && (ai.flights ?? []).some((f) => !!f.time));
+  const asks: Ask[] = [];
+  for (const a of [...(rule.asks ?? []), ...(ai.asks ?? [])]) if (!asks.some((x) => x.key === a.key) && !answered(a.key)) asks.push(a);
+  out.asks = asks;
+  out.notes = rule.notes;
+  return { parsed: out, fromReader: [...added] };
 }
 
 // Where the reading came from, shown small under the assistant's reply.
-export function sourceNote(source: "memory" | "reader" | "ai", filled: Filled[] = []): string {
+export function sourceNote(source: "memory" | "reader" | "ai", fromReader: Filled[] = []): string {
   if (source === "memory") return "from memory";
-  if (source === "ai" && filled.length) return `AI helped with: ${filled.join(", ")}`;
+  if (source === "ai") return fromReader.length ? `read by the AI; the built-in reader added: ${fromReader.join(", ")}` : "read by the AI";
   return "built-in reader";
-}
-
-// Which reading a message gets: memory when a saved pattern matches (no AI call, even with
-// gaps), the AI when it may help (above) and is switched on, otherwise the reader alone.
-export function chooseSource(input: { memoryHit: boolean; aiOn: boolean; gaps: CheckItem[]; unknownWords: string[]; stops: number }): "memory" | "ai" | "reader" {
-  if (input.memoryHit) return "memory";
-  if (input.aiOn && aiShouldHelp(input)) return "ai";
-  return "reader";
 }

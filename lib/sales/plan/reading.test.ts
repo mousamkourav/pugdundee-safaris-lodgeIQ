@@ -1,33 +1,33 @@
-// The one reading flow: memory first, then the built-in reader, the AI only for gaps.
+// The one reading flow, AI first: memory, then the AI (every value quoted from the message),
+// the built-in reader filling only what the AI left empty, or reading alone without the AI.
 // Run with:  npx tsx --test lib/sales/plan/reading.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { aiToParsed } from "./ai";
 import { chatTurn, initialFlags } from "./chat";
+import { checkEvidence } from "./evidence";
 import { emptyPlan } from "./planner";
-import { extractTrip, unknownWords } from "./parse-text";
-import { cityHotels, safariOnly } from "./cities";
 import { DELHI_KAZIRANGA, jorhatCtx as ctx, READER_TODAY as TODAY } from "./reader-fixture";
-import { chooseSource, dateOf, fillGaps, gapsOf, normaliseEnquiry, patternFromPlan, pickPattern, structureOf } from "./reading";
-import type { Plan } from "./types";
+import { dateOf, isShortAnswer, mergeAiFirst, normaliseEnquiry, patternFromPlan, pickPattern, structureOf } from "./reading";
+import type { BuilderContext, Plan } from "./types";
 
 const route = (p: Plan) => p.stops.map((s) => `${s.park_id} ${s.nights} ${s.property_id}`);
-const first = (msg: string, extra?: Parameters<typeof chatTurn>[5]) => {
+const first = (msg: string, extra?: Parameters<typeof chatTurn>[5], c: BuilderContext = ctx) => {
   const p = emptyPlan(TODAY);
-  return chatTurn(p, initialFlags(p), msg, ctx, TODAY, extra);
+  return chatTurn(p, initialFlags(p), msg, c, TODAY, extra);
 };
+// what the server does with Gemini's answer: the evidence rule, then the browser's master-data check
+const ai = (answer: unknown, msg: string, c: BuilderContext = ctx) => ({ parsed: aiToParsed(checkEvidence(answer, msg, c).reading, c), source: "ai" as const });
 
-// What Gemini answered for the enquiry of 30 Oct 2026 (the misread): Kings Lodge, Kanha 2, Pench 1.
+// What Gemini answered for the enquiry of 30 Oct 2026 (the misread): Kings Lodge, Kanha 2, Pench 1,
+// with quotes the message does not have.
 const MISREAD = {
-  replace_route: true,
-  arrival_date: "2027-04-02",
-  arrival_place: "Jabalpur Airport",
-  departure_place: "Jorhat Airport",
+  replace_route: { value: true, quote: "starting 1st april" },
   stops: [
-    { park: "Bandhavgarh National Park", lodge: "Kings Lodge", nights: 3 },
-    { park: "Kanha National Park", nights: 2 },
-    { park: "Pench National Park", nights: 1 },
-    { park: "Kaziranga National Park", lodge: "Iora Retreat", nights: 3 },
+    { park: { value: "Bandhavgarh National Park", quote: "Tree House Bandhavgarh" }, lodge: { value: "Kings Lodge", quote: "kings lodge bandhavgarh" }, nights: { value: 3, quote: "3 nights Tree House" } },
+    { park: { value: "Kanha National Park", quote: "3 nights Kanha" }, nights: { value: 2, quote: "kanha 2 nights" } },
+    { park: { value: "Pench National Park", quote: "2 nights Pench" }, nights: { value: 1, quote: "2 nights Pench" } },
+    { park: { value: "Kaziranga National Park", quote: "3 nights Kaziranga" }, lodge: { value: "Iora Retreat", quote: "Iora" }, nights: { value: 3, quote: "3 nights Kaziranga" } },
   ],
 };
 
@@ -45,68 +45,63 @@ test("the shape of an enquiry: dates and numbers taken out in order", () => {
   assert.equal(dateOf("31/02", TODAY), null);
 });
 
-test("the AI cannot override the reader: the misread answer leaves Tree House 3, Kanha 3, Pench 2", () => {
-  const r = first(DELHI_KAZIRANGA, { parsed: aiToParsed(MISREAD, ctx), source: "ai" });
+test("the misread AI answer: what the message does not say is thrown away, the trip stays right", () => {
+  const { reading, dropped } = checkEvidence(MISREAD, DELHI_KAZIRANGA, ctx);
+  // Kings Lodge and Iora (not in the message), Kanha 2 ("Kanha, 2 nights" is two parts of the
+  // trip, across a comma) and Pench 1 (the quote says 2) are dropped
+  assert.deepEqual(
+    dropped.map((d) => `${d.field}: ${d.reason}`),
+    ["stops[0].lodge: quote not in the message", "stops[1].nights: quote not in the message", "stops[2].nights: quote does not say it", "stops[3].lodge: quote not in the message"]
+  );
+  assert.equal((reading.stops as { lodge?: string }[])[0].lodge, undefined);
+  const r = first(DELHI_KAZIRANGA, ai(MISREAD, DELHI_KAZIRANGA));
   assert.deepEqual(route(r.plan), ["BAN 3 THH", "KAN 3 KEL", "PEN 2 PTL", "KAZ 3 IORA"]);
   assert.equal(r.plan.arrival_location_id, "JLR");
-  // the message itself says "Tree House Bandhavgarh", "3 nights Kanha", "2 nights Pench": the AI's
-  // other reading is not a question (31 Oct 2026: ask only when the message supports both)
-  const asks = r.reply.checklist?.filter((c) => c.key.startsWith("ask:conflict:")).map((c) => c.key);
-  assert.deepEqual(asks, []);
+  // and no "I read X, the AI read Y" question
+  assert.ok(!r.reply.checklist?.some((c) => c.key.startsWith("ask:conflict:")));
 });
 
-test("the message decides between the reader and the AI; a question only when it supports both", () => {
-  const rule = { parks: [{ name: "Tadoba-Andhari Tiger Reserve", nights: 1, lodge: "Waghoba Eco Lodge" }], notes: [] };
-  const ai = { parks: [{ name: "Tadoba-Andhari Tiger Reserve", nights: 3, lodge: "Waghoba Eco Lodge" }], notes: [] };
-  // "3 nigths waghoba": the message says 3, so the AI's 3 is taken without a question
-  let g = fillGaps(rule, ai, "2 nights pench, 3 nigths waghoba than delhi");
-  assert.equal(g.parsed.parks[0].nights, 3);
-  assert.deepEqual(g.asks, []);
-  // nothing next to the park: one plain question
-  g = fillGaps(rule, ai, "tadoba at waghoba, a few nights");
-  assert.equal(g.parsed.parks[0].nights, 1); // the reader's value stays until answered
-  assert.equal(g.asks[0].text, "How many nights at Tadoba: 1 or 3?");
-  // a fuller list of city nights from the AI (the reader missed one) is taken
-  g = fillGaps(
-    { parks: [], notes: [], cityStays: [{ when: "before", city: "Delhi", nights: 1 }, { when: "after", city: "Delhi", nights: 1, at: 1 }] },
-    { parks: [], notes: [], cityStays: [{ when: "before", city: "Delhi", nights: 1 }, { when: "after", city: "Delhi", nights: 1, at: 1 }, { when: "after", city: "Delhi", nights: 1 }] },
-    "x"
+test("AI first: a value the AI quoted wins; the reader fills only what the AI left empty", () => {
+  const rule = { parks: [{ name: "Tadoba-Andhari Tiger Reserve", nights: 1, lodge: "Waghoba Eco Lodge" }], notes: [], adults: 2 };
+  const aiP = { parks: [{ name: "Tadoba-Andhari Tiger Reserve", nights: 3 }], notes: [] };
+  const { parsed, fromReader } = mergeAiFirst(aiP, rule);
+  assert.equal(parsed.parks[0].nights, 3); // the AI's quoted 3, not the reader's 1
+  assert.equal(parsed.parks[0].lodge, "Waghoba Eco Lodge"); // the AI gave no lodge: the reader's
+  assert.equal(parsed.adults, 2);
+  assert.deepEqual(fromReader.sort(), ["guests", "lodge"]);
+  assert.deepEqual(parsed.asks, []); // never a question about the two readings
+  // a fuller list of city nights from the reader (the AI quoted fewer) is taken
+  const g = mergeAiFirst(
+    { parks: [], notes: [], cityStays: [{ when: "before", city: "Delhi", nights: 1, hotel: "Roseate House" }] },
+    { parks: [], notes: [], cityStays: [{ when: "before", city: "Delhi", nights: 1 }, { when: "after", city: "Delhi", nights: 1, at: 1 }] }
   );
-  assert.equal(g.parsed.cityStays?.length, 3);
-  assert.deepEqual(g.asks, []);
+  assert.deepEqual(g.parsed.cityStays?.map((c) => [c.city, c.at ?? null, c.hotel ?? null]), [["Delhi", null, "Roseate House"], ["Delhi", 1, null]]);
+  // a stop the AI did not quote, in the same order: the reader's list, the AI's details kept
+  const s = mergeAiFirst({ parks: [{ name: "Pench National Park", nights: 2 }], notes: [] }, { parks: [{ name: "Kanha National Park", nights: 3 }, { name: "Pench National Park" }], notes: [] });
+  assert.deepEqual(s.parsed.parks.map((p) => [p.name, p.nights]), [["Kanha National Park", 3], ["Pench National Park", 2]]);
 });
 
-test("the AI fills only what the reader left empty, and says so", () => {
-  const msg = "kanha, 2 adults indian, 16 jan 27, jabalpur in out";
-  // the reader reads Kanha with no nights; the AI read 3
-  assert.ok(first(msg).flags.nightsUnknown.includes("KAN"));
-  const ai = aiToParsed({ stops: [{ park: "Kanha National Park", nights: 3 }], adults: 4 }, ctx);
-  const r = first(msg, { parsed: ai, source: "ai" });
+test("the reader fills what the AI left empty, and says so under the reply", () => {
+  const msg = "kanha 3 nights, 2 adults indian, 16 jan 27, jabalpur in out";
+  const answer = { stops: [{ park: { value: "Kanha National Park", quote: "kanha 3 nights" }, nights: { value: 3, quote: "3 nights" } }], adults: { value: 4, quote: "4 adults" } };
+  const r = first(msg, ai(answer, msg));
   assert.equal(r.plan.stops[0].nights, 3);
-  assert.equal(r.plan.guest.adults, 2); // the reader's 2, not the AI's 4...
-  assert.match(r.reply.source ?? "", /^AI helped with: nights/);
-  // ...and not asked: the message says "2 adults"
-  assert.ok(!r.reply.checklist?.some((c) => c.key === "ask:conflict:adults"));
+  assert.equal(r.plan.guest.adults, 2); // "4 adults" is not in the message: the reader's 2
+  assert.match(r.reply.source ?? "", /^read by the AI; the built-in reader added: .*guests/);
 });
 
 test("a name the AI gives that is not in master data is dropped and asked about", () => {
-  const ai = aiToParsed({ stops: [{ park: "Ranthambore", nights: 2 }, { park: "Kanha National Park", lodge: "Kanha Jungle Palace", nights: 3 }] }, ctx);
-  assert.deepEqual(ai.parks.map((p) => [p.name, p.lodge]), [["Kanha National Park", undefined]]);
-  assert.deepEqual(ai.asks?.map((a) => a.key), ["unknown:ranthambore", "unknown:kanha jungle palace"]);
-  const { asks } = fillGaps({ parks: [], notes: [] }, ai);
-  assert.match(asks[0].text, /"Ranthambore" is not in Master data/);
+  const a = aiToParsed({ stops: [{ park: "Ranthambore", nights: 2 }, { park: "Kanha National Park", lodge: "Kanha Jungle Palace", nights: 3 }] }, ctx);
+  assert.deepEqual(a.parks.map((p) => [p.name, p.lodge]), [["Kanha National Park", undefined]]);
+  assert.deepEqual(a.asks?.map((x) => x.key), ["unknown:ranthambore", "unknown:kanha jungle palace"]);
+  assert.match(mergeAiFirst(a, { parks: [], notes: [] }).parsed.asks![0].text, /"Ranthambore" is not in Master data/);
 });
 
-test("the AI is asked only when something is missing AND the message has words the reader could not place", () => {
-  const r = first("kanha 3 nights");
-  const gaps = gapsOf(r.reply.checklist);
-  assert.ok(gaps.length > 0);
-  // every word read: the missing details were simply not said, so the sales person is asked
-  assert.equal(chooseSource({ memoryHit: false, aiOn: true, gaps, unknownWords: unknownWords("kanha 3 nights", ctx), stops: 1 }), "reader");
-  assert.equal(chooseSource({ memoryHit: false, aiOn: true, gaps, unknownWords: ["jhakaas"], stops: 1 }), "ai");
-  assert.equal(chooseSource({ memoryHit: false, aiOn: false, gaps, unknownWords: ["jhakaas"], stops: 0 }), "reader");
-  // a full reading with nothing missing never calls the AI
-  assert.equal(chooseSource({ memoryHit: false, aiOn: true, gaps: [], unknownWords: ["jhakaas"], stops: 3 }), "reader");
+test("a short reply to the assistant's own question skips the AI", () => {
+  for (const t of ["cottage", "same", "7 and 12", "3", "tree house please"]) assert.equal(isShortAnswer(t, "room"), true, t);
+  assert.equal(isShortAnswer("kanha 3 nights then pench 2 nights, 2 adults from UK", "room"), false);
+  assert.equal(isShortAnswer("cottage", null), false); // nothing was asked: a new message
+  assert.equal(isShortAnswer("kanha 3n", "parks"), false); // "which parks?": the route, read in full
 });
 
 test("a saved pattern is read from memory: no AI call, and the quoted trip comes back", () => {
@@ -119,12 +114,9 @@ test("a saved pattern is read from memory: no AI call, and the quoted trip comes
   };
   const pattern = patternFromPlan(DELHI_KAZIRANGA, saved, ctx, TODAY);
   assert.ok(pattern);
-
-  // the same enquiry again: an exact hit, which wins over a checklist with gaps and the AI switched on
   const key = normaliseEnquiry(DELHI_KAZIRANGA);
   const hit = pickPattern([pattern], key, structureOf(key, TODAY).tokens, TODAY);
   assert.ok(hit?.exact);
-  assert.equal(chooseSource({ memoryHit: !!hit, aiOn: true, gaps: gapsOf(first(DELHI_KAZIRANGA).reply.checklist), unknownWords: ["x"], stops: 0 }), "memory");
   const r = first(DELHI_KAZIRANGA, { parsed: aiToParsed(hit.reading, ctx), source: "memory" });
   assert.deepEqual(route(r.plan), ["BAN 3 THH", "KAN 4 KEL", "PEN 2 PTL", "KAZ 3 IORA"]);
   assert.equal(r.plan.guest.adults, 2);
@@ -136,7 +128,6 @@ test("a saved pattern is read from memory: no AI call, and the quoted trip comes
 test("the same enquiry with other dates and numbers is read from memory too; an unclear one is not", () => {
   const read = first(DELHI_KAZIRANGA).plan;
   const pattern = patternFromPlan(DELHI_KAZIRANGA, read, ctx, TODAY)!;
-  // 5th may and Pench 4 nights: every old number has one new number
   const next = DELHI_KAZIRANGA.replace("starting 1st april", "starting 5th may").replace("2 nights Pench", "4 nights Pench");
   const key = normaliseEnquiry(next);
   assert.equal(structureOf(key, TODAY).structure, pattern.structure);
@@ -145,7 +136,6 @@ test("the same enquiry with other dates and numbers is read from memory too; an 
   const r = first(next, { parsed: aiToParsed(hit.reading, ctx), source: "memory" });
   assert.deepEqual(route(r.plan), ["BAN 3 THH", "KAN 3 KEL", "PEN 4 PTL", "KAZ 3 IORA"]);
   assert.equal(r.plan.days[0].date, "2027-05-05");
-  // Kanha 4 nights: the old "3" would become both 3 and 4, so it is not the same enquiry
   const unclear = normaliseEnquiry(DELHI_KAZIRANGA.replace("3 nights Kanha", "4 nights Kanha"));
   assert.equal(pickPattern([pattern], unclear, structureOf(unclear, TODAY).tokens, TODAY), null);
 });
@@ -155,40 +145,31 @@ test("the built-in reader alone says so", () => {
 });
 
 // Stand-in for the Thompson enquiry (31 Oct 2026): a Delhi night first, then a flight
-// Delhi -> Jabalpur; at the end a flight back to Delhi and a Delhi night. The arrival is
-// where our car picks them up for the safari part (Jabalpur), so an AI that says
-// "Delhi Airport (IGI)" agrees with the reader.
+// Delhi -> Jabalpur; at the end a flight back to Delhi and a Delhi night.
 const THOMPSON =
   "Thompson family, 2 adults from UK, 10 feb 1 night delhi, next day fly to jabalpur, kanha 3 nights, bandhavgarh kings lodge 2 nights, back to jabalpur for the flight to delhi, 1 night delhi";
-const igi = { ...ctx, locations: ctx.locations.map((l) => (l.id === "DEL" ? { ...l, name: "Delhi Airport (IGI)" } : l)) };
-const firstIgi = (msg: string, extra?: Parameters<typeof chatTurn>[5]) => {
-  const p = emptyPlan(TODAY);
-  return chatTurn(p, initialFlags(p), msg, igi, TODAY, extra);
-};
+const igi: BuilderContext = { ...ctx, locations: ctx.locations.map((l) => (l.id === "DEL" ? { ...l, name: "Delhi Airport (IGI)" } : l)) };
 
-test("a Delhi night and a flight to Jabalpur: the AI's Delhi arrival is no conflict (the Thompson enquiry)", () => {
-  const rule = firstIgi(THOMPSON);
-  assert.deepEqual([rule.plan.arrival_location_id, rule.plan.departure_location_id], ["JLR", "JLR"]);
-  assert.deepEqual(rule.plan.city_stays?.map((c) => [c.when, c.city, c.nights]), [["before", "Delhi", 1], ["after", "Delhi", 1]]);
-  const ai = aiToParsed({ arrival_place: "Delhi Airport (IGI)", departure_place: "Delhi Airport (IGI)", stops: [{ park: "Kanha National Park", nights: 3 }, { park: "Bandhavgarh National Park", lodge: "Kings Lodge", nights: 2 }] }, igi);
-  assert.equal(ai.arrival_place, "Delhi Airport (IGI)");
-  const r = firstIgi(THOMPSON, { parsed: ai, source: "ai" });
+test("Thompson: an AI that quotes Delhi as the arrival still gives the Jabalpur pick-up (the flights decide), no question", () => {
+  const answer = {
+    arrival_place: { value: "Delhi Airport (IGI)", quote: "1 night delhi" },
+    departure_place: { value: "Delhi Airport (IGI)", quote: "flight to delhi" },
+    stops: [
+      { park: { value: "Kanha National Park", quote: "kanha 3 nights" }, nights: { value: 3, quote: "kanha 3 nights" } },
+      { park: { value: "Bandhavgarh National Park", quote: "bandhavgarh kings lodge" }, lodge: { value: "Kings Lodge", quote: "kings lodge" }, nights: { value: 2, quote: "kings lodge 2 nights" } },
+    ],
+  };
+  const r = first(THOMPSON, ai(answer, THOMPSON, igi), igi);
   assert.deepEqual([r.plan.arrival_location_id, r.plan.departure_location_id], ["JLR", "JLR"]);
-  const asks = (r.reply.checklist ?? []).map((c) => c.key);
-  assert.ok(!asks.includes("ask:conflict:arrival") && !asks.includes("ask:conflict:departure"), asks.join(", "));
+  assert.deepEqual(route(r.plan), ["KAN 3 KEL", "BAN 2 KL"]);
   assert.doesNotMatch(r.reply.text, /Where do they arrive|Where does our car pick them up/);
-  // with no arrival read, the AI's Delhi is not filled in either (Delhi is before the flight)
-  const filled = fillGaps({ ...extractFor(THOMPSON), arrival_place: undefined }, ai).parsed;
-  assert.equal(filled.arrival_place, undefined);
 });
 
-test("a real arrival disagreement is still asked, as where our car picks them up", () => {
-  const ai = aiToParsed({ arrival_place: "Nagpur Airport" }, igi);
-  const r = firstIgi(THOMPSON, { parsed: ai, source: "ai" });
-  assert.match(r.reply.text, /^Where does our car pick them up for the safari part: Jabalpur Airport or Nagpur Airport\?/);
-  assert.deepEqual(r.reply.quick?.map((q) => q.text), ["arrive at Jabalpur Airport", "arrive at Nagpur Airport"]);
+test("Thompson: an arrival the message does not say (Nagpur) is dropped, never asked as a conflict", () => {
+  const answer = { arrival_place: { value: "Nagpur Airport", quote: "arriving nagpur" } };
+  const { dropped } = checkEvidence(answer, THOMPSON, igi);
+  assert.deepEqual(dropped.map((d) => d.field), ["arrival_place"]);
+  const r = first(THOMPSON, ai(answer, THOMPSON, igi), igi);
+  assert.equal(r.plan.arrival_location_id, "JLR");
+  assert.doesNotMatch(r.reply.text, /Nagpur/);
 });
-
-function extractFor(msg: string) {
-  return extractTrip(msg, safariOnly(igi), TODAY, cityHotels(igi));
-}

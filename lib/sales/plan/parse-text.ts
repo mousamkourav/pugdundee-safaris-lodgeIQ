@@ -1052,7 +1052,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   return out;
 }
 
-const REQUESTS: [RegExp, string][] = [
+export const REQUESTS: [RegExp, string][] = [
   [/\bphotograph(?:er|ers|y|ic)\b|\bphoto\s*(?:tour|trip|safari)s?\b/, "photographers"],
   [/\bhoney\s?moon(?:ers?|ing)?\b/, "honeymoon"],
   [/\banniversary\b/, "anniversary"],

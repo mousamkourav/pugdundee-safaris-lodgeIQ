@@ -181,3 +181,7 @@ export const TEST_JORHAT_1 =
   "Test Jorhat, 2 adults from UK, 1 room. 20 Apr 2027 1 night Delhi at Roseate House, 21 Apr flight Delhi to Jabalpur, Tree House Hideaway 3 nights, Kanha Earth Lodge 3 nights, Waghoba 4 nights, 1 May flight Nagpur to Delhi, 1 night Delhi at Roseate House";
 export const TEST_JORHAT_2 = "2 May flight Delhi to Jorhat, Iora Retreat 3 nights, 5 May flight Jorhat to Delhi";
 export const TEST_JORHAT = `${TEST_JORHAT_1}, ${TEST_JORHAT_2}`;
+
+// The French Kaziranga enquiry of 31 Oct 2026, as typed (misspelt, no word "flight").
+export const FRANCE_MISSPELT =
+  "guest coming from france to delhi one night stay to delhi than kaziranga 2 night stay than come back to delhi one night stay then they will go to bhopal than satpura stay 2 nights safaris with naturalist, than kanha 2 nights safaris, 2 nights pench, 3 nigths waghoba than delhi from nagpur and 1 night stay in the delhi in this journey they will experience if any lodge is having any unique expeirence that should also cover and all the safaris are with naturalist";

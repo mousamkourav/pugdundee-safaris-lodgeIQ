@@ -8,7 +8,7 @@ import { chatTurn, initialFlags, type ChatFlags } from "./chat";
 import { emptyPlan, buildDays, noDriveBetweenRegions, planToTrip } from "./planner";
 import { fixTripWords } from "./parse-text";
 import { DAY_STEP, itemStep, transferStep } from "./day-order";
-import { roseateCtx as ctx } from "./reader-fixture";
+import { FRANCE_MISSPELT, roseateCtx as ctx } from "./reader-fixture";
 import type { Plan, PlanDay } from "./types";
 
 const TODAY = "2026-10-31";
@@ -25,9 +25,6 @@ function conversation() {
 }
 const roads = (p: Plan) => planToTrip(p, TODAY).transfers.map((t) => `${t.from_location_id}>${t.to_location_id}`);
 
-// the enquiry of 31 Oct 2026, as typed
-export const FRANCE_MISSPELT =
-  "guest coming from france to delhi one night stay to delhi than kaziranga 2 night stay than come back to delhi one night stay then they will go to bhopal than satpura stay 2 nights safaris with naturalist, than kanha 2 nights safaris, 2 nights pench, 3 nigths waghoba than delhi from nagpur and 1 night stay in the delhi in this journey they will experience if any lodge is having any unique expeirence that should also cover and all the safaris are with naturalist";
 // the same trip, spelt right and with the flights written
 const FRANCE_PLAIN =
   "2 guests from France arriving Delhi, 1 night in Delhi, fly Delhi to Jorhat, Kaziranga 2 nights, fly Jorhat to Delhi, 1 night in Delhi, fly Delhi to Bhopal, Satpura 2 nights, Kanha 2 nights, Pench 2 nights, Waghoba 3 nights, fly Nagpur to Delhi, 1 night in Delhi. All safaris with naturalist, and each lodge's unique experiences";

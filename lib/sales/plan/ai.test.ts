@@ -3,6 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { aiToParsed, buildPrompt, planToExample, similarExamples } from "./ai";
+import { readerCtx } from "./reader-fixture";
 import { chatTurn, initialFlags } from "./chat";
 import { emptyPlan } from "./planner";
 import { scrubForAI } from "./parse-text";
@@ -148,8 +149,14 @@ test("learning: a saved quote becomes an example, and similar enquiries find it"
   assert.equal(similarExamples(all, "3 log tadoba 2 raat phir pench 2 raat nagpur se")[0].expected, "A");
 });
 
-test("the AI is told only what is missing", () => {
-  const prompt = buildPrompt({ message: "kanha teen raat", history: [], plan: emptyPlan(TODAY), ctx, glossary: [], examples: [], today: TODAY, gaps: ["Stop 1: Kanha: how many nights?"] });
-  assert.match(prompt, /ONLY THESE DETAILS ARE MISSING[^\n]*\n- Stop 1: Kanha: how many nights\?/);
-  assert.doesNotMatch(buildPrompt({ message: "x", history: [], plan: emptyPlan(TODAY), ctx, glossary: [], examples: [], today: TODAY }), /ONLY THESE/);
+test("AI first: the AI reads the whole message and must quote the words for every value", () => {
+  const prompt = buildPrompt({ message: "kanha teen raat", history: [], plan: emptyPlan(TODAY), ctx, glossary: [], examples: [], today: TODAY });
+  assert.match(prompt, /EVIDENCE RULE/);
+  assert.ok(prompt.includes('{"value": ..., "quote": "..."}'));
+  assert.match(prompt, /Never choose a lodge, a room, a number of nights, safaris or ages the message does not state/);
+  assert.doesNotMatch(prompt, /ONLY THESE DETAILS ARE MISSING/);
+  // master data with each lodge's experiences, and the special requests it may give
+  const full = buildPrompt({ message: "x", history: [], plan: emptyPlan(TODAY), ctx: readerCtx, glossary: [], examples: [], today: TODAY });
+  assert.match(full, /Ken River Lodge \(rooms: [^)]*\) \[experiences: [^\]]*Night boat safari/);
+  assert.match(prompt, /SPECIAL REQUESTS \(use only these\): photographers, honeymoon/);
 });

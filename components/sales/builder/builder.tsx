@@ -13,10 +13,9 @@ import { chatTurn, greeting, initialFlags, nextQuestion, type ChatFlags, type Ch
 import { closureFor } from "@/lib/sales/pricing/engine";
 import type { BuilderContext, Plan } from "@/lib/sales/plan/types";
 import { learnFromConfirmation, saveItinerary } from "@/app/(dashboard)/sales/new/actions";
-import { assistReading } from "@/app/(dashboard)/sales/new/ai-actions";
+import { assistReading, type AssistResult } from "@/app/(dashboard)/sales/new/ai-actions";
 import { aiToParsed } from "@/lib/sales/plan/ai";
-import { unknownWords } from "@/lib/sales/plan/parse-text";
-import { aiShouldHelp, gapText, gapsOf } from "@/lib/sales/plan/reading";
+import { isShortAnswer } from "@/lib/sales/plan/reading";
 import { canUpdateInPlace, defaultVersionMode, type VersionMode } from "@/lib/sales/versions";
 import { isConfirmed, markConfirmed } from "@/lib/sales/plan/confirm";
 import { quoteChecks } from "@/lib/sales/plan/checks";
@@ -302,21 +301,24 @@ export function Builder({
   }
 
   // ---- chat
-  // The plan as last shown, to know whether a later, better reading may replace it.
+  // The trip as it is now: an answer that comes back from the server applies to it (a field
+  // changed by hand while the AI was reading is kept).
   const planRef = useRef(plan);
+  const flagsRef = useRef(flags);
   useEffect(() => {
     planRef.current = plan;
-  }, [plan]);
-  // Shows a chat result; with "over", in place of that earlier result (same message).
-  function apply(res: ChatResult, over?: ChatResult): ChatResult {
+    flagsRef.current = flags;
+  }, [plan, flags]);
+  // Shows a chat result.
+  function apply(res: ChatResult): ChatResult {
     const r = res.routeChanged && daysEdited ? { ...res, reply: { ...res.reply, warnings: [...(res.reply.warnings ?? []), "The route changed, so the day texts were rewritten."] } } : res;
     setPlan(() => r.plan);
     setFlags(r.flags);
-    if (r.routeChanged || over) {
+    if (r.routeChanged) {
       setBuiltKey(routeKey(r.plan));
       setDaysEdited(false);
     }
-    setMessages((m) => (over ? m.map((x) => (x === over.reply ? r.reply : x)) : [...m, r.reply]));
+    setMessages((m) => [...m, r.reply]);
     if (r.reply.action === "review") setStep(1); // "check the trip": the Confirm step
     return r;
   }
@@ -325,38 +327,41 @@ export function Builder({
     setMessages((m) => [...m, { role: "user", text }]);
     setChatBusy(true);
     try {
-      // One reading (lib/sales/plan/reading.ts). The built-in reader first, here and at once.
-      // Then, in one call: the memory of saved quotes (a new trip only), and the AI only for
-      // what is still missing when the message has words the reader could not place. Short
-      // replies to the assistant's own questions ("cottage", "3") never go to the AI.
-      const r = chatTurn(plan, flags, text, ctx, today);
-      const shortAnswer = !!flags.pending && flags.pending !== "parks" && text.trim().length <= 30;
-      const fresh = !plan.stops.length && text.trim().length >= 15;
-      const gaps = gapsOf(r.reply.checklist);
-      const unknown = unknownWords(text, ctx);
-      const wantAI = aiAvailable && !shortAnswer && text.trim().length > 3 && aiShouldHelp({ gaps, unknownWords: unknown, stops: r.plan.stops.length });
-      if (fresh) setFirstEnquiry((e) => e ?? text);
-      // the reader's answer is shown at once; a better reading (memory, AI) replaces it below
-      const later = fresh || wantAI;
-      const shown = apply(later ? { ...r, reply: { ...r.reply, source: wantAI ? "built-in reader; asking the AI about the gaps..." : "built-in reader; checking the memory..." } } : r);
-      if (!later) return;
-      let better: ChatResult | null = null;
-      let note = "built-in reader";
+      // One reading, AI first (lib/sales/plan/reading.ts): the server tries the memory of saved
+      // quotes (a new trip only), then the AI, whose every value must quote the message
+      // (evidence.ts). The built-in reader fills what the AI left empty, and reads alone when
+      // the AI is off, fails or takes too long. A short reply to the assistant's own question
+      // ("cottage", "same", "7 and 12") is read here at once and never sent.
+      if (!plan.stops.length && text.trim().length >= 15) setFirstEnquiry((e) => e ?? text);
+      if (isShortAnswer(text, flags.pending) || text.trim().length <= 3) {
+        apply(chatTurn(plan, flags, text, ctx, today));
+        return;
+      }
+      let more: AssistResult;
       try {
         const history = messages.filter((m) => m.text).map((m) => ({ role: m.role, text: m.text }));
-        // never wait longer than 50 s: then the built-in reader's answer stays
-        const more = await Promise.race([
-          assistReading({ message: text, history, planJson: JSON.stringify(plan), gaps: gapText(gaps), unknownWords: unknown, wantAI }),
-          new Promise<{ source: "reader"; reading?: undefined; error: string }>((ok) => setTimeout(() => ok({ source: "reader", error: "The AI took too long; the built-in reader was used." }), 50_000)),
+        // never wait longer than 50 s: then the built-in reader reads
+        more = await Promise.race([
+          assistReading({ message: text, history, planJson: JSON.stringify(plan) }),
+          new Promise<AssistResult>((ok) => setTimeout(() => ok({ source: "reader", error: "The AI took too long; the built-in reader was used." }), 50_000)),
         ]);
-        if ((more.source === "memory" || more.source === "ai") && more.reading) better = chatTurn(plan, flags, text, ctx, today, { parsed: aiToParsed(more.reading, ctx), source: more.source });
-        else if (more.error && wantAI) note = "built-in reader (AI not available)"; // said quietly: the assistant keeps working
       } catch {
-        if (wantAI) note = "built-in reader (AI not reachable)";
+        more = { source: "reader", error: "The AI could not be reached; the built-in reader was used." };
       }
-      // replaced only if nothing was changed by hand in the meantime
-      if (better && planRef.current === shown.plan) apply(better, shown);
-      else setMessages((m) => m.map((x) => (x === shown.reply ? { ...shown.reply, source: note } : x)));
+      const now = planRef.current;
+      const nowFlags = flagsRef.current;
+      const r =
+        (more.source === "memory" || more.source === "ai") && more.reading
+          ? chatTurn(now, nowFlags, text, ctx, today, { parsed: aiToParsed(more.reading, ctx), source: more.source })
+          : chatTurn(now, nowFlags, text, ctx, today);
+      // said quietly under the reply: the assistant keeps working without the AI
+      const note =
+        more.source === "reader" && aiAvailable && more.error
+          ? "built-in reader (AI not available)"
+          : more.source === "ai" && more.dropped
+            ? `${r.reply.source}; ${more.dropped} AI value${more.dropped === 1 ? "" : "s"} not said in the message left out`
+            : r.reply.source;
+      apply({ ...r, reply: { ...r.reply, source: note } });
     } catch {
       setMessages((m) => [...m, { role: "assistant", text: "Something went wrong while reading that. Please try again, or use the form on the right." }]);
     } finally {

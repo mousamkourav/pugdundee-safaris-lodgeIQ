@@ -12,7 +12,7 @@ import { countryName, findPhone } from "@/lib/sales/countries";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 import type { ISODate } from "@/lib/sales/pricing/types";
 import { ROOM_MATCH, aliasesOf, extractTrip, lodgeNamedIn, locationAliases, matchByName, roomWishIn, type Ask, type ParsedTrip, type RoomWish } from "./parse-text";
-import { fillGaps, mergeMemory, sourceNote, type Filled } from "./reading";
+import { mergeAiFirst, mergeMemory, sourceNote, type Filled } from "./reading";
 import { buildDays, defaultStop, defaultVehicle, emptyPlan, farLegs, lodgesInPark, masterHotelRate, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems, segments } from "./planner";
 import { addDays } from "@/lib/sales/pricing/dates";
 import type { BuilderContext, Plan, PlanStop } from "./types";
@@ -214,14 +214,15 @@ export function chatTurn(
   // ---- read the message
   let parsed = extractTrip(msg, ctx, today, cityHotels(full));
   // One reading (lib/sales/plan/reading.ts): a saved reading from memory comes first (a
-  // person checked it); otherwise the built-in reader's, with the AI filling only what it
-  // left empty. Where the AI and the reader disagree, the sales person is asked.
+  // person checked it); otherwise the AI's (every value quoted from the message, evidence.ts),
+  // with the built-in reader filling only what the AI left empty. Without the AI (off, failed,
+  // timed out, a short reply): the built-in reader alone.
   const ruleParsed = parsed;
   let filled: Filled[] = [];
   if (extra?.source === "memory") parsed = mergeMemory(extra.parsed, parsed);
-  else if (extra?.source === "ai") ({ parsed, filled } = fillGaps(parsed, extra.parsed, msg));
-  // A lodge counts only when the message names it. The AI sometimes picks one by itself
-  // (Kings Lodge for "Bandhavgarh 3 nights"); then the guest is asked which lodge instead.
+  else if (extra?.source === "ai") ({ parsed, fromReader: filled } = mergeAiFirst(extra.parsed, parsed));
+  // A lodge counts only when the message names it (a last guard behind the evidence rule):
+  // a lodge the message does not name is dropped, and the guest is asked which lodge instead.
   if (extra?.source === "ai") {
     parsed = {
       ...parsed,
@@ -375,8 +376,6 @@ export function chatTurn(
         chips.push(`children aged ${ages.join(", ")}`);
       }
     }
-    // a disagreement between the reader and the AI: the reply already changed the plan, or kept it
-    if (answering.key.startsWith("conflict:") && chips.length === before) chips.push("kept as read");
     // anything else is kept word for word with the trip, so nothing said is lost
     if (chips.length === before && !parsed.adults && !parsed.parks.length && !parsed.arrival_date) {
       next.guest.notes = [next.guest.notes.trim(), `${answering.text} Answer: ${msg}`].filter(Boolean).join("\n").slice(0, 2000);
@@ -826,11 +825,11 @@ export function nextQuestion(
   const problems = routeProblems(plan, ctx);
   if (problems.length) return { text: `I cannot plan this yet: ${problems.join(" ")}`, pending: null, warnings: [], ready: false };
   const askOf = (key: string) => (f.asks ?? []).find((a) => a.key === key);
-  // The reader and the AI read the message differently (reading.ts): asked first, one at a
-  // time, because it is about what was written, not about what is missing.
-  const conflict = (f.asks ?? []).find((a) => a.key.startsWith("conflict:") || a.key.startsWith("unknown:"));
-  if (conflict) {
-    return { text: conflict.text, pending: "ask", askFor: conflict.key, quick: conflict.quick?.map((q) => ({ label: q, text: q })), warnings: [], ready: false };
+  // A name that is not in Master data (dropped, never guessed): asked first, one at a time,
+  // because it is about what was written, not about what is missing.
+  const unknownName = (f.asks ?? []).find((a) => a.key.startsWith("unknown:"));
+  if (unknownName) {
+    return { text: unknownName.text, pending: "ask", askFor: unknownName.key, quick: unknownName.quick?.map((q) => ({ label: q, text: q })), warnings: [], ready: false };
   }
   if (f.nightsUnknown.length) {
     const n = ctx.pricing.parks.find((p) => p.id === f.nightsUnknown[0])?.name ?? "the park";

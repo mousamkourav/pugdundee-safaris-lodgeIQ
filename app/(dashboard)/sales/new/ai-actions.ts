@@ -7,21 +7,23 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { scrubForAI } from "@/lib/sales/plan/parse-text";
 import { loadBuilderContext, todayIST } from "@/lib/sales/plan/load-context";
 import { sanitizePlan } from "@/lib/sales/plan/sanitize";
-import { buildPrompt, type GlossaryRow } from "@/lib/sales/plan/ai";
+import { buildPrompt, similarExamples, type Example, type GlossaryRow } from "@/lib/sales/plan/ai";
+import { checkEvidence, type Dropped } from "@/lib/sales/plan/evidence";
 import { normaliseEnquiry, pickPattern, structureOf, type ReadingPattern, type Token } from "@/lib/sales/plan/reading";
 import { timed } from "@/lib/timing";
 
-// The second reading of a chat message (lib/sales/plan/reading.ts), after the built-in
-// reader has read it in the browser:
+// The reading of a chat message, AI first (lib/sales/plan/reading.ts):
 //   1. memory: a quote already saved for the same enquiry (or the same with only dates,
 //      numbers or names changed). No AI call.
-//   2. Gemini, only for what the checklist still misses, and only when the message has
-//      words the reader could not place. It may fill gaps; it never overrides the reader
-//      (fillGaps, in the browser). Used when Sales settings has "AI reading" on and
-//      GEMINI_API_KEY is set in Vercel (never in the DB).
+//   2. Gemini, for every message the browser sends (a short reply to the assistant's own
+//      question is read in the browser and never sent). Each value must quote the words of
+//      the message that say it: checkEvidence keeps only those (evidence.ts), here on the
+//      server, so a value without evidence never reaches the trip. The built-in reader then
+//      fills, in the browser, only what the AI left empty (mergeAiFirst).
+//   Used when Sales settings has "AI reading" on and GEMINI_API_KEY is set in Vercel (never
+//   in the DB). Any failure (no key, credit run out, limit reached, timeout, odd answer)
+//   gives { source: "reader" }: the built-in reader reads the message, the assistant goes on.
 // Guest names, emails and phone numbers are removed before anything is sent or saved.
-// Any failure (no key, credit run out, limit reached, timeout, odd answer) leaves the
-// built-in reader's reading in place: the assistant always keeps working.
 
 // GEMINI_MODEL in Vercel (the owner sets gemini-3.1-flash-lite). Thinking off, temperature 0,
 // JSON out, 20 s per try, one retry when Google is busy (429 / 503). The page allows 60 s.
@@ -90,13 +92,13 @@ export interface AssistInput {
   message: string;
   history: { role: "user" | "assistant"; text: string }[];
   planJson: string;
-  gaps: string[]; // the checklist questions still open after the built-in reader
-  unknownWords: string[]; // words in the message the reader could not place
-  wantAI: boolean; // the browser's decision (aiShouldHelp); checked again here
 }
 export interface AssistResult {
   source: "memory" | "ai" | "reader";
-  reading?: unknown; // the AI answer shape; the browser maps it with aiToParsed (checked against master data)
+  // memory: a saved reading; ai: the AI's values that passed the evidence rule. Both in the
+  // plain shape the browser maps with aiToParsed (checked against Master data).
+  reading?: unknown;
+  dropped?: number; // AI values thrown away (no quote, or the quote does not say it)
   error?: string;
 }
 
@@ -109,7 +111,6 @@ async function assistReadingUnsafe(input: AssistInput): Promise<AssistResult> {
   const supabase = await createClient();
   const { ctx } = await loadBuilderContext();
   const today = todayIST();
-  const gaps = (Array.isArray(input.gaps) ? input.gaps : []).filter((g): g is string => typeof g === "string").slice(0, 12);
 
   // 1. memory: only for an enquiry typed into an empty trip (that is what was saved)
   if (!plan.stops.length && message.trim().length >= 15) {
@@ -128,39 +129,51 @@ async function assistReadingUnsafe(input: AssistInput): Promise<AssistResult> {
           .update({ hits: (hit.pattern.hits ?? 0) + 1, last_used_at: new Date().toISOString() })
           .eq("id", hit.pattern.id!)
           .then(() => undefined, () => undefined);
-        await log(supabase, { userId: cu.user.id, message: key, result: hit.reading, source: "memory", ms: 0, gaps });
+        await log(supabase, { userId: cu.user.id, message: key, result: hit.reading, source: "memory", ms: 0 });
         return { source: "memory", reading: hit.reading };
       }
     }
   }
 
-  // 2. the AI, only for gaps. Whether it may help (aiShouldHelp) is decided in the browser, on
-  // the reader's reading of this message; here: something must be missing, and the AI on.
-  if (!input.wantAI || !gaps.length || !(await aiEnabled())) return { source: "reader" };
-
-  const gl = await supabase.from("sales_glossary").select("term, meaning").eq("active", true).limit(300);
+  // 2. the AI, for the whole message
+  if (!(await aiEnabled())) return { source: "reader" };
+  const [gl, pt] = await Promise.all([
+    supabase.from("sales_glossary").select("term, meaning").eq("active", true).limit(300),
+    // similar enquiries this team quoted (Reading memory): for understanding, never as values
+    supabase.from("sales_reading_patterns").select("key, reading").order("last_used_at", { ascending: false, nullsFirst: false }).limit(300),
+  ]);
   const glossary = ((gl.data ?? []) as GlossaryRow[]).filter((g) => g.term && g.meaning);
-  // what the AI is told: the message, the gaps, our master data (no past quotes: those are the memory now)
-  const prompt = buildPrompt({ message, history: (input.history ?? []).slice(-8), plan, ctx, glossary, examples: [], today, gaps });
+  const said = scrubForAI(message, [plan.guest.name]);
+  const saved = ((pt.error ? [] : pt.data ?? []) as { key: string; reading: unknown }[]).map((r): Example => ({ message: r.key, expected: JSON.stringify(r.reading) }));
+  const examples = similarExamples(saved, normaliseEnquiry(said, ctx.readerRules ?? []), 3);
+  const prompt = buildPrompt({ message, history: (input.history ?? []).slice(-8), plan, ctx, glossary, examples, today });
   const started = Date.now();
   const res = await callGemini(prompt);
-  await log(supabase, { userId: cu.user.id, message: scrubForAI(message, [plan.guest.name]), result: res.json ?? null, error: res.error, source: "ai", ms: Date.now() - started, gaps, model: MODEL });
-  if (res.error || res.json === undefined) return { source: "reader", error: res.error ?? "No answer from the AI." };
-  return { source: "ai", reading: res.json };
+  if (res.error || res.json === undefined) {
+    await log(supabase, { userId: cu.user.id, message: said, result: null, error: res.error, source: "ai", ms: Date.now() - started, model: MODEL });
+    return { source: "reader", error: res.error ?? "No answer from the AI." };
+  }
+  // the evidence rule: a value the message does not say is dropped here, never guessed
+  const { reading, dropped } = checkEvidence(res.json, said, ctx);
+  await log(supabase, { userId: cu.user.id, message: said, result: { answer: res.json, kept: reading, dropped }, source: "ai", ms: Date.now() - started, model: MODEL, dropped });
+  return { source: "ai", reading, dropped: dropped.length };
 }
 
-// sales_chat_log: what was read, by what, how long it took (no names, emails or phone
-// numbers). Before sales_reading_patterns.sql the new columns are missing: then the old row.
+// sales_chat_log: what was read, by what, how long it took, what the evidence rule dropped
+// (no names, emails or phone numbers). Before sales_reading_patterns.sql the new columns are
+// missing: then the old row.
 async function log(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  e: { userId: string; message: string; result: unknown; error?: string; source: "memory" | "ai"; ms: number; gaps: string[]; model?: string }
+  e: { userId: string; message: string; result: unknown; error?: string; source: "memory" | "ai"; ms: number; model?: string; dropped?: Dropped[] }
 ) {
   const row = { created_by: e.userId, message: e.message.slice(0, 2000), result: e.result ?? null, error: e.error ?? null, model: e.model ?? null };
-  const full = await supabase.from("sales_chat_log").insert({ ...row, source: e.source, duration_ms: e.ms, gaps: e.gaps.length ? e.gaps : null });
+  // the "gaps" column now lists the AI values the evidence rule dropped (field: reason)
+  const gaps = (e.dropped ?? []).map((d) => `${d.field}: ${d.reason}`).slice(0, 40);
+  const full = await supabase.from("sales_chat_log").insert({ ...row, source: e.source, duration_ms: e.ms, gaps: gaps.length ? gaps : null });
   if (full.error) await supabase.from("sales_chat_log").insert(row).then(() => undefined, () => undefined);
 }
 
-// Public action: any unexpected failure comes back as { error } and the reader's reading stays.
+// Public action: any unexpected failure comes back as { source: "reader" } and the reader reads.
 export async function assistReading(input: AssistInput): Promise<AssistResult> {
   return timed("assistReading", async () => {
     const r = await safe("assistReading", () => assistReadingUnsafe(input));

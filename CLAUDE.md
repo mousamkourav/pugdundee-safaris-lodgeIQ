@@ -95,19 +95,24 @@ Middleware (`middleware.ts`) only routes; it is not the security boundary.
 - Server timings: `[timing]` lines in the Vercel logs (`lib/timing.ts`).
 
 ## AI assistant (Sales builder)
-One reading flow (`lib/sales/plan/reading.ts`), so the reader and the AI never disagree:
+One reading flow, AI first (`lib/sales/plan/reading.ts`):
 1. Memory: `sales_reading_patterns` (Master data > Reading memory), saved when a quote is
    saved for the guest. The same enquiry (normalised), or the same with only dates/numbers
    changed, is read from there: no AI call.
-2. The built-in reader (`parse-text.ts`) fills the trip checklist.
-3. Gemini only when the checklist has gaps AND the message has words the reader could not
-   place. It fills empty fields only (`fillGaps`); where it differs from the reader, the
-   sales person is asked one question (the reader's value stays until answered).
-The chat shows where a reading came from ("from memory", "built-in reader", "AI helped with").
-Where the reader and the AI differ, the message decides first (`fillGaps(rule, ai, text)`): a
-value only one of them read that the message itself says is taken; a fuller list of flights /
-city nights is taken; a question (plain words, "How many nights at Tadoba: 1 or 3?") only when
-the message supports both.
+2. Gemini, for every chat message (`assistReading`), except a short reply to the assistant's
+   own question (`isShortAnswer`: "cottage", "same", "7 and 12"), which the reader reads.
+   Evidence rule (`lib/sales/plan/evidence.ts`, `checkEvidence`, on the server): every value
+   comes as `{ value, quote }`; it is kept only when the quote is in the message
+   (case-insensitive, small typos, numbers exact, not across a comma) and states that value
+   (the nights, the ages, the lodge's name...). No valid quote = dropped, never guessed. Then
+   `aiToParsed` checks names against Master data (unknown ones are dropped and asked).
+3. The built-in reader (`parse-text.ts`): the backup. It reads alone when the AI is off,
+   fails, times out or has no credit; otherwise it fills only what the AI left empty
+   (`mergeAiFirst`), never overriding a value the AI quoted. There is no "I read X, the AI
+   read Y" question: only what is missing or unclear is asked.
+The chat shows where a reading came from ("from memory", "read by the AI; the built-in reader
+added: ...", "built-in reader"). `enquiries.test.ts` checks every enquiry with a worst-case
+Gemini too (invented quotes, an empty answer): the trip must not change.
 
 Route rules (do not patch phrases around them):
 - `lib/sales/plan/route.ts` (`resolveRoute`): the places in the order written (city nights and
@@ -139,7 +144,8 @@ Quotes safe even when the reader misreads (builder steps: Trip, Confirm, Plan & 
   city nights and flights added one by one, no reading involved; checked on Confirm like any trip.
 Server action: `assistReading` in `app/(dashboard)/sales/new/ai-actions.ts`; model from
 GEMINI_MODEL (default gemini-3.1-flash-lite), thinking off, temperature 0, 20 s, one retry on
-429/503; every call logged in `sales_chat_log` (model, duration, source, gaps).
+429/503; every call logged in `sales_chat_log` (model, duration, source; the "gaps" column lists
+the AI values the evidence rule dropped, "field: reason").
 `GEMINI_API_KEY` (and optional `GEMINI_MODEL`) live in Vercel env, never in the DB; the
 "AI reading" switch is in Sales settings. Before sending: `scrubForAI()` removes emails,
 phone numbers and guest names (incl. the name in the guest fields). Gemini's answer is

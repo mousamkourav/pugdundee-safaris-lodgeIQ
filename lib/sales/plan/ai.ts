@@ -8,12 +8,16 @@
 //   similarExamples / planToExample - "learning" from quotes already made
 // =====================================================================
 
-import { EXTRA_WORDS, aliasesOf, locationAliases, matchByName, scrubForAI, type Ask, type ParsedTrip, type RoomWish } from "./parse-text";
-import type { BuilderContext, Plan } from "./types";
+import { EXTRA_WORDS, REQUESTS, aliasesOf, locationAliases, matchByName, scrubForAI, type Ask, type ParsedTrip, type RoomWish } from "./parse-text";
+import type { BuilderContext, Plan, TravelMode } from "./types";
 import { cityHotels, safariOnly } from "./cities";
+import { formExperiences } from "./form";
 
 export const EXTRA_KEYWORDS = [...new Set(EXTRA_WORDS.map(([, k]) => k)), "special"];
 const ROOMS: RoomWish[] = ["cottage", "tree", "suite", "deluxe"];
+const MODES: TravelMode[] = ["flight", "train", "own", "transfer"];
+export const REQUEST_NAMES = REQUESTS.map(([, name]) => name);
+const requestsOf = (v: unknown) => [...new Set((Array.isArray(v) ? v : []).filter((r): r is string => typeof r === "string" && REQUEST_NAMES.includes(r)))];
 
 export interface Example {
   message: string;
@@ -33,7 +37,9 @@ export function catalogText(full: BuilderContext): string {
     if (!lodges.length) continue;
     const ls = lodges.map((l) => {
       const rooms = ctx.rooms.filter((r) => r.property_id === l.id).map((r) => r.name);
-      return `${l.name}${rooms.length ? ` (rooms: ${rooms.join(", ")})` : ""}`;
+      // the lodge's experiences (its own add-ons, its park's, the Pugdundee-wide ones it offers)
+      const exp = formExperiences(full, l.id).map((a) => a.name).slice(0, 10);
+      return `${l.name}${rooms.length ? ` (rooms: ${rooms.join(", ")})` : ""}${exp.length ? ` [experiences: ${exp.join(", ")}]` : ""}`;
     });
     lines.push(`- ${park.name}: ${ls.join("; ")}`);
   }
@@ -65,42 +71,48 @@ export function buildPrompt(input: {
   plan: Plan;
   ctx: BuilderContext;
   glossary: GlossaryRow[];
-  examples: Example[];
+  examples: Example[]; // similar enquiries this team quoted (Reading memory), with the trip that was quoted
   today: string;
-  // the checklist questions the built-in reader could not answer: the AI is asked for these only
-  gaps?: string[];
 }): string {
   const { ctx } = input;
   return [
     "You help a safari company's sales team turn a guest enquiry into a trip. Read the LAST MESSAGE (in the light of the conversation and the trip so far) and answer with JSON only.",
-    "The team writes quickly, often in broken English, with spelling mistakes, Hindi or Hinglish words (raat = night, din = day, log / pax / bande = people, bacche = children, phir / fir = then, wapas = back). Understand the meaning.",
+    "The team writes quickly, often in broken English, with spelling mistakes, Hindi or Hinglish words (raat = night, din = day, log / pax / bande = people, bacche = children, saal = years old, phir / fir = then, wapas = back, aur = and). Understand the meaning.",
     `Today is ${input.today}. Dates are YYYY-MM-DD; a date without a year is the next one in the future.`,
     "",
     catalogText(ctx),
     `EXPERIENCE KEYWORDS (use only these): ${EXTRA_KEYWORDS.join(", ")}. "special" means the lodge's own special experiences.`,
+    `SPECIAL REQUESTS (use only these): ${REQUEST_NAMES.join(", ")}.`,
     input.glossary.length ? `TEAM GLOSSARY:\n${input.glossary.map((g) => `- ${g.term} = ${g.meaning}`).join("\n")}` : "",
     "",
+    "EVIDENCE RULE (the most important rule): every value you give is an object {\"value\": ..., \"quote\": \"...\"} where quote is the EXACT words of the LAST MESSAGE that say it (copy them as written, a few words, e.g. \"kanha 2 raat\", \"bacche 7 aur 12 saal\", \"from France\").",
+    "If no words of the message say a value, leave it out (null or an empty array). A value whose quote is not in the message, or does not say that value, is thrown away.",
+    "Never choose a lodge, a room, a number of nights, safaris or ages the message does not state. Never fill a value from the trip so far or from the examples.",
+    "",
     "RULES:",
-    "- Copy park, lodge, room and place names EXACTLY from the lists. Never invent one; use null if unsure.",
-    '- "lodge": only when the message names the lodge; otherwise null. Never choose a lodge yourself, even where a park has only one or two lodges.',
-    '- "3 days" at a lodge means 3 nights. A second lodge in the same park is a separate stop.',
-    '- arrival_place is where the road transfer to the first lodge starts (after any flight). departure_place is where the guests leave from at the end (before any flight).',
-    "- Cities like Delhi are not stops: nights there go in city_stays (before or after the safari, in travel order; there can be several, e.g. Khajuraho then Delhi at the end), flights in flights.",
-    "- safaris = jeep safaris wanted at that stop; naturalists = how many of them with a naturalist (-1 = all). A boat safari is an experience, not a jeep safari.",
+    "- Copy park, lodge, room and place names EXACTLY from the lists (the quote is what the message wrote, e.g. value \"Kanha National Park\", quote \"kanha 3n\"). Never invent one.",
+    '- "lodge": only when the message names the lodge. Never choose one yourself, even where a park has only one or two lodges.',
+    '- "3 days" at a lodge means 3 nights (quote "3 days"). A second lodge in the same park is a separate stop.',
+    '- arrival_date is the day they reach the FIRST LODGE: with city nights before it ("20 Apr 1 night Delhi, fly to Jabalpur"), the date after those nights.',
+    "- arrival_place is where the road transfer to the first lodge starts (after any flight). departure_place is where the guests leave from at the end (before any flight).",
+    "- Cities like Delhi are not stops: nights there go in city_stays, in travel order (when \"before\" the first lodge or \"after\"; at = how many lodges come before it). Flights go in flights.",
+    "- safaris = jeep safaris wanted at that stop; naturalists = how many of them with a naturalist (-1 = all, quote e.g. \"all safaris with naturalist\"). A boat safari is an experience, not a jeep safari.",
     '- room: "cottage", "tree" (tree house), "suite" (forest suite) or "deluxe" (deluxe room), only when said.',
-    '- For a change to the trip so far ("make Pench 2 nights", "add Kanha"), give only what changes and set replace_route false. For a whole new route set replace_route true.',
-    '- "wrong direction" / "reverse" -> reverse true. A new order -> order (park names in the new order). Taking a park out -> remove_parks.',
-    "- Use null or empty arrays for anything not said. Do not guess.",
+    '- arrival_mode / departure_mode: "flight", "train", "own" (their own vehicle) or "transfer" (our car); between: "own" or "ours" (between the lodges); own_all: true for their own vehicle all the way.',
+    '- For a change to the trip so far ("make Pench 2 nights", "add Kanha"), give only what changes. For a whole new route, replace_route {"value": true, "quote": "..."}.',
+    '- "wrong direction" / "reverse" -> reverse. A new order -> order (park names in the new order). Taking a park out -> remove_parks.',
     "",
-    'JSON keys: {"replace_route": bool, "adults": n, "children_ages": [n], "rooms": n, "country": "ISO2", "nationality": "indian"|"foreign", "arrival_date": "YYYY-MM-DD", "arrival_place": name, "departure_place": name,',
-    ' "stops": [{"park": name, "lodge": name, "nights": n, "room": "cottage"|"tree"|"suite"|"deluxe", "safaris": n, "naturalists": n, "extras": [keyword]}],',
-    ' "remove_parks": [name], "order": [name], "reverse": bool, "flights": [{"from": city, "to": city, "time": "HH:MM"}],',
-    ' "city_stays": [{"when": "before"|"after", "city": city, "nights": n, "hotel": name, "price": n}], "meal_plan": "AP"|"MAP"|"CP"|"EP"}',
+    "JSON (every V is {\"value\": ..., \"quote\": \"...\"}; leave out what the message does not say):",
+    '{"replace_route": V(true), "adults": V(n), "children_ages": V([n]), "rooms": V(n), "country": V("ISO2"), "nationality": V("indian"|"foreign"),',
+    ' "arrival_date": V("YYYY-MM-DD"), "arrival_place": V(name), "departure_place": V(name), "meal_plan": V("AP"|"MAP"|"CP"|"EP"),',
+    ' "arrival_mode": V(mode), "departure_mode": V(mode), "between": V("own"|"ours"), "own_all": V(true), "requests": [V(request)],',
+    ' "stops": [{"park": V(name), "lodge": V(name), "nights": V(n), "room": V("cottage"|"tree"|"suite"|"deluxe"), "safaris": V(n), "naturalists": V(n), "extras": [V(keyword)]}],',
+    ' "city_stays": [{"when": "before"|"after", "at": n, "city": V(city), "nights": V(n), "hotel": V(name)}],',
+    ' "flights": [{"from": city, "to": city, "time": "HH:MM", "quote": "the words that say this flight"}],',
+    ' "remove_parks": [V(name)], "order": V([name]), "reverse": V(true)}',
     "",
-    input.examples.length ? `EXAMPLES OF ENQUIRIES THIS TEAM HAS QUOTED (message -> correct JSON):\n${input.examples.map((e) => `Message: ${e.message}\nJSON: ${e.expected}`).join("\n\n")}` : "",
-    "",
-    input.gaps?.length
-      ? `ONLY THESE DETAILS ARE MISSING (our own reader has read everything else; answer only these if the message says them, and use null or empty arrays for every other key):\n${input.gaps.map((g) => `- ${g}`).join("\n")}`
+    input.examples.length
+      ? `SIMILAR ENQUIRIES THIS TEAM HAS QUOTED (for understanding only; the values and quotes still come from the LAST MESSAGE):\n${input.examples.map((e) => `Enquiry: ${e.message}\nQuoted as: ${e.expected}`).join("\n\n")}`
       : "",
     "",
     `TRIP SO FAR: ${planSummary(input.plan, ctx)}`,
@@ -209,6 +221,12 @@ export function aiToParsed(raw: unknown, full: BuilderContext): ParsedTrip {
     removeParks: names(o.remove_parks),
     order: names(o.order),
     replaceRoute: o.replace_route === true,
+    // how they travel and what they ask for (checked against the message in evidence.ts)
+    ...(MODES.includes(o.arrival_mode as TravelMode) ? { arrival_mode: o.arrival_mode as TravelMode } : {}),
+    ...(MODES.includes(o.departure_mode as TravelMode) ? { departure_mode: o.departure_mode as TravelMode } : {}),
+    ...(o.between === "own" || o.between === "ours" ? { between: o.between } : {}),
+    ...(o.own_all === true ? { own_all: true } : {}),
+    ...(requestsOf(o.requests).length ? { requests: requestsOf(o.requests) } : {}),
     ...(asks.length ? { asks } : {}),
     notes: [],
   };
