@@ -15,7 +15,7 @@ import { fmtDay } from "@/lib/sales/format";
 import { addDays } from "@/lib/sales/pricing/dates";
 import type { PriceResult } from "@/lib/sales/pricing/types";
 import { isConfirmed } from "./confirm";
-import { farApart, roadRegions, routeProblems, segments } from "./planner";
+import { noRoad, roadRegions, routeProblems, segments } from "./planner";
 import type { BuilderContext, Plan } from "./types";
 
 export function quoteChecks(plan: Plan, ctx: BuilderContext, result: PriceResult | null): string[] {
@@ -60,7 +60,7 @@ export function quoteChecks(plan: Plan, ctx: BuilderContext, result: PriceResult
   const roadsOn = (date: string) => plan.days.filter((d) => d.date === date).flatMap(roadsOf);
   for (const d of plan.days) {
     for (const r of roadsOf(d)) {
-      if (farApart(ctx, r.from, r.to, regions)) {
+      if (noRoad(ctx, r.from, r.to, regions)) {
         out.push(`${when(d.date)}: a road transfer ${place(r.from, r.fromLabel)} to ${place(r.to, r.toLabel)} joins two regions with no road between them. Add the flight instead.`);
       }
     }

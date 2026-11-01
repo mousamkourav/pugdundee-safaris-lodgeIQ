@@ -6,7 +6,7 @@ import { addDays, dayName } from "@/lib/sales/pricing/dates";
 import { closureFor } from "@/lib/sales/pricing/engine";
 import type { ISODate, RateBasis, SafariInput, StayInput, TransferInput, TripInput } from "@/lib/sales/pricing/types";
 import type { BuilderContext, CityStay, CityTransfer, DaySafari, Plan, PlanDay, PlanItem, PlanStop } from "./types";
-import { sameCity } from "./cities";
+import { cityParkIds, isCityHotel, sameCity } from "./cities";
 
 export const MEAL_ORDER = ["AP", "MAP", "CP", "EP"];
 
@@ -155,6 +155,7 @@ export function buildDays(plan: Plan, ctx: BuilderContext): PlanDay[] {
 // never planned. It is left out, and the day says how to fix it (add the flight).
 export function noDriveBetweenRegions(days: PlanDay[], ctx: BuilderContext): PlanDay[] {
   const regions = roadRegions(ctx);
+  const farApart = (_ctx: BuilderContext, a: string, b: string, r: Map<string, string>) => noRoad(ctx, a, b, r);
   const name = (id: string, label?: string) => label ?? ctx.locations.find((l) => l.id === id)?.name ?? id.replace(/^@/, "");
   const note = (a: string, b: string) => `No road between ${a} and ${b} in Master data: add the flight (or the way they travel) for this day.`;
   return days.map((d) => {
@@ -358,6 +359,16 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
     return list.length ? { ...d, city_transfers: [...(d.city_transfers ?? []), ...list] } : d;
   };
   const isStayCity = (name: string) => segs.some((s) => s.kind === "city" && !!s.stay.city && sameCity(s.stay.city, name));
+  // the airports the trip's lodges are reached from (Jorhat for Iora Retreat): a flight there is
+  // the way to a lodge, never a connection between two cities
+  const lodgeLocs = new Set(segs.flatMap((s) => (s.kind === "lodge" ? [locationOfProperty(ctx, s.stop.property_id)] : [])).filter((x): x is string => !!x));
+  const lodgeAirport = (city: string) =>
+    ctx.locations.some(
+      (l) => l.type === "airport" && sameCity(l.name, city) && ctx.pricing.transferRates.some((r) => r.active !== false && ((r.from_location_id === l.id && lodgeLocs.has(r.to_location_id)) || (r.to_location_id === l.id && lodgeLocs.has(r.from_location_id))))
+    );
+  // "transfer to Khajuraho for the Delhi flight, drive direct to Agra": from one city stay to the
+  // next by a flight to a third city, then by road
+  const connecting = (a: string, b: string) => (flew(a, b) ? undefined : flights.find((f) => sameCity(f.from, a) && !sameCity(f.to, b) && !lodgeAirport(f.to)));
   const lodgePlace = (propertyId: string) => {
     const id = locationOfProperty(ctx, propertyId);
     return id ? { id, label: lodgeName(propertyId) } : null;
@@ -393,14 +404,22 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
         } else if (prev.kind === "city") {
           const p = prev.stay;
           const byAir = !!p.city && !!c.city && flew(p.city, c.city);
-          title = p.city && c.city ? `${p.city} to ${c.city}` : place(c);
+          const via = !byAir && p.city && c.city ? connecting(p.city, c.city) : undefined;
+          title = p.city && c.city ? (via ? `Fly to ${via.to}, drive to ${c.city}` : `${p.city} to ${c.city}`) : place(c);
           text =
             p.city && c.city
               ? byAir
                 ? `After breakfast, check out and transfer to ${p.city} Airport for the flight to ${c.city}. On arrival, transfer to ${c.hotel || "the hotel"}. Overnight at ${where(c)}.`
-                : `After breakfast, drive from ${p.city} to ${c.city}. Overnight at ${where(c)}.`
+                : via
+                  ? `After breakfast, check out and transfer to ${p.city} Airport for the flight to ${via.to}. On arrival, drive to ${c.city}. Overnight at ${where(c)}.`
+                  : `After breakfast, drive from ${p.city} to ${c.city}. Overnight at ${where(c)}.`
               : text;
-          if (real && !p.blank && p.city) transfer = byAir ? cityTransfer(ctx, airportOf(ctx, c.city, hotelOf(ctx, c).id), hotelOf(ctx, c)) : cityTransfer(ctx, hotelOf(ctx, p), hotelOf(ctx, c));
+          if (real && !p.blank && p.city)
+            transfer = byAir
+              ? cityTransfer(ctx, airportOf(ctx, c.city, hotelOf(ctx, c).id), hotelOf(ctx, c))
+              : via
+                ? cityTransfer(ctx, airportOf(ctx, via.to, hotelOf(ctx, c).id), hotelOf(ctx, c))
+                : cityTransfer(ctx, hotelOf(ctx, p), hotelOf(ctx, c));
         } else if (k === segs.length - 1 || !segs.slice(k + 1).some((s) => s.kind === "lodge")) {
           // the morning the guests leave the last lodge (that day is the lodge's departure day)
           title = c.city ? `Drive to ${c.city}` : "Free day";
@@ -466,7 +485,7 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
             : cityDay(leave, c.city ? `Depart from ${c.city}` : "Departure", c.city ? "Transfer to the airport for your onward journey." : "Departure for your onward journey."),
         (d) => withTransfer(d, real ? cityTransfer(ctx, hotelOf(ctx, c), end ? airportOf(ctx, end) : airportOf(ctx, c.city, hotelOf(ctx, c).id)) : null)
       );
-    } else if (real && next.kind === "city" && next.stay.city && !next.stay.blank && flew(c.city, next.stay.city)) {
+    } else if (real && next.kind === "city" && next.stay.city && !next.stay.blank && (flew(c.city, next.stay.city) || !!connecting(c.city, next.stay.city))) {
       add(leave, () => cityDay(leave, "", ""), (d) => withTransfer(d, cityTransfer(ctx, hotelOf(ctx, c), airportOf(ctx, c.city, hotelOf(ctx, c).id))));
     } else if (real && next.kind === "lodge" && flewFrom(c.city)) {
       // flying on to the lodges: hotel to the airport first
@@ -769,6 +788,20 @@ export function roadRegions(ctx: BuilderContext): Map<string, string> {
     }
   }
   return region;
+}
+
+// A road that cannot be driven: one end is a lodge (Iora Retreat, Waghoba) and Master data has
+// roads for both ends but none joining their regions. Between two city places (a city hotel, an
+// airport: Agra to Delhi) a missing road is only a price to type.
+export function noRoad(ctx: BuilderContext, a: string, b: string, regions = roadRegions(ctx)) {
+  if (!farApart(ctx, a, b, regions)) return false;
+  const cityParks = cityParkIds(ctx);
+  const isLodge = (id: string) => {
+    const pid = ctx.locations.find((l) => l.id === id)?.property_id;
+    const p = pid ? ctx.properties.find((x) => x.id === pid) : undefined;
+    return !!p && !isCityHotel(p, cityParks);
+  };
+  return isLodge(a) || isLodge(b);
 }
 
 // Two places far apart: each has roads, but none joins their regions.

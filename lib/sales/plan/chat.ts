@@ -352,7 +352,8 @@ export function chatTurn(
   }
 
   // ---- the answer to the reader's own question (fishing, flight time, ages...)
-  const answering = f.pending === "ask" ? f.asks?.find((a) => a.key === f.askFor) : undefined;
+  // (an airport question stays open until an airport is named: handled above)
+  const answering = f.pending === "ask" ? f.asks?.find((a) => a.key === f.askFor && !a.key.startsWith("airport:")) : undefined;
   if (answering) {
     f.asks = (f.asks ?? []).filter((a) => a !== answering);
     const before = chips.length;

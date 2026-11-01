@@ -185,3 +185,50 @@ export const TEST_JORHAT = `${TEST_JORHAT_1}, ${TEST_JORHAT_2}`;
 // The French Kaziranga enquiry of 31 Oct 2026, as typed (misspelt, no word "flight").
 export const FRANCE_MISSPELT =
   "guest coming from france to delhi one night stay to delhi than kaziranga 2 night stay than come back to delhi one night stay then they will go to bhopal than satpura stay 2 nights safaris with naturalist, than kanha 2 nights safaris, 2 nights pench, 3 nigths waghoba than delhi from nagpur and 1 night stay in the delhi in this journey they will experience if any lodge is having any unique expeirence that should also cover and all the safaris are with naturalist";
+
+// Roseate House data plus Khajuraho (Radisson) and Agra (DoubleTree) as city hotels with
+// rates and roads, as in the live Master data: Khajuraho Airport and Kings Lodge to the
+// Radisson; Agra Cantt station to DoubleTree (so Agra has a road region of its own, and no
+// road to Delhi yet).
+const cityRate = (id: string, room: string, amount: number): RoomRate => ({ ...roseateRate(id, "2026-10-01", "2027-09-30", amount), room_category_id: room });
+export const citiesCtx: BuilderContext = {
+  ...roseateCtx,
+  properties: [
+    ...roseateCtx.properties,
+    { id: "RAD", name: "Radisson Hotel Jass Khajuraho", park_id: "KHJ", kind: "city_hotel", fallback_priority: 1, sort: 0, city: "Khajuraho" },
+    { id: "DBT", name: "DoubleTree by Hilton Agra", park_id: "AGR", kind: "city_hotel", fallback_priority: 1, sort: 0, city: "Agra" },
+  ],
+  locations: [
+    ...roseateCtx.locations,
+    { id: "L_RAD", name: "Radisson Hotel Jass Khajuraho", type: "property", property_id: "RAD" },
+    { id: "L_DBT", name: "DoubleTree by Hilton Agra", type: "property", property_id: "DBT" },
+    { id: "AGC", name: "Agra Cantt Railway Station", type: "railway", property_id: null, code: "AGC" },
+  ],
+  rooms: [...roseateCtx.rooms, { id: "RAD_D", property_id: "RAD", name: "Deluxe", sort: 0 }, { id: "DBT_D", property_id: "DBT", name: "Deluxe Room", sort: 0 }],
+  pricing: {
+    ...roseateCtx.pricing,
+    parks: [...roseateCtx.pricing.parks, { id: "KHJ", name: "Khajuraho" }, { id: "AGR", name: "Agra" }],
+    properties: [
+      ...roseateCtx.pricing.properties,
+      { id: "RAD", name: "Radisson Hotel Jass Khajuraho", park_id: "KHJ", kind: "city_hotel" },
+      { id: "DBT", name: "DoubleTree by Hilton Agra", park_id: "AGR", kind: "city_hotel" },
+    ],
+    rooms: [
+      ...roseateCtx.pricing.rooms,
+      { id: "RAD_D", property_id: "RAD", name: "Deluxe", max_adults: 2, max_children: 1, extra_bed: true },
+      { id: "DBT_D", property_id: "DBT", name: "Deluxe Room", max_adults: 2, max_children: 1, extra_bed: true },
+    ],
+    roomRates: [...roseateCtx.pricing.roomRates, cityRate("RAD_1", "RAD_D", 15000), cityRate("DBT_1", "DBT_D", 20000)],
+    locations: [
+      ...roseateCtx.pricing.locations,
+      { id: "L_RAD", name: "Radisson Hotel Jass Khajuraho", property_id: "RAD" },
+      { id: "L_DBT", name: "DoubleTree by Hilton Agra", property_id: "DBT" },
+      { id: "AGC", name: "Agra Cantt Railway Station", property_id: null },
+    ],
+    transferRates: [...roseateCtx.pricing.transferRates, road("HJR", "L_RAD", 3000, 0.5), road("L_KL", "L_RAD", 11500, 5.5), road("AGC", "L_DBT", 1500, 0.5)],
+  },
+};
+
+// The owner's all-in-one test enquiry of 1 Nov 2026 (every kind of issue met so far).
+export const ALL_IN_ONE =
+  "hi team pls make quote asap - 2 adlts + 1 child 8 yrs + 1 infant from france arrining delhi on 9th jan'27, delhi one night stay than kaziranga 2 nigths with 4 safaris and camera, than come back to delhi one night stay, then they will go to bhopal than satpura 2 nights in forest suite with boat safari and canoe, than kanha 2 nights safaris, Bandhavgarh, 3 nights Tree House Bandhavgarh with 1 full day safari, than khajuraho 2 nights with sighseeing guide and entrances, transfer to khajuraho for delhi flight drive direct to Agra for 2 nights stay with Agra sighseeing; drive back to delhi for homebound flight. 2 gaadi for all transfers, sab safari naturalist ke saath and if any lodge is having unique expeirence add that also";

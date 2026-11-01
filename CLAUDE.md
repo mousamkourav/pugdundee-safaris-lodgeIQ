@@ -120,8 +120,12 @@ Route rules (do not patch phrases around them):
   a flight, written or not. A lodge's airport: named in the text for that leg, else the airport
   with a road to it in Master data (shortest drive; several = one question, `airport:<park>`).
   Arrival / departure = the airports of the flights into the first and out of the last lodge.
-- `noDriveBetweenRegions` (planner): the last guard. A road transfer between regions is never
-  planned, whatever the reader or the AI gave; the day gets a note instead.
+- `noDriveBetweenRegions` (planner) / `noRoad`: the last guard. A road transfer with a lodge at
+  one end between two regions (Tadoba - Kaziranga, Delhi - Iora Retreat) is never planned,
+  whatever the reader or the AI gave; the day gets a note instead. Between two city places (Agra
+  hotel - Delhi airport) a missing road is a price to type, not a guard.
+- From one city stay to the next by a connecting flight ("transfer to Khajuraho for the Delhi
+  flight, drive direct to Agra"): hotel > airport, the flight, the drive from that airport.
 - City nights with no hotel named take the city's hotel from Master data (Roseate House for
   Delhi); "hotel in X" (none yet) gets no transfer price box.
 - Misspelt trip words ("nigths", "safaries", "adluts") are read (`fixTripWords`).

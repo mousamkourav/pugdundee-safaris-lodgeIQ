@@ -374,7 +374,16 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     // "2 indian", "3 foreigners"
     low.match(new RegExp(`\\b${NUM}\\s+(?:indians?|foreigners?|foreign nationals?|nris?)\\b`));
   const familyM = low.match(new RegExp(`\\bfamily of\\s*${NUM}\\b`));
-  const kidsM = low.match(new RegExp(`\\b${NUM}\\s*(?:kids?|children|childs?|child|infants?|bacche|bachche|bachhe|bachon|bacchon)\\b`));
+  // every count: "1 child 8 yrs + 1 infant" is two children, the infant under 2
+  const kidsAll = [...low.matchAll(new RegExp(`\\b${NUM}\\s*(?:kids?|children|childs?|child|infants?|bab(?:y|ies)|bacche|bachche|bachhe|bachon|bacchon)\\b`, "g"))];
+  let infantN = 0;
+  let childN = 0;
+  for (const m of kidsAll) {
+    const n = toNum(m[1]);
+    if (!Number.isFinite(n)) continue;
+    if (/infant|bab(?:y|ies)/.test(m[0])) infantN += n;
+    else childN += n;
+  }
   const LIST = "(\\d{1,2}(?:\\s*(?:,|and|&|/)\\s*\\d{1,2})*)";
   const ageSources = [
     low.match(new RegExp(`\\b(?:aged?|ages?)\\s*:?\\s*${LIST}`)),
@@ -394,14 +403,21 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     const yo = [...low.matchAll(/\b(\d{1,2})\s*-?\s*(?:y(?:ea)?r?s?)\s*-?\s*old\b/g)].map((m) => Number(m[1])).filter((n) => n < 18);
     ages = yo;
   }
-  const kidCount = kidsM ? toNum(kidsM[1]) : ages.length;
+  const kidCount = kidsAll.length ? childN + infantN : ages.length;
   if (kidCount > 0) {
     if (ages.length !== kidCount) {
       if (ages.length > kidCount) ages = ages.slice(0, kidCount);
       else {
-        out.notes.push(`Children's ages not given; assumed 10.`);
-        ask({ key: "ages", text: `How old ${kidCount === 1 ? "is the child" : `are the ${kidCount} children`}? (10 is used until then.)` });
-        ages = [...ages, ...Array(kidCount - ages.length).fill(10)];
+        // an infant with no age is under 2 (1 year); a child with no age is asked (10 until then)
+        const missing = kidCount - ages.length;
+        const babies = Math.min(infantN, missing);
+        const kids = missing - babies;
+        if (kids > 0) {
+          out.notes.push(`Children's ages not given; assumed 10.`);
+          ask({ key: "ages", text: `How old ${kids === 1 ? "is the child" : `are the ${kids} children`}? (10 is used until then.)` });
+        }
+        if (babies > 0) out.notes.push(`${babies === 1 ? "The infant is" : "The infants are"} taken as under 2 (1 year).`);
+        ages = [...ages, ...Array(kids).fill(10), ...Array(babies).fill(1)];
       }
     }
     out.children = ages;
