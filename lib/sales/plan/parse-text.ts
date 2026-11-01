@@ -384,17 +384,18 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     if (/infant|bab(?:y|ies)/.test(m[0])) infantN += n;
     else childN += n;
   }
-  const LIST = "(\\d{1,2}(?:\\s*(?:,|and|&|/)\\s*\\d{1,2})*)";
+  // Hinglish too: "2 bacche (7 aur 12 saal)"
+  const LIST = "(\\d{1,2}(?:\\s*(?:,|and|aur|&|/)\\s*\\d{1,2})*)";
   const ageSources = [
     low.match(new RegExp(`\\b(?:aged?|ages?)\\s*:?\\s*${LIST}`)),
-    low.match(new RegExp(`\\b(?:kids?|children|child|infants?|bab(?:y|ies))\\s*\\(\\s*(?:aged?\\s*)?${LIST}\\s*(?:y(?:ea)?rs?|yo)?\\s*(?:old\\s*)?\\)`)),
+    low.match(new RegExp(`\\b(?:kids?|children|child|infants?|bab(?:y|ies)|bacche|bachche|bachhe|bachon|bacchon)\\s*\\(\\s*(?:aged?\\s*)?${LIST}\\s*(?:y(?:ea)?rs?|yo|saal)?\\s*(?:old\\s*|ke\\s*)?\\)`)),
     low.match(new RegExp(`\\b(?:kids?|children)\\s+(\\d{1,2}(?:\\s*(?:,|and|&|/)\\s*\\d{1,2})+)\\b`)),
     low.match(/\b(?:child|kid|son|daughter)\s+(?:of\s+)?(\d{1,2})\s*(?:y(?:ea)?rs?|yo)\b/),
   ];
   let ages: number[] = [];
   for (const m of ageSources) {
     if (m) {
-      ages = m[1].split(/\s*(?:,|and|&|\/)\s*/).map(Number).filter((n) => n >= 0 && n < 18);
+      ages = m[1].split(/\s*(?:,|and|aur|&|\/)\s*/).map(Number).filter((n) => n >= 0 && n < 18);
       break;
     }
   }
@@ -547,10 +548,13 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   }
   const month = out.arrival_date ? Number(out.arrival_date.slice(5, 7)) : out.month;
   if (month && month >= 7 && month <= 9) out.notes.push("July to September is the monsoon: core zones are closed, so only buffer safaris can be planned.");
-  // "25 dec - new year": over 31 Dec a minimum stay and the New Year supplement apply
-  if (/\bnew\s*year|\bnye\b|\b31(?:st)?\s*dec/.test(low)) {
-    ask({ key: "newyear", text: "Over New Year (31 Dec) the minimum stay is 3 nights and the New Year supplement applies. Do the dates cover 31 Dec? Please confirm the arrival date and the nights." });
-  }
+  // "25 dec - new year": over 31 Dec a minimum stay and the New Year supplement apply. A stay
+  // said to run over New Year ("25 dec - new year", "till new year", "new year tak", "NYE",
+  // "31 dec") is always asked; any other mention ("new year se pehle nikal jayenge", "before new
+  // year") only when the dates do cover 31 Dec, or cannot tell yet (see "New Year" below).
+  const saysNewYear = /\bnew\s*year|\bnye\b|\b31(?:st)?\s*dec/.test(low);
+  const overNewYear =
+    /(?:-|–|\bto|\btill|\buntil|\bupto|\bup to|\bthrough|\bover|\bthru)\s*(?:the\s+)?new\s*year|\bnew\s*year\s*(?:tak|eve|celebrat\w*|par|pe|manay\w*)|\bnye\b|\b31(?:st)?\s*dec/.test(low);
 
   // ---- parks and lodges with nights, in the order written.
   // Lodges are matched first so "Pench Tree Lodge" is one mention, not "Pench" + noise.
@@ -1061,6 +1065,22 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   // ---- parks that are not ours: said so, never a lodge made up
   const notOurs = OTHER_PARKS.filter(([re]) => re.test(low) && !ctx.pricing.parks.some((p) => re.test(p.name.toLowerCase()))).map(([, n]) => n);
   if (notOurs.length) out.notOurs = notOurs;
+
+  // ---- New Year: asked only when the trip covers the night of 31 Dec, or when that cannot be
+  // told yet (no date, or a stop without nights). "22 dec ... kanha 3 raat, bandhavgarh 2 raat
+  // ... new year se pehle nikal jayenge" ends on 27 Dec: nothing to ask.
+  if (saysNewYear) {
+    const atStart = (out.cityStays ?? []).filter((c) => c.when === "before" && !c.at);
+    const lead = atStart.reduce((t, c) => t + c.nights, 0);
+    const later = (out.cityStays ?? []).filter((c) => !atStart.includes(c)).reduce((t, c) => t + c.nights, 0);
+    const known = !!out.arrival_date && out.parks.length > 0 && out.parks.every((p) => !!p.nights);
+    const firstNight = known ? addDays(out.arrival_date!, -lead) : null;
+    const lastNight = known ? addDays(out.arrival_date!, out.parks.reduce((t, p) => t + (p.nights ?? 0), 0) + later - 1) : null;
+    const covers = known && [firstNight!, lastNight!].some((d) => firstNight! <= `${d.slice(0, 4)}-12-31` && lastNight! >= `${d.slice(0, 4)}-12-31`);
+    if (overNewYear || !known || covers) {
+      ask({ key: "newyear", text: "Over New Year (31 Dec) the minimum stay is 3 nights and the New Year supplement applies. Do the dates cover 31 Dec? Please confirm the arrival date and the nights." });
+    }
+  }
 
   const unknown = unknownWords(text, ctx, hotels);
   if (unknown.length) out.unknown = unknown;

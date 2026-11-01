@@ -33,36 +33,56 @@ const stays = (p: Plan) => (p.city_stays ?? []).map((c) => [c.when, c.city, c.ni
 const roads = (p: Plan) => planToTrip(p, TODAY).transfers.map((t) => `${t.date.slice(5)} ${t.from_location_id}>${t.to_location_id}`);
 const asks = (r: ChatResult) => (r.flags.asks ?? []).map((a) => a.key);
 
-// ---------------- the Hinglish family (stand-in: children 7 and 12, no New Year words) ----------------
+// ---------------- the Hinglish family enquiry (as the team typed it) ----------------
 const HINGLISH_FAMILY =
-  "hum 2 adults aur 2 bacche hai (7 aur 12 saal ke), 26 dec ko jabalpur aayenge, kanha 3 raat phir bandhavgarh kings lodge 2 raat, sab safari naturalist ke saath, wapas jabalpur se";
+  "sir ek family hai mumbai se, 2 adults aur 2 bacche (7 aur 12 saal), indian. 22 dec ko jabalpur flight se aa rahe hai. pehle kanha 3 raat chahiye, uske baad bandhavgarh 2 raat tree house hideaway me. sab safari naturalist ke saath, bacho ke liye nature walk bhi add kar dena. phir wapas jabalpur se flight lenge. new year se pehle nikal jayenge. budget theek hai";
 const HINGLISH_GEMINI = {
   adults: V(2, "2 adults"),
   children_ages: V([7, 12], "7 aur 12 saal"),
-  arrival_date: V("2026-12-26", "26 dec ko jabalpur aayenge"),
-  arrival_place: V("Jabalpur Airport", "jabalpur aayenge"),
-  departure_place: V("Jabalpur Airport", "wapas jabalpur se"),
+  nationality: V("indian", "indian"),
+  arrival_date: V("2026-12-22", "22 dec ko jabalpur flight se aa rahe hai"),
+  arrival_place: V("Jabalpur Airport", "22 dec ko jabalpur flight se aa rahe hai"),
+  arrival_mode: V("flight", "jabalpur flight se aa rahe hai"),
+  departure_place: V("Jabalpur Airport", "phir wapas jabalpur se flight lenge"),
+  departure_mode: V("flight", "wapas jabalpur se flight lenge"),
   stops: [
-    { park: V("Kanha National Park", "kanha 3 raat"), nights: V(3, "kanha 3 raat"), naturalists: V(-1, "sab safari naturalist ke saath") },
-    { park: V("Bandhavgarh National Park", "bandhavgarh kings lodge"), lodge: V("Kings Lodge", "kings lodge"), nights: V(2, "kings lodge 2 raat"), naturalists: V(-1, "sab safari naturalist ke saath") },
+    { park: V("Kanha National Park", "pehle kanha 3 raat chahiye"), nights: V(3, "kanha 3 raat"), naturalists: V(-1, "sab safari naturalist ke saath") },
+    {
+      park: V("Bandhavgarh National Park", "bandhavgarh 2 raat tree house hideaway me"),
+      lodge: V("Tree House Hideaway", "tree house hideaway"),
+      nights: V(2, "bandhavgarh 2 raat"),
+      naturalists: V(-1, "sab safari naturalist ke saath"),
+      extras: [V("nature walk", "bacho ke liye nature walk bhi add kar dena")],
+    },
   ],
 };
 
-test("Hinglish family: children 7 and 12 from the AI, no age or New Year question", () => {
+test("Hinglish family: children 7 and 12, Tree House Hideaway, no age or New Year question", () => {
   const r = chat()(HINGLISH_FAMILY, HINGLISH_GEMINI);
   assert.deepEqual(r.plan.guest.children, [7, 12]);
   assert.equal(r.plan.guest.adults, 2);
-  assert.equal(r.plan.arrival_date, "2026-12-26");
-  assert.deepEqual(stops(r.plan), ["KEL 3", "KL 2"]);
+  assert.equal(r.plan.guest.nationality, "indian");
+  assert.equal(r.plan.arrival_date, "2026-12-22");
+  assert.deepEqual(stops(r.plan), ["KEL 3", "THH 2"]);
   assert.deepEqual([r.plan.arrival_location_id, r.plan.departure_location_id], ["JLR", "JLR"]);
   assert.ok(r.plan.days.flatMap((d) => d.safaris).every((s) => s.naturalist));
+  assert.ok(r.plan.stops[1].want_extras?.includes("nature walk"));
+  // "new year se pehle nikal jayenge": they leave on 27 Dec, before New Year, so nothing to ask
   assert.ok(!asks(r).includes("ages"), asks(r).join(", "));
-  assert.ok(!asks(r).includes("newyear"));
+  assert.ok(!asks(r).includes("newyear"), asks(r).join(", "));
   assert.doesNotMatch(r.reply.text, /How old|New Year/);
-  // the AI down: the reader reads the same route, and asks the ages it could not read
+  // the AI down: the built-in reader reads the same trip, ages included, with no question either
   const down = chat()(HINGLISH_FAMILY, null);
-  assert.deepEqual(stops(down.plan), ["KEL 3", "KL 2"]);
-  assert.ok(asks(down).includes("ages"));
+  assert.deepEqual(stops(down.plan), ["KEL 3", "THH 2"]);
+  assert.deepEqual(down.plan.guest.children, [7, 12]);
+  assert.deepEqual(asks(down), []);
+});
+
+test("New Year is still asked when the trip covers 31 Dec, or the nights are not known yet", () => {
+  const over = chat()("2 adults indian, 29 dec, kanha 3 raat, jabalpur in out, new year wahan manayenge", null);
+  assert.ok(asks(over).includes("newyear"));
+  const unknown = chat()("2 adults indian, kanha, new year trip", null);
+  assert.ok(asks(unknown).includes("newyear"));
 });
 
 // ---------------- the French Kaziranga enquiry (misspelt, no word "flight") ----------------
