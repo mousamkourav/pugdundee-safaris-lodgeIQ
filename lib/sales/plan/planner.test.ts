@@ -116,7 +116,9 @@ test("the plan honours wishes, city nights and flights; edited flights survive a
   const tadobaSafaris = p.days.filter((d) => d.park_id === "TADOBA").flatMap((d) => d.safaris);
   assert.equal(tadobaSafaris.length, 3);
   assert.equal(tadobaSafaris.filter((s) => s.naturalist).length, 1);
-  assert.ok(p.days.some((d) => d.items.some((i) => i.auto?.startsWith("extra:0:nature walk"))));
+  // no nature walk add-on at this lodge: left out with a note, never a price to type
+  assert.ok(!p.days.some((d) => d.items.some((i) => i.auto?.startsWith("extra:0:nature walk"))));
+  assert.ok(p.days.some((d) => d.notes.some((n) => /^Nature walk is not offered at /.test(n))));
   const inbound = p.days[1].items.find((i) => i.type === "flight")!;
   assert.equal(inbound.title, "Flight Delhi to Nagpur");
   assert.equal(p.days[8].items.find((i) => i.type === "flight")!.title, "Flight Nagpur to Delhi");

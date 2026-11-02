@@ -155,7 +155,7 @@ export function rateCoverage(d: PricingData, today: ISODate, months = seasonMont
     if (kw === "full-day safari" || kw === "fishing") continue; // the full day is a safari (above); fishing is half / full day
     const words = kw.split(/[\s-]+/);
     const has = d.addons.some((a) => a.active !== false && !a.alias && words.every((w) => norm(a.name).includes(` ${w}`)));
-    if (!has) out.push({ area: "Activity", item: kw.replace(/^\w/, (c) => c.toUpperCase()), detail: "understood in enquiries, but no add-on in Master data: quotes ask for its price", href: "/sales/admin/addons" });
+    if (!has) out.push({ area: "Activity", item: kw.replace(/^\w/, (c) => c.toUpperCase()), detail: "understood in enquiries, but no add-on in Master data: quotes leave it out with a note", href: "/sales/admin/addons" });
   }
 
   // ---- activities with no price

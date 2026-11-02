@@ -77,23 +77,28 @@ test("real data: every experience asked for, by its name in Master data, at its 
 });
 
 test("real data: only what Master data does not have is a price to type, named with its lodge", () => {
+  // a lodge experience the lodge does not sell is left out with a note (owner, 2 Nov 2026);
+  // only city services and city roads stay prices to type
   assert.deepEqual(priced.missing.map((m) => m.label).sort(), [
     "Agra local guide at Courtyard by Marriott Agra",
     "Agra sightseeing at Courtyard by Marriott Agra",
-    "Bird watching at Tree House Hideaway",
-    "Buffer walk at Kanha Earth Lodge",
-    "Buffer walk at Pench Tree Lodge",
-    "Bush dinner at Waghoba Eco Lodge",
-    "Culinary workshop at Kanha Earth Lodge",
-    "Culinary workshop at Pench Tree Lodge",
     "Jaipur sightseeing at ITC Rajputana",
-    "Picnic at Waghoba Eco Lodge",
-    "Special dinner at Kanha Earth Lodge",
     "Transfer Courtyard by Marriott Agra to ITC Rajputana",
     "Transfer Delhi Airport (IGI) to Courtyard by Marriott Agra",
     "Transfer ITC Rajputana to Delhi Airport (IGI)",
-    "Village walk at Kings Lodge",
-    "Village walk at Pench Tree Lodge",
+  ]);
+  const notes = P.days.flatMap((d) => d.notes).filter((n) => / is not offered at /.test(n)).sort();
+  assert.deepEqual(notes, [
+    "Bird watching is not offered at Tree House Hideaway (not in Master data): left out of the quote.",
+    "Buffer walk is not offered at Kanha Earth Lodge (offered at Denwa Backwater Escape): left out of the quote.",
+    "Buffer walk is not offered at Pench Tree Lodge (offered at Denwa Backwater Escape): left out of the quote.",
+    "Bush dinner is not offered at Waghoba Eco Lodge (offered at Kings Lodge, Tree House Hideaway, Kanha Earth Lodge, Pench Tree Lodge, Denwa Backwater Escape, Ken River Lodge): left out of the quote.",
+    "Culinary workshop is not offered at Kanha Earth Lodge (not in Master data): left out of the quote.",
+    "Culinary workshop is not offered at Pench Tree Lodge (not in Master data): left out of the quote.",
+    "Picnic is not offered at Waghoba Eco Lodge (offered at Kanha Earth Lodge): left out of the quote.",
+    "Special dinner is not offered at Kanha Earth Lodge (not in Master data): left out of the quote.",
+    "Village walk is not offered at Kings Lodge (not in Master data): left out of the quote.",
+    "Village walk is not offered at Pench Tree Lodge (not in Master data): left out of the quote.",
   ]);
 });
 

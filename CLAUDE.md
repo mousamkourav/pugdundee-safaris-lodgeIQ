@@ -135,9 +135,11 @@ Route rules (do not patch phrases around them):
 - Experiences: the reader knows `EXTRA_WORDS` AND each add-on by the word only it has in Master
   data (`addonTriggers`: Tawa, Moharli, Enfield, Gypsy, Scorpio, Banjar; "via X" for a road's extra),
   never by common words (lunch, safari, walk), so a new add-on is read without a code change. With
-  AI reading on, the AI's keywords and the reader's add-on names are merged (the specific one wins). A wish with no add-on (Agra
-  sightseeing, special dinner) is an item "price needed" (engine `custom_items` amount null,
-  missing kind "extra"), never a silent 0. A stay's experiences are spread over its days.
+  AI reading on, the AI's keywords and the reader's add-on names are merged (the specific one wins). A lodge experience the lodge
+  does not sell (no active add-on there) is left out with a day note "X is not offered at Lodge
+  (offered at ...)" (`notOfferedNote`), never a "price needed". A city wish with no add-on (Agra
+  sightseeing) is an item "price needed" (engine `custom_items` amount null, missing kind
+  "extra"), never a silent 0. A stay's experiences are spread over its days.
   "N buffer safaris" (`want_buffer`), "2 gaadi for all transfers" (`transfer_vehicles`).
 - Master data > Rate coverage (`lib/sales/master/coverage.ts`) prices every case with the engine
   (rooms by month, child, safaris, full day, naturalist, experiences understood with no add-on);

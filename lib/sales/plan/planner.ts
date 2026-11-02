@@ -336,9 +336,16 @@ function applyWants(plan: Plan, ctx: BuilderContext, days: PlanDay[]): PlanDay[]
     for (const kw of extrasHere) {
       if (kw === "special") continue;
       const addon = findAddon(ctx, stop.property_id, kw, plan.guest.nationality);
-      const item: PlanItem = addon
-        ? { id: `auto-${k}-${kw}`, type: "addon", title: addon.name, detail: "", price: null, addon_id: addon.id, qty: stop.want_qty?.[kw] ?? null, auto: `extra:${k}:${kw}` }
-        : { id: `auto-${k}-${kw}`, type: "activity", title: WISH_NAME[kw] ?? kw.replace(/^\w/, (c) => c.toUpperCase()), detail: "", price: null, addon_id: null, qty: null, auto: `extra:${k}:${kw}` };
+      // not sold at this lodge (no active add-on here): left out with a note saying where it is
+      // offered, never a "price needed" (owner, 2 Nov 2026)
+      if (!addon) {
+        const title = WISH_NAME[kw] ?? kw.replace(/^\w/, (c) => c.toUpperCase());
+        const elsewhere = ctx.properties.filter((p) => p.id !== stop.property_id && findAddon(ctx, p.id, kw, plan.guest.nationality)).map((p) => p.name);
+        const at = nightDays.length ? nightDays[0] : lastNight;
+        if (at >= 0 && at < days.length) days[at] = { ...days[at], notes: [...days[at].notes, notOfferedNote(title, ctx.properties.find((p) => p.id === stop.property_id)?.name ?? "this lodge", elsewhere)] };
+        continue;
+      }
+      const item: PlanItem = { id: `auto-${k}-${kw}`, type: "addon", title: addon.name, detail: "", price: null, addon_id: addon.id, qty: stop.want_qty?.[kw] ?? null, auto: `extra:${k}:${kw}` };
       // the safari lunch goes with the full-day safari, on that day
       const fullDay = /safari lunch|full[\s-]?day/i.test(item.title) ? nightDays.find((i) => days[i].safaris.some((x) => x.session === "full_day")) : undefined;
       const at = fullDay ?? dayFor();
@@ -594,6 +601,11 @@ function masterHotelOptions(ctx: BuilderContext, name: string | undefined, want:
 // The add-ons of a city stay's hotel (or of its city) for what was asked: one each for
 // sightseeing (the vehicle), the guide and the entrances.
 // A wish the lodge has no add-on for, by its usual name (shown, and a price to type)
+// "Village walk is not offered at Pench Tree Lodge (offered at Ken River Lodge)."
+export function notOfferedNote(title: string, lodge: string, elsewhere: string[]): string {
+  return `${title} is not offered at ${lodge} (${elsewhere.length ? `offered at ${elsewhere.join(", ")}` : "not in Master data"}): left out of the quote.`;
+}
+
 const WISH_NAME: Record<string, string> = {
   village: "Village walk",
   culinary: "Culinary workshop",
