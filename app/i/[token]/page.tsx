@@ -503,7 +503,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                   <p className="text-sm text-white/60">Valid until {long(view.validUntil)}</p>
                 </div>
               </div>
-              {view.dateless && <p className="mt-4 text-sm text-white/70">Travel dates are not fixed yet; the price is worked out on the season shown and is confirmed once the dates are known.</p>}
+              {view.datelessNote && <p className="mt-4 text-sm text-white/70">{view.datelessNote}</p>}
               {view.show.breakup === "detailed" && view.detail.length > 0 && (
                 <div className="mt-6 overflow-x-auto">
                   <table className="w-full min-w-[520px] text-sm">

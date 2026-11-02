@@ -1165,6 +1165,12 @@ export const routeOf = (from: string, to: string) => `${from}>${to}`;
 
 export const DEFAULT_BASIS: RateBasis = { season: "high", safari_days: "weekday", year: "current" };
 
+// The line under the price on the guest page when the dates are not fixed (owner's wording,
+// 2 Nov 2026), with the season the quote was priced on.
+export function datelessPriceNote(basis: RateBasis | null | undefined): string {
+  return `As the travel dates are not fixed yet, the price is worked out on the ${(basis ?? DEFAULT_BASIS).season} season tariffs. Once the dates are confirmed, prices may vary slightly.`;
+}
+
 // Everything that changes the day plan. If this changes, the days are rebuilt.
 export const routeKey = (p: Plan) =>
   JSON.stringify([p.arrival_date, p.arrival_location_id, p.departure_location_id, p.stops, p.vehicle_type, p.guest.rooms, p.city_stays ?? [], p.flights ?? [], !!p.dateless, !!p.own_vehicle, p.end_city ?? null, p.arrival_mode ?? null, p.departure_mode ?? null, p.between_lodges ?? null]);

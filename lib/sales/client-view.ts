@@ -10,6 +10,7 @@ import { MEDIA_BUCKET } from "@/lib/sales/master/types";
 import { DIRECT_CONTACTS_DEFAULT, WHATSAPP_DEFAULT, whatsappHref } from "@/lib/sales/master/settings";
 import type { Plan } from "@/lib/sales/plan/types";
 import { defaultDraft, withEdits } from "@/lib/sales/plan/draft";
+import { datelessPriceNote } from "@/lib/sales/plan/planner";
 import { detailedBreakdown, priceBreakdown } from "@/lib/sales/pricing/breakdown";
 import { isShareSlug, isShareToken } from "@/lib/sales/share-slug";
 import { cache } from "react";
@@ -47,6 +48,7 @@ export interface ClientView {
   breakup: { label: string; amount: number; gst?: boolean }[]; // in quote currency
   detail: { date: string | null; label: string; quantity: number; net: number; gstPct: number | null; gst: number; amount: number }[]; // in quote currency
   dateless: boolean;
+  datelessNote: string | null; // the line under the price when the dates are not fixed
   stays: { property_id: string; room: string; meal: string; nights: number }[]; // room type per lodge
   // Know about the parks: the short text, the main image, the wildlife photos and the "Read more" link
   parks: { id: string; name: string; description: string; hero: string | null; photos: string[]; website: string | null }[];
@@ -243,6 +245,7 @@ async function loadClientViewUncached(link: string): Promise<ClientView | null> 
       ? detailedBreakdown(pricing).rows.map((r) => ({ date: r.date, label: r.label, quantity: r.quantity, net: conv(r.net), gstPct: r.gstPct, gst: conv(r.gst), amount: conv(r.amount) }))
       : [],
     dateless: !!plan.dateless,
+    datelessNote: plan.dateless ? datelessPriceNote(plan.rate_basis) : null,
     stays,
     parks: parkList,
     driveHours,

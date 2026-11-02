@@ -1,7 +1,7 @@
 // Run with:  npx tsx --test lib/sales/plan/planner.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildDays, emptyPlan, planToTrip, defaultStop, describe } from "./planner";
+import { buildDays, emptyPlan, planToTrip, defaultStop, describe, datelessPriceNote } from "./planner";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 import { data } from "@/lib/sales/pricing/sheet-fixture";
 import type { BuilderContext, Plan } from "./types";
@@ -388,4 +388,9 @@ test("a second city stay with no flight of its own never reuses the first stay's
   p.days = buildDays(p, ctx);
   const tadoba = p.days.find((d) => d.property_id === "WEL")!;
   assert.notEqual(tadoba.kind, "arrival"); // not "flown in" on the Delhi to Nagpur flight again
+});
+
+test("dates not fixed: the guest page line names the season the price is worked out on", () => {
+  assert.equal(datelessPriceNote(null), "As the travel dates are not fixed yet, the price is worked out on the high season tariffs. Once the dates are confirmed, prices may vary slightly.");
+  assert.match(datelessPriceNote({ season: "peak", safari_days: "weekday", year: "current" }), /on the peak season tariffs\./);
 });
