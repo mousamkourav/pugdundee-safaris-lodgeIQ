@@ -570,7 +570,15 @@ export function chatTurn(
     };
     // the whole trip's flights and city nights (a message that carries the trip on adds to them)
     const fl = allFlights;
-    const stays = allStays ?? parsed.cityStays ?? [];
+    // a city stay BETWEEN two lodges (Pench, 1 night Delhi, Kaziranga) is not where the trip starts or
+    // ends: its flights are connections, and the airports this message gave for the ends are kept
+    const lodgesNow = next.stops.length;
+    const isMid = (c: { at?: number }) => c.at != null && c.at > 0 && c.at < lodgesNow;
+    const allCityStays = allStays ?? parsed.cityStays ?? [];
+    const hasMid = allCityStays.some(isMid);
+    const stays = allCityStays.filter((c) => !isMid(c));
+    const keepIn = hasMid && !!arr && next.arrival_location_id === arr.id;
+    const keepOut = hasMid && !!dep && next.departure_location_id === dep.id;
     const beforeCity = stays.find((c) => c.when === "before")?.city;
     const afterCity = stays.find((c) => c.when === "after")?.city;
     const isAfterCity = (c: string) => stays.some((s) => s.when === "after" && sameCity(s.city, c));
@@ -580,8 +588,8 @@ export function chatTurn(
       [...fl].reverse().find((x) => afterCity && sameCity(x.to, afterCity) && x !== inbound) ??
       fl.find((x) => afterCity && sameCity(x.from, afterCity) && x !== inbound) ??
       (fl.length > 1 ? fl[fl.length - 1] : undefined);
-    const inAirport = inbound && airportFor(inbound.to);
-    const outAirport = outbound && airportFor(outbound.from);
+    const inAirport = !keepIn && inbound && airportFor(inbound.to);
+    const outAirport = !keepOut && outbound && airportFor(outbound.from);
     if (inAirport && next.arrival_location_id !== inAirport.id) {
       next.arrival_location_id = inAirport.id;
       f.arrivalAsked = true;
