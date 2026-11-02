@@ -697,6 +697,17 @@ export function PlanStep({
                             </span>
                           );
                         })()
+                      ) : it.car_package_id ? (
+                        (() => {
+                          // an outstation car package: priced from Master data, the car for the whole road trip
+                          const l = result?.lines.find((x) => x.kind === "transfer" && x.ref_id === it.car_package_id && x.date === d.date);
+                          return (
+                            <span className="tabular shrink-0 text-right text-xs leading-tight text-sand-600" title={l ? `${l.quantity} x ${rupees(l.unit_price)}${l.tax_pct ? ` + ${l.tax_pct}% GST` : ""}` : undefined}>
+                              {l ? rupees(l.amount) : "-"}
+                              {l && <span className="block text-[10px] text-sand-400">{l.quantity} x {rupees(l.unit_price)}{l.tax_pct ? " + GST" : ""}</span>}
+                            </span>
+                          );
+                        })()
                       ) : it.type === "flight" && it.flight ? (
                         <label className="flex shrink-0 items-center gap-1 text-[11px] text-sand-500" title="Fare per person (typed, not live). Total = fare x guests.">
                           <input

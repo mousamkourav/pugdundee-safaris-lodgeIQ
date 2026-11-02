@@ -69,7 +69,7 @@ export function sanitizePlan(input: unknown): Plan | null {
               .map((y) => obj(y))
               .filter((y) => y.from_location_id && y.to_location_id)
               .slice(0, 4)
-              .map((y) => ({ from_location_id: str(y.from_location_id, 140), to_location_id: str(y.to_location_id, 140), from_label: str(y.from_label, 140), to_label: str(y.to_label, 140) })),
+              .map((y) => ({ from_location_id: str(y.from_location_id, 140), to_location_id: str(y.to_location_id, 140), from_label: str(y.from_label, 140), to_label: str(y.to_label, 140), ...(typeof y.package_id === "string" && y.package_id ? { package_id: str(y.package_id, 100) } : {}) })),
           }
         : {}),
       ...(() => {
@@ -94,6 +94,7 @@ export function sanitizePlan(input: unknown): Plan | null {
           addon_id: strOrNull(it.addon_id),
           qty: Number.isInteger(qty) && qty > 0 ? Math.min(qty, 500) : null,
           ...(typeof it.auto === "string" && it.auto ? { auto: str(it.auto, 120) } : {}),
+          ...(typeof it.car_package_id === "string" && it.car_package_id ? { car_package_id: str(it.car_package_id, 100) } : {}),
           ...(it.type === "flight"
             ? {
                 flight: (() => {

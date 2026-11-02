@@ -509,6 +509,18 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     });
   }
 
+  // ---------------- outstation car packages ----------------
+  for (const c of trip.car_packages ?? []) {
+    const pkg = (data.carPackages ?? []).find((x) => x.id === c.package_id && x.active);
+    if (!pkg) {
+      errors.push("An outstation car package in this trip no longer exists or is inactive.");
+      continue;
+    }
+    const vehicles = c.vehicles ?? Math.max(1, Math.ceil(guests / Math.max(1, pkg.capacity)));
+    const { amount, tax } = withTax(vehicles * pkg.rate, pkg.tax_pct, false);
+    lines.push({ kind: "transfer", leg: "in", date: c.date, description: `${pkg.name} by ${pkg.vehicle_type}${vehicles > 1 ? ` (${vehicles} vehicles)` : ""}`, quantity: vehicles, unit_price: pkg.rate, amount, tax, tax_pct: pkg.tax_pct, property_id: null, ref_id: pkg.id });
+  }
+
   // ---------------- add-ons ----------------
   // Children 5 and over count as guests for "each extra guest" charges.
   const countable = trip.adults + trip.children.filter((a) => a >= 5).length;

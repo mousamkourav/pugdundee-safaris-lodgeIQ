@@ -4,10 +4,12 @@ import { compileTariff, type CalendarRange, type RateCategory, type TariffRow } 
 // Server-side only (uses the signed-in user's client; sales users can read
 // all sales_* master tables through RLS).
 import { mealCode } from "@/lib/sales/pricing/meal";
+import { parseCities } from "@/lib/sales/plan/car-packages";
 import { createClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   Addon,
+  CarPackage,
   ChildRate,
   Location,
   Offer,
@@ -53,7 +55,7 @@ export async function loadPricingData(client?: SupabaseClient): Promise<{ data: 
     return active ? base.eq("active", true) : base;
   };
 
-  const [props, rooms, rates, parks, closures, safaris, locs, transfers, addons, offers, settings, tariff, calendar, categories] = await Promise.all([
+  const [props, rooms, rates, parks, closures, safaris, locs, transfers, addons, offers, settings, tariff, calendar, categories, carPkgs] = await Promise.all([
     q("sales_properties"),
     q("sales_room_categories"),
     q("sales_room_rates"),
@@ -69,6 +71,8 @@ export async function loadPricingData(client?: SupabaseClient): Promise<{ data: 
     q("sales_tariff"),
     q("sales_tariff_calendar"),
     q("sales_rate_categories"),
+    // outstation car packages (sales_car_packages.sql); if absent, none
+    q("sales_car_packages"),
   ]);
 
   const firstError = [props, rooms, rates, parks, closures, safaris, locs, transfers, addons, offers, settings].find((r) => r.error)?.error;
@@ -245,6 +249,23 @@ export async function loadPricingData(client?: SupabaseClient): Promise<{ data: 
         .filter((x): x is Addon => !!x);
       return [...live.map((r) => toAddon(r)), ...aliases];
     })(),
+    carPackages: carPkgs.error
+      ? []
+      : rows(carPkgs).map(
+          (r): CarPackage => ({
+            id: str(r.id),
+            name: str(r.name),
+            cities: parseCities(str(r.route)),
+            nights: num(r.nights),
+            vehicle_type: str(r.vehicle_type) || "Innova / Crysta",
+            capacity: num(r.capacity, 6),
+            rate: num(r.rate),
+            tax_pct: num(r.tax_pct),
+            valid_from: date(r.valid_from),
+            valid_to: date(r.valid_to),
+            active: true,
+          })
+        ),
     offers: rows(offers).map(
       (r): Offer => ({
         id: str(r.id),

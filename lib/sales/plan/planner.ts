@@ -8,6 +8,7 @@ import type { Addon, ISODate, RateBasis, SafariInput, StayInput, TransferInput, 
 import type { BuilderContext, CityStay, CityTransfer, DaySafari, Plan, PlanDay, PlanItem, PlanStop } from "./types";
 import { cityParkIds, isCityHotel, sameCity } from "./cities";
 import { DRIVE_CITIES } from "@/lib/sales/master/missing-transfers";
+import { applyCarPackages } from "./car-packages";
 
 export const MEAL_ORDER = ["AP", "MAP", "CP", "EP"];
 
@@ -148,7 +149,7 @@ function carryItems(oldDays: PlanDay[], days: PlanDay[]): PlanDay[] {
 export function buildDays(plan: Plan, ctx: BuilderContext): PlanDay[] {
   const fresh = buildDaysFresh(plan, ctx).map((d) => ({ ...d, items: [] as PlanItem[] }));
   if (!fresh.length) return fresh;
-  return noDriveBetweenRegions(carryItems(plan.days ?? [], addFlights(plan, addCityDays(plan, applyWants(plan, ctx, fresh), ctx), ctx)), ctx);
+  return noDriveBetweenRegions(carryItems(plan.days ?? [], applyCarPackages(plan, addFlights(plan, addCityDays(plan, applyWants(plan, ctx, fresh), ctx), ctx), ctx)), ctx);
 }
 
 // The last guard, whatever the reader or the AI made of the message: a road transfer between
@@ -1103,6 +1104,8 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
   const transfers: TransferInput[] = [];
   const addons: { addon_id: string; date: string; qty?: number }[] = [];
   const custom: { date: string; title: string; amount: number | null; group?: "flight" | "extra" | "hotel" }[] = [];
+  const carPackages: { package_id: string; date: string; vehicles?: number }[] = [];
+  const packageIds = new Set(plan.days.flatMap((d) => (d.items ?? []).flatMap((it) => (it.car_package_id ? [it.car_package_id] : []))));
   const flightPax = plan.guest.adults + plan.guest.children.length;
   for (const d of plan.days) {
     if (d.park_id) for (const s of d.safaris) safaris.push({ date: d.date, park_id: d.park_id, zone: s.zone, session: s.session, naturalist: !!s.naturalist, ...(s.jeeps ? { vehicles: s.jeeps } : {}) });
@@ -1113,13 +1116,17 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
       const v = vehiclesFor(d.transfer.from_location_id, d.transfer.to_location_id);
       if (v !== 0) transfers.push({ date: d.date, ...d.transfer, vehicle_type: plan.vehicle_type ?? undefined, ...(v ? { vehicles: v } : {}) });
     }
-    // transfers in a city: Master data rate when both places are there, else a price typed on Plan & price
+    // transfers in a city: Master data rate when both places are there, else a price typed on Plan & price;
+    // a drive in an outstation car package is in the package's price
     for (const t of plan.own_vehicle ? [] : d.city_transfers ?? []) {
+      if (t.package_id && packageIds.has(t.package_id)) continue;
       const v = vehiclesFor(t.from_location_id, t.to_location_id);
       if (v !== 0) transfers.push({ date: d.date, from_location_id: t.from_location_id, to_location_id: t.to_location_id, from_label: t.from_label, to_label: t.to_label, vehicle_type: plan.vehicle_type ?? undefined, ...(v ? { vehicles: v } : {}) });
     }
     for (const it of d.items ?? []) {
-      if (it.addon_id) addons.push({ addon_id: it.addon_id, date: d.date, qty: it.qty ?? undefined });
+      if (it.car_package_id) {
+        if (!plan.own_vehicle) carPackages.push({ package_id: it.car_package_id, date: d.date, ...(plan.transfer_vehicles ? { vehicles: plan.transfer_vehicles } : {}) });
+      } else if (it.addon_id) addons.push({ addon_id: it.addon_id, date: d.date, qty: it.qty ?? undefined });
       else {
         // a flight with a fare per person follows the number of guests
         const amount = it.type === "flight" && it.flight?.fare_pp ? it.flight.fare_pp * flightPax : it.price;
@@ -1137,6 +1144,7 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
     safaris,
     transfers,
     addons,
+    ...(carPackages.length ? { car_packages: carPackages } : {}),
     custom_items: custom,
     manual_prices: plan.manual_prices ?? {},
     discount: plan.discount && plan.discount.pct > 0 ? plan.discount : null,

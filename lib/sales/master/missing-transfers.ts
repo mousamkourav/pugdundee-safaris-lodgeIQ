@@ -87,7 +87,7 @@ export function parseTransferKey(key: string): { from: string; to: string } | nu
   return m ? { from: m[1], to: m[2] } : null;
 }
 
-export function missingTransferPairs(input: { properties: MtProperty[]; locations: MtLocation[]; rates: MtRate[]; quoteMisses: QuoteMiss[]; parks?: { id: string; name: string }[]; driveCities?: [string, string][] }): MissingPair[] {
+export function missingTransferPairs(input: { properties: MtProperty[]; locations: MtLocation[]; rates: MtRate[]; quoteMisses: QuoteMiss[]; parks?: { id: string; name: string }[]; driveCities?: [string, string][]; carPackages?: { cities: string[] }[] }): MissingPair[] {
   const { properties, locations, rates } = input;
   const parkName = new Map((input.parks ?? []).map((p) => [p.id, p.name]));
   const locById = new Map(locations.map((l) => [l.id, l]));
@@ -148,7 +148,12 @@ export function missingTransferPairs(input: { properties: MtProperty[]; location
   }
 
   // city <-> city by road: hotel to hotel, and each city's hotels to the other city's airport
+  // a road on an outstation car package (Delhi - Agra - Jaipur - Delhi) is priced by the package
+  const first = (x: string) => x.toLowerCase().trim().split(/\s+/)[0];
+  const inPackage = (a: string, b: string) =>
+    (input.carPackages ?? []).some((p) => p.cities.some((c, i) => i > 0 && ((first(c) === first(a) && first(p.cities[i - 1]) === first(b)) || (first(c) === first(b) && first(p.cities[i - 1]) === first(a)))));
   for (const [a, b] of input.driveCities ?? DRIVE_CITIES) {
+    if (inPackage(a, b)) continue;
     const ca = a.toLowerCase();
     const cb = b.toLowerCase();
     const ha = hotelsOfCity(ca).map((h) => locOfProperty.get(h.id)!.id);

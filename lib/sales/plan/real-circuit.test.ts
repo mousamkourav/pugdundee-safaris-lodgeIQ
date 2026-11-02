@@ -11,11 +11,11 @@ import { tripChecklist } from "./checklist";
 import { markConfirmed } from "./confirm";
 import { addonTriggers } from "./parse-text";
 import { priceTrip } from "@/lib/sales/pricing/engine";
-import { realCtx as ctx } from "./real-fixture";
+import { realCtx as ctx, OWNER_FULL_TEST } from "./real-fixture";
 import type { Plan } from "./types";
 
 const TODAY = "2026-11-02";
-export const OWNER_FULL_TEST = "Hi team pls make quote - 2 adlts + 1 child 8 yrs from UK, 1 room, arriving delhi on 10th jan'27. delhi one night stay with delhi sighseeing, local guide, accompanying guide and entrances, next day fly to jorhat, kaziranga 3 nigths at iora with 6 safaris and camera, than drive to guwahati and fly to bagdogra, siliguri 2 nights at mayfair chumta jungle view room, than fly bagdogra to delhi, delhi one night stay, then they will go to bhopal than satpura via bhimbetka 3 nights in forest suite with boat safari, canoe, buffer walk, tawa cruise, escorted nature walk, cycling, bush dinner and safari breakfast, than pench 3 nights in tree house room with 1 full day safari, 2 buffer safaris, buffer walk, village walk, cycling, culinary workshop and safari lunch, than tadoba 3 nights at waghoba with 1 full day safari, tadoba boat safari 1 hour, tadoba boat safari 2 hours, core safari from moharli gate, modified gypsy, modified scorpio, cycling, picnic lunch and bush dinner, than kanha 3 nights with 1 full day safari, buffer walk, cycling, special dinner, culinary workshop and picnic lunch, Bandhavgarh, 2 nights kings lodge with full day safari, cycling, village walk and safari breakfast then 2 nights tree house hideaway with bird watching, cycling, bush dinner and escorted nature walk, than ken river 3 nights with boat safari, night boat safari, half day fishing, full day fishing, island dinner, bush dinner, cycling, royal enfield and nature walk, than khajuraho 1 night with sightseeing guide and entrances, transfer to khajuraho for delhi flight drive direct to Agra for 2 nights stay with Agra sighseeing and local guide, than drive to jaipur 2 nights at itc rajputana with jaipur sightseeing, drive back to delhi for homebound flight. 2 gaadi for all transfers, sab safari naturalist ke saath and if any lodge is having unique expeirence add that also";
+
 
 function read(...msgs: string[]) {
   let plan: Plan = emptyPlan(TODAY);

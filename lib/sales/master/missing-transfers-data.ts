@@ -2,6 +2,7 @@
 // then lib/sales/master/missing-transfers.ts works out what is missing.
 import { createClient } from "@/lib/supabase/server";
 import { missingTransferPairs, quoteMissesOf, type MissingPair } from "./missing-transfers";
+import { parseCities } from "@/lib/sales/plan/car-packages";
 
 type Row = Record<string, unknown>;
 const s = (v: unknown) => (v === null || v === undefined ? "" : String(v));
@@ -11,7 +12,7 @@ const VERSIONS = 2000;
 
 export async function loadMissingTransfers(): Promise<{ pairs: MissingPair[]; vehicle: string; error: string | null }> {
   const supabase = await createClient();
-  const [props, locs, rates, versions, parks] = await Promise.all([
+  const [props, locs, rates, versions, parks, pkgs] = await Promise.all([
     supabase.from("sales_properties").select("id, name, park_id, kind, city").eq("active", true),
     supabase.from("sales_locations").select("id, name, type, property_id").eq("active", true),
     supabase.from("sales_transfer_rates").select("from_location_id, to_location_id, vehicle_type, active").eq("active", true),
@@ -19,6 +20,8 @@ export async function loadMissingTransfers(): Promise<{ pairs: MissingPair[]; ve
     supabase.from("sales_itinerary_versions").select("missing:pricing->missing, manual:plan->manual_prices").order("created_at", { ascending: false }).limit(VERSIONS),
     // a city hotel's city can be its place in Parks (Delhi, Agra)
     supabase.from("sales_parks").select("id, name"),
+    // outstation car packages (sales_car_packages.sql; none before it is run)
+    supabase.from("sales_car_packages").select("route").eq("active", true),
   ]);
   const error = [props, locs, rates].find((r) => r.error)?.error?.message ?? null;
   const rows = (r: { data: unknown }) => (r.data ?? []) as Row[];
@@ -32,6 +35,7 @@ export async function loadMissingTransfers(): Promise<{ pairs: MissingPair[]; ve
     locations: rows(locs).map((r) => ({ id: s(r.id), name: s(r.name), type: s(r.type), property_id: r.property_id ? s(r.property_id) : null })),
     rates: rateRows,
     parks: rows(parks).map((r) => ({ id: s(r.id), name: s(r.name) })),
+    carPackages: pkgs.error ? [] : rows(pkgs).map((r) => ({ cities: parseCities(s(r.route)) })),
     quoteMisses: quoteMissesOf([...rows(versions)].reverse().map((v) => ({ missing: v.missing, manual: v.manual }))),
   });
   return { pairs, vehicle, error };

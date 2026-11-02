@@ -56,6 +56,7 @@ export interface CityTransfer {
   to_location_id: string;
   from_label: string;
   to_label: string;
+  package_id?: string; // part of an outstation car package (priced once, not as a drive)
 }
 
 // A flight the guest takes; placed on the right day automatically.
@@ -101,6 +102,7 @@ export interface PlanItem {
   qty: number | null; // add-ons only; null = automatic (guests, rooms...)
   flight?: FlightInfo; // for type "flight"
   auto?: string; // made by the planner from the guest's wishes; kept (with edits) on rebuild
+  car_package_id?: string; // type "transfer": an outstation car package from Master data
 }
 
 export interface PlanDay {

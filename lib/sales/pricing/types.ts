@@ -98,6 +98,22 @@ export interface Location {
   property_id: string | null;
 }
 
+// An outstation car package (Delhi - Agra - Jaipur - Delhi, 4 nights / 5 days): one price for the
+// car over the whole road trip, used instead of pricing each drive (sales_car_packages).
+export interface CarPackage {
+  id: string;
+  name: string;
+  cities: string[]; // in order, starting and ending in the same city: ["Delhi", "Agra", "Delhi"]
+  nights: number; // nights away from the first city
+  vehicle_type: string;
+  capacity: number; // guests per vehicle
+  rate: number; // per vehicle, for the whole package
+  tax_pct: number;
+  valid_from: ISODate | null;
+  valid_to: ISODate | null;
+  active: boolean;
+}
+
 export interface TransferRate {
   id: string;
   from_location_id: string;
@@ -198,6 +214,7 @@ export interface PricingData {
   addons: Addon[];
   offers: Offer[];
   settings: PricingSettings;
+  carPackages?: CarPackage[]; // empty before sales_car_packages.sql
 }
 
 // ---------- the trip being priced ----------
@@ -254,6 +271,8 @@ export interface TripInput {
   safaris: SafariInput[];
   transfers: TransferInput[];
   addons?: AddonInput[];
+  // outstation car packages; the drives they cover are not in `transfers`
+  car_packages?: { package_id: string; date: ISODate; vehicles?: number }[];
   offer_ids?: string[];
   markup_pct?: number | null; // null/undefined = settings default
   adjustment?: { amount: number; reason: string } | null;

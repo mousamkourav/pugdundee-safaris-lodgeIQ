@@ -85,6 +85,12 @@ Middleware (`middleware.ts`) only routes; it is not the security boundary.
 - Master data is cached for the builder (`loadBuilderContext`, unstable_cache, tag
   `sales-master`, 5 min): any new code that saves master data must call
   `revalidateMasterData()` (`lib/sales/master/cache.ts`).
+- Outstation car packages (`sales_car_packages`, Master data > Outstation car packages,
+  `lib/sales/plan/car-packages.ts`): one price for the car over a road trip from a city and back
+  (Delhi - Agra - Jaipur - Delhi, 4 nights). When the trip's drives make exactly that trip (same
+  cities in order, nights between leaving and coming back), the package is one item and those
+  drives are not priced (`CityTransfer.package_id`, engine `car_packages`); city sightseeing on
+  the way is by the package's car. No exact package = each drive priced on its own, with a note.
 - Missing transfer rates: Master data > Missing transfer rates (`lib/sales/master/missing-transfers.ts`),
   Excel out and back in through Import rates. A transfer price typed on Plan & price can be
   saved as the rate (admins) or sent as a suggestion (`sales_rate_suggestions`, approved in
