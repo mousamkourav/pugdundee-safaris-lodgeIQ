@@ -98,7 +98,7 @@ test("Confirm: the confirmation holds only for the route that was checked", () =
   assert.equal(isConfirmed(p), false);
   const ok = markConfirmed(p, "2026-11-01T10:00:00Z");
   assert.equal(isConfirmed(ok), true);
-  assert.match(ok.confirmed!.key, /^r1-[0-9a-f]{8}-\d+$/);
+  assert.match(ok.confirmed!.key, /^r2-[0-9a-f]{8}-\d+$/);
   // the same route: still confirmed; a correction to it: confirm again
   assert.equal(isConfirmed({ ...ok, guest: { ...ok.guest, name: "Mr Weber" } }), true);
   assert.equal(isConfirmed(editStop(ok, ctx, 1, { nights: 3 })), false);
@@ -180,4 +180,32 @@ test("Form: entries that do not fit are refused, with the reason", () => {
   assert.ok(formExperiences(ctx, "IORA").some((a) => a.id === "CAM"));
   assert.ok(!formExperiences(ctx, "KEL").some((a) => a.id === "CAM"));
   assert.ok(formExperiences(ctx, "KEL").some((a) => a.id === "BUSH"));
+});
+
+// 2 Nov 2026: a trip read by the AI was refused on save ("The route changed after it was
+// confirmed") with nothing changed: the AI builds a city stay as {when, city, nights, hotel, at},
+// the server's sanitizePlan rebuilds it as {when, city, nights, at, ..., hotel}, and the key was
+// the JSON as built. The key is now made from the sanitized plan in one canonical form.
+test("a confirmed route stays confirmed on the server, however its objects were built", async () => {
+  const { realCtx } = await import("./real-fixture");
+  const { chatTurn: turn, initialFlags: flags0 } = await import("./chat");
+  const { emptyPlan: empty } = await import("./planner");
+  const { sanitizePlan } = await import("./sanitize");
+  const msg = "Hi team, pls quote for 2 adults from UK, 1 room, dates not fixed yet. Arrive Delhi 1 night at roseate with delhi sightseeing, local guide and entrances, next day fly to jabalpur, kings lodge 3 nights with village walk and cycling, then pench 2 nights with culinary workshop and buffer walk, then fly nagpur to delhi and drive direct to agra 2 nights at itc mughal with agra sightseeing and local guide, then drive to jaipur 2 nights at itc rajputana with jaipur sightseeing and accompanying guide, drive back to delhi for homebound flight. all safaris with naturalist";
+  const read = turn(empty("2026-11-02"), flags0(empty("2026-11-02")), msg, realCtx, "2026-11-02").plan;
+  // the city stays as the AI path builds them: hotel before at, extras last; an empty vehicle
+  const asAi = {
+    ...read,
+    vehicle_type: "",
+    city_stays: (read.city_stays ?? []).map((c, i) => {
+      const { want_extras, hotel, ...rest } = c;
+      return { ...rest, ...(hotel ? { hotel } : {}), at: c.when === "after" ? 2 : undefined, ...(want_extras ? { want_extras } : {}), ...(i === 0 ? { price: undefined } : {}) };
+    }),
+  } as typeof read;
+  const confirmed = markConfirmed(asAi, "2026-11-02T10:00:00Z");
+  assert.ok(isConfirmed(confirmed));
+  const onServer = sanitizePlan(JSON.parse(JSON.stringify(confirmed)))!;
+  assert.ok(isConfirmed(onServer), "the server sees the same confirmed route");
+  // a real change still asks again
+  assert.ok(!isConfirmed({ ...onServer, stops: onServer.stops.map((s, i) => (i === 1 ? { ...s, nights: 3 } : s)) }));
 });

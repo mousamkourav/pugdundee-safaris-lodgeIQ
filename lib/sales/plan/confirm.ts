@@ -11,22 +11,45 @@ import { fmtDay } from "@/lib/sales/format";
 import { mealLabel } from "@/lib/sales/pricing/engine";
 import { itemStep, transferStep } from "./day-order";
 import { lodgesInPark, mealPlansOf, roomsOf, routeKey, segments } from "./planner";
+import { sanitizePlan } from "./sanitize";
 import type { BuilderContext, Plan, PlanStop } from "./types";
 
 // ---------------- the confirmation ----------------
 
 // A short fingerprint of everything that makes the route (routeKey): FNV-1a, 32 bits.
-export function confirmKey(plan: Plan): string {
-  const s = routeKey(plan);
+const fnv = (s: string) => {
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
     h = Math.imul(h, 0x01000193) >>> 0;
   }
-  return `r1-${h.toString(16).padStart(8, "0")}-${s.length}`;
-}
+  return `${h.toString(16).padStart(8, "0")}-${s.length}`;
+};
+// the same value however it was built: keys sorted, empty keys left out
+const canon = (v: unknown): unknown =>
+  Array.isArray(v)
+    ? v.map(canon)
+    : v && typeof v === "object"
+      ? Object.fromEntries(
+          Object.keys(v as Record<string, unknown>)
+            .sort()
+            .filter((k) => (v as Record<string, unknown>)[k] !== undefined)
+            .map((k) => [k, canon((v as Record<string, unknown>)[k])])
+        )
+      : v;
 
-export const isConfirmed = (plan: Plan) => !!plan.confirmed && plan.confirmed.key === confirmKey(plan);
+// The route as the server sees it (sanitizePlan), in one canonical form, so the browser and the
+// server always agree: before (r1) the browser's plan was hashed as built, and a city stay built
+// by the AI reading ({..., hotel, at}) hashed differently once the server rebuilt it ({..., at,
+// hotel}): "The route changed after it was confirmed" on save, with nothing changed (2 Nov 2026).
+export function confirmKey(plan: Plan): string {
+  const clean = sanitizePlan(JSON.parse(JSON.stringify(plan))) ?? plan;
+  return `r2-${fnv(JSON.stringify(canon(JSON.parse(routeKey(clean)))))}`;
+}
+// the key quotes confirmed before 2 Nov 2026 carry
+const legacyKey = (plan: Plan) => `r1-${fnv(routeKey(plan))}`;
+
+export const isConfirmed = (plan: Plan) => !!plan.confirmed && (plan.confirmed.key === confirmKey(plan) || plan.confirmed.key === legacyKey(plan));
 export const markConfirmed = (plan: Plan, at: string): Plan => ({ ...plan, confirmed: { key: confirmKey(plan), at } });
 
 // ---------------- the trip in plain words ----------------

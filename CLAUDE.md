@@ -162,7 +162,9 @@ Every enquiry the team reports becomes a test (`enquiries.test.ts`, `multi-regio
 Quotes safe even when the reader misreads (builder steps: Trip, Confirm, Plan & price, Final draft):
 - Confirm step (`lib/sales/plan/confirm.ts`, `components/sales/builder/confirm-step.tsx`): the
   trip in plain words, in order (`tripSummary`), with one-click corrections (`editStop`,
-  `editStay`, `removeFlight`). "Correct, continue" sets `plan.confirmed.key = confirmKey(plan)`;
+  `editStay`, `removeFlight`). "Correct, continue" sets `plan.confirmed.key = confirmKey(plan)` (r2: made from
+  `sanitizePlan(plan)` with keys sorted, so the browser and the server always agree; r1 keys of
+  older quotes still accepted);
   Plan & price opens only while the route is unchanged. Quotes saved before the step existed
   count as confirmed when opened. Corrections teach the reader at once
   (`learnFromConfirmation`: Reading memory + suggested reader rules).
