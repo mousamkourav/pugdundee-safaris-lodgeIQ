@@ -4,6 +4,7 @@ import { safe } from "@/lib/sales/safe";
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, isInactive, isSalesUser, isSalesAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { canMoveStatus, STATUS_LABEL, isQueryStatus } from "@/lib/sales/status";
 
 export type StatusInput =
   | { to: "booked"; amount: number; paymentRef: string; paymentDate: string; remark?: string }
@@ -16,6 +17,13 @@ type Result = { ok?: boolean; error?: string };
 
 const isDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
 const clean = (v: string | undefined, max = 1000) => (v ?? "").trim().slice(0, max);
+// a money amount typed in a status dialog: whole rupees, not negative, not absurd
+const MAX_MONEY = 100_000_000;
+const money = (v: unknown): number | null | "bad" => {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 && n <= MAX_MONEY ? Math.round(n) : "bad";
+};
 
 // The database trigger (sales_queries_guard_update) is the real referee:
 // it allows only draft->open, open->quoted/booked/lost, quoted->booked/lost/open,
@@ -30,12 +38,12 @@ async function changeStatusUnsafe(queryId: string, input: StatusInput): Promise<
   switch (input.to) {
     case "booked": {
       const ref = clean(input.paymentRef, 200);
-      if (!(input.amount > 0)) return { error: "Enter the amount received." };
+      if (!(Number(input.amount) > 0) || money(input.amount) === "bad") return { error: "Enter the amount received (in rupees)." };
       if (!ref) return { error: "Enter the payment reference." };
       if (!isDate(input.paymentDate)) return { error: "Enter the payment date." };
       update = {
         status: "booked",
-        booked_amount: Math.round(input.amount),
+        booked_amount: Math.round(Number(input.amount)),
         payment_ref: ref,
         booked_at: `${input.paymentDate}T12:00:00+05:30`,
         status_remark: clean(input.remark) || null,
@@ -51,11 +59,14 @@ async function changeStatusUnsafe(queryId: string, input: StatusInput): Promise<
     case "cancelled": {
       if (!clean(input.reason)) return { error: "Choose a reason." };
       if (!clean(input.remark)) return { error: "A remark is required." };
+      const charge = money(input.cancelCharge);
+      const refund = money(input.refund);
+      if (charge === "bad" || refund === "bad") return { error: "The cancellation charge and refund must be amounts in rupees (0 or more)." };
       update = {
         status: "cancelled",
         lost_reason: clean(input.reason, 200), // the reason column is shared by lost and cancelled
-        cancel_charge: input.cancelCharge ?? null,
-        refund_amount: input.refund ?? null,
+        cancel_charge: charge,
+        refund_amount: refund,
         status_remark: clean(input.remark),
       };
       break;
@@ -75,6 +86,14 @@ async function changeStatusUnsafe(queryId: string, input: StatusInput): Promise<
   }
 
   const supabase = await createClient();
+  // the workflow, in plain words (the database trigger checks it again)
+  const { data: cur } = await supabase.from("sales_queries").select("status").eq("id", queryId).is("deleted_at", null).maybeSingle();
+  if (!cur) return { error: "Query not found, or it is not assigned to you." };
+  const from = (cur as { status?: string }).status;
+  if (!canMoveStatus(from, input.to)) {
+    const label = isQueryStatus(from) ? STATUS_LABEL[from] : String(from);
+    return { error: from === input.to ? `This query is already ${label}.` : `A ${label} query cannot be moved to ${STATUS_LABEL[input.to]}.` };
+  }
   // a deleted query stays as it was deleted
   const { data, error } = await supabase.from("sales_queries").update(update).eq("id", queryId).is("deleted_at", null).select("id").maybeSingle();
   if (error) return { error: error.message };

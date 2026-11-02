@@ -45,3 +45,17 @@ export interface QueryRow {
   created_at: string;
   updated_at: string;
 }
+
+// The status workflow, the same as the database trigger (sales_queries_guard_update), so the
+// server action can answer in plain words before the database refuses. The trigger stays the referee.
+export const NEXT_STATUS: Record<QueryStatus, readonly QueryStatus[]> = {
+  draft: ["open"],
+  open: ["quoted", "booked", "lost"],
+  quoted: ["booked", "lost", "open"],
+  booked: ["cancelled"],
+  lost: ["open"],
+  cancelled: ["open"],
+};
+
+export const canMoveStatus = (from: string | null | undefined, to: string): boolean =>
+  isQueryStatus(from) && isQueryStatus(to) && NEXT_STATUS[from].includes(to);
