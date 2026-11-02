@@ -166,6 +166,12 @@ test("dates not fixed: Day 1, 2... priced by season, and the quote is still chec
   // safaris 4 x 14,500 x 1.05 = 60,900; Jabalpur drives 2 x 7,000 x 1.05 = 14,700
   assert.deepEqual([sumOf(r, "room"), sumOf(r, "safari"), sumOf(r, "transfer")], [106_200, 60_900, 14_700]);
   assert.equal(r.totals.grand, 181_800);
+  // a check on a trip without dates speaks of "Day 1", never of the placeholder date
+  const open = read(ctx, "2 adults indian, bandhavgarh 3 nights kings lodge, dates not fixed");
+  const c = quote(open).checks;
+  assert.ok(c.includes("Kings Lodge: no way in on Day 1. Set where our car picks them up (Trip step: arrival point), add the flight before it, or mark their own vehicle."), c.join(" / "));
+  assert.ok(c.some((x) => /no way out on Day 4\./.test(x)), c.join(" / "));
+  assert.ok(!c.some((x) => /\d{4}-\d{2}-\d{2}/.test(x)));
 });
 
 // ---------------------------------------------------------------- peak, long weekend, New Year, monsoon

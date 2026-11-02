@@ -40,7 +40,9 @@ export function quoteChecks(plan: Plan, ctx: BuilderContext, result: PriceResult
   const start = segs[0].checkIn;
   const end = segs[segs.length - 1].checkOut;
   const dates = plan.days.map((d) => d.date);
-  const when = (d: string) => (plan.dateless ? d : fmtDay(d));
+  // dates not fixed: the placeholder date is never shown, the day of the trip is ("Day 3")
+  const day1 = dates[0] && dates[0] < start ? dates[0] : start;
+  const when = (d: string) => (plan.dateless ? `Day ${Math.round((Date.parse(d) - Date.parse(day1)) / 86_400_000) + 1}` : fmtDay(d));
   if (dates[0] !== start || dates[dates.length - 1] !== end) {
     out.push(`The day plan runs ${when(dates[0])} to ${when(dates[dates.length - 1])}, but the trip runs ${when(start)} to ${when(end)}. Update the day plan.`);
   } else {
