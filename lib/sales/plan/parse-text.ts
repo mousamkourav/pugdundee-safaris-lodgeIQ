@@ -999,13 +999,17 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   const departWords =
     /(depart\w*|dep\.?|wapas|vapas|leav\w*|drop(?:ping)?(?:\s+off)?|fly(?:ing)?\s+(?:out|back)|back(?: to)?|out\s+(?:from|of|via)|end\w*|exit\w*|return\w*|onward|jayenge|jaenge|jaayenge|nikl\w*)\W*(?:at|in|to|from|via|of)?\W*$/i;
   const bothWords = /^\W*(in\s*(?:\/|&|and)?\s*out|in-out|round ?trip|both ways)\b/i;
+  // "arriving and departing Jabalpur", "pickup & drop Nagpur", "arrival/departure Raipur",
+  // "arriving and departing by train at Itarsi": both ends (a wider look-back than `before`)
+  const bothBefore =
+    /\b(?:arriv\w*|arr\.?|pick(?:ing)?[\s-]?up)\s*(?:and|&|\/|n|,)?\s*(?:depart\w*|dep\.?|drop(?:ping)?(?:\s+off)?|leav\w*)(?:\s+by\s+(?:train|flight|air|road|car))?\W*(?:at|in|to|from)?\W*(?:the\s+)?$/i;
   const unclassified: string[] = [];
   for (const h of placeHits) {
     const before = text.slice(Math.max(0, h.index - 25), h.index);
     const after = text.slice(h.end, h.end + 15);
     // Words before the place win; a word after only counts if it follows
     // directly ("Nagpur out"), not when it starts the next phrase (", drop at Raipur").
-    if (bothWords.test(after) || /\bin and out of\W*$/i.test(before)) {
+    if (bothWords.test(after) || /\bin and out of\W*$/i.test(before) || bothBefore.test(text.slice(Math.max(0, h.index - 45), h.index))) {
       out.arrival_place ??= h.name;
       out.departure_place ??= h.name;
     } else if (departWords.test(before)) out.departure_place ??= h.name;
@@ -1400,6 +1404,13 @@ export function applyParsed(plan: Plan, parsed: ParsedTrip, ctx: BuilderContext)
 // and no guest names: written as "Mr X" / "name is X", or the name typed in the
 // guest fields (passed in as `names`), in full or any part of 3+ letters.
 export function scrubForAI(text: string, names: string[] = []) {
+  // emails first (a guest's name inside "rahul.sharma@gmail.com" would otherwise break the address
+  // apart and leave "@gmail.com"), and dates kept out of the phone-number rule ("2027-01-16",
+  // "16-01-2027" are not phone numbers: the AI needs them, and its quotes are checked against this text)
+  const dates: string[] = [];
+  text = text
+    .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, "[email]")
+    .replace(/\b(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}-\d{1,2}-\d{2,4})\b/g, (d) => `\u0000${dates.push(d) - 1}\u0000`);
   const parts = names
     .flatMap((n) => [n.trim(), ...n.split(/[^\p{L}'-]+/u)])
     .map((p) => p.trim())
@@ -1413,6 +1424,7 @@ export function scrubForAI(text: string, names: string[] = []) {
     .replace(/\+?\d[\d\s-]{8,}\d/g, "[number]")
     .replace(/\b(?:[Mm](?:r|rs|s|iss)|[Dd]r|[Pp]rof)\.?\s+(?:&\s*(?:[Mm]rs?)\.?\s+)?[A-Za-z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+)?/g, "[guest]")
     .replace(/\b(?:guest(?:'s)?\s+name|name)\s*(?:is|:|-)\s*[^,.;\n]{2,60}/gi, "name: [guest]")
+    .replace(/\u0000(\d+)\u0000/g, (_, i) => dates[Number(i)] ?? "")
     .slice(0, 2000);
 }
 
