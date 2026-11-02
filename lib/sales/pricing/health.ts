@@ -34,6 +34,29 @@ export function checkData(d: PricingData, today: ISODate): HealthIssue[] {
         out.push({ level: "warning", message: `${p.name} - ${r.name}: rates end on ${last}. Add next season's rates.`, href: `/sales/admin/room-rates?f_room_category_id=${r.id}` });
       }
     }
+    // A lodge exception for "all guests" beats the tariff (it has the higher priority), so where it
+    // overlaps the Indian published rate, Indian guests get the exception's price instead. Old
+    // per-lodge seasonal rows ("per BAR policy") did exactly that: Indian quotes at foreign BAR rates.
+    for (const r of rooms) {
+      const overlaps = (a: { valid_from: string; valid_to: string }, b: { valid_from: string; valid_to: string }) => a.valid_from <= b.valid_to && b.valid_from <= a.valid_to;
+      const indian = d.roomRates.filter((x) => x.active && x.room_category_id === r.id && x.nationality === "indian" && x.valid_to >= today);
+      const hidden = d.roomRates.filter(
+        (x) =>
+          x.active &&
+          x.room_category_id === r.id &&
+          (x.nationality ?? "all") === "all" &&
+          x.valid_to >= today &&
+          indian.some((i) => (x.priority ?? 1) > (i.priority ?? 1) && i.meal_plan === x.meal_plan && overlaps(x, i) && Number(i.rate_double) !== Number(x.rate_double))
+      );
+      if (hidden.length) {
+        const first = hidden.map((x) => x.valid_from).sort()[0];
+        out.push({
+          level: "warning",
+          message: `${p.name} - ${r.name}: ${hidden.length} lodge rate${hidden.length === 1 ? "" : "s"} for "all guests" (from ${first}) replace the Indian published rate, so Indian guests are quoted ${hidden.length === 1 ? "that rate" : "those rates"}. If they are meant for foreign guests, set their nationality to foreign.`,
+          href: `/sales/admin/room-rates?f_room_category_id=${r.id}`,
+        });
+      }
+    }
     const loc = d.locations.find((l) => l.property_id === p.id);
     const hasRoute = loc && d.transferRates.some((t) => t.from_location_id === loc.id || t.to_location_id === loc.id);
     if (!hasRoute) out.push({ level: "warning", message: `${p.name}: no transfer routes to or from it.`, href: "/sales/admin/transfers" });
