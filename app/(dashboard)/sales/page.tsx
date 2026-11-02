@@ -5,123 +5,80 @@ import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { StatCard } from "@/components/sales/stat-card";
 import { QueriesTable } from "@/components/sales/queries-table";
+import { RangePicker } from "@/components/sales/range-picker";
 import { getMemberNames } from "@/lib/sales/members";
-import { fmtDate, rupees, startOfLastMonthIST, startOfMonthIST } from "@/lib/sales/format";
+import { rupees } from "@/lib/sales/format";
 import { QUERY_LIST_COLUMNS, type QueryRow } from "@/lib/sales/status";
+import { resolveDashboardRange, RANGE_LABEL } from "@/lib/sales/dashboard-range";
+import { summarise, conversion as pct, followUps, byMember, type Totals } from "@/lib/sales/dashboard-summary";
 
-type Range = "month" | "last" | "all";
-
-interface Totals {
-  draft: number;
-  created: number;
-  open: number;
-  quoted: number;
-  booked: number;
-  lost: number;
-  cancelled: number;
-  bookedValue: number; // trip totals of the booked quotes
-  received: number; // money received when they were marked booked
-  pendingValue: number;
-}
-
-function summarise(rows: QueryRow[]): Totals {
-  const t: Totals = { draft: 0, created: 0, open: 0, quoted: 0, booked: 0, lost: 0, cancelled: 0, bookedValue: 0, received: 0, pendingValue: 0 };
-  for (const r of rows) {
-    // Drafts have not been quoted yet: counted on their own, not in created or conversion.
-    if (r.status === "draft") {
-      t.draft += 1;
-      continue;
-    }
-    t.created += 1;
-    t[r.status] += 1;
-    if (r.status === "booked") {
-      t.bookedValue += Number(r.total_amount ?? 0);
-      t.received += Number(r.booked_amount ?? 0);
-    }
-    if (r.status === "open" || r.status === "quoted") t.pendingValue += Number(r.total_amount ?? 0);
-  }
-  return t;
-}
-
-const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
+// Supabase returns at most 1000 rows per request, so the period is read page by page
+// (a single .limit(5000) silently stopped at 1000 queries).
+const PAGE = 1000;
+const MAX_ROWS = 50_000;
 
 export default async function SalesDashboard({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string }>;
+  searchParams: Promise<{ range?: string; from?: string; to?: string }>;
 }) {
   const { user, profile } = await requireUser();
   const admin = isSalesAdmin(profile?.role);
-  const asked = (await searchParams).range;
-  const range: Range = asked === "all" ? "all" : asked === "last" ? "last" : "month";
-  const monthStart = startOfMonthIST();
-  const lastStart = startOfLastMonthIST();
+  // Default = all time; ?range=month|last|last3|year|custom (&from&to)
+  const range = resolveDashboardRange(await searchParams);
   const supabase = await createClient();
 
-  // Period rows (RLS already limits members to their own queries).
-  let periodQ = supabase.from("sales_queries").select(QUERY_LIST_COLUMNS).is("deleted_at", null);
-  if (range === "month") periodQ = periodQ.gte("created_at", monthStart);
-  if (range === "last") periodQ = periodQ.gte("created_at", lastStart).lt("created_at", monthStart);
-  if (!admin) periodQ = periodQ.eq("assigned_to", user.id);
-  const { data: periodData, error } = await periodQ.limit(5000);
-  const period = (periodData ?? []) as unknown as QueryRow[];
+  // Every query of the period (RLS already limits members to their own queries).
+  const period: QueryRow[] = [];
+  let error: { message: string } | null = null;
+  for (let offset = 0; offset < MAX_ROWS; offset += PAGE) {
+    let q = supabase.from("sales_queries").select(QUERY_LIST_COLUMNS).is("deleted_at", null);
+    if (range.from) q = q.gte("created_at", range.from);
+    if (range.to) q = q.lt("created_at", range.to);
+    if (!admin) q = q.eq("assigned_to", user.id);
+    const { data, error: e } = await q
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (e) {
+      error = e;
+      break;
+    }
+    const rows = (data ?? []) as unknown as QueryRow[];
+    period.push(...rows);
+    if (rows.length < PAGE) break;
+  }
   const t = summarise(period);
 
-  // Follow-up list: every open query regardless of period, newest first (up to 50, so older ones stay in view).
-  let openQ = supabase.from("sales_queries").select(QUERY_LIST_COLUMNS).is("deleted_at", null).in("status", ["open", "quoted"]);
-  if (!admin) openQ = openQ.eq("assigned_to", user.id);
-  const { data: openData } = await openQ.order("created_at", { ascending: false }).limit(50);
-  const openRows = (openData ?? []) as unknown as QueryRow[];
+  // Follow-up list: open and quoted queries of the same period, newest first.
+  const openRows = followUps(period, 50);
+  const openCount = t.open + t.quoted;
 
-  // Admin: per-member performance.
+  // Admin: per-member performance for the period.
   let team: { id: string; name: string; t: Totals }[] = [];
   let names: Record<string, string> = {};
   if (admin) {
-    const ids = [...period, ...openRows].map((r) => r.assigned_to).filter((x): x is string => !!x);
-    const res = await getMemberNames(ids);
+    const res = await getMemberNames(period.map((r) => r.assigned_to).filter((x): x is string => !!x));
     names = res.names;
-    const byMember = new Map<string, QueryRow[]>();
-    for (const r of period) {
-      if (!r.assigned_to) continue;
-      byMember.set(r.assigned_to, [...(byMember.get(r.assigned_to) ?? []), r]);
-    }
-    // Include active members with zero queries so nobody is missing from the table.
-    for (const m of res.members) if (m.status !== "disabled" && !byMember.has(m.id)) byMember.set(m.id, []);
-    team = [...byMember.entries()]
-      .map(([id, rows]) => ({ id, name: names[id] ?? "Unknown", t: summarise(rows) }))
-      .sort((a, b) => b.t.bookedValue - a.t.bookedValue || b.t.created - a.t.created);
+    team = byMember(period, res.members, names);
   }
 
   const first = (profile?.full_name || "").split(" ")[0] || "there";
-  const tab = (r: Range, label: string) => (
-    <Link
-      href={r === "month" ? "/sales" : `/sales?range=${r}`}
-      className={
-        "rounded-md px-3 py-1.5 font-medium transition " +
-        (range === r ? "bg-white text-olive-800 shadow-card" : "text-sand-500 hover:text-olive-800")
-      }
-    >
-      {label}
-    </Link>
-  );
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
+        <div className="min-w-0">
           <p className="eyebrow">{admin ? "Sales overview" : "My dashboard"}</p>
           <h1 className="mt-1 text-2xl">{admin ? "All members" : `Hello, ${first}`}</h1>
-          {/* the period counted, so an empty new month is never mistaken for lost data */}
+          {/* the period counted, so an empty period is never mistaken for lost data */}
           <p className="mt-1 text-sm text-sand-500">
-            {range === "month" ? `Queries created from ${fmtDate(monthStart)} to today` : range === "last" ? `Queries created ${fmtDate(lastStart)} to ${fmtDate(new Date(Date.parse(monthStart) - 60_000))}` : "All queries"}
+            <span className="font-medium text-sand-700">{RANGE_LABEL[range.key]}:</span> {range.label} ({period.length}{" "}
+            {period.length === 1 ? "query" : "queries"})
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="inline-flex rounded-lg border border-sand-200 bg-sand-100 p-1 text-sm">
-            {tab("month", "This month")}
-            {tab("last", "Last month")}
-            {tab("all", "All time")}
-          </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <RangePicker key={`${range.key}-${range.fromDay}-${range.toDay}`} value={range.key} fromDay={range.fromDay} toDay={range.toDay} />
           <Link href="/sales/new" className={ui.btnPrimary}>
             <Icon name="clipboard" className="h-[18px] w-[18px]" />
             Create itinerary
@@ -130,17 +87,17 @@ export default async function SalesDashboard({
       </div>
 
       {error && <p className={ui.alertError}>Could not load queries: {error.message}</p>}
-      {!error && range === "month" && !period.length && (
+      {range.note && <p className={ui.alertWarning}>{range.note}</p>}
+      {!error && range.key !== "all" && !period.length && (
         <p className={ui.alertWarning}>
-          No queries have been created yet this month (since {fmtDate(monthStart)}). Your earlier queries are safe: see{" "}
-          <Link href="/sales?range=last" className="font-semibold underline">Last month</Link> or{" "}
-          <Link href="/sales?range=all" className="font-semibold underline">All time</Link>.
+          No queries were created in this period. Your other queries are safe: choose{" "}
+          <Link href="/sales" className="font-semibold underline">All time</Link> to see every query.
         </p>
       )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <StatCard label="Created" value={t.created} />
-        <StatCard label="Booked" value={t.booked} valueClass="!text-success" hint={`Conversion ${pct(t.booked, t.created)}%`} />
+        <StatCard label="Booked" value={t.booked} valueClass="!text-success" hint={`Conversion ${pct(t)}%`} />
         <StatCard label="Open" value={t.open} valueClass="!text-warning" />
         <StatCard label="Quoted" value={t.quoted} hint="Sent, awaiting reply" />
         <StatCard label="Lost / cancelled" value={`${t.lost} / ${t.cancelled}`} />
@@ -151,15 +108,15 @@ export default async function SalesDashboard({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard label="Booked value" value={rupees(t.bookedValue)} hint="Trip totals of booked quotes" highlight />
         <StatCard label="Received" value={rupees(t.received)} hint="Payments recorded at booking" />
-        <StatCard label="Pending value" value={rupees(t.pendingValue)} hint="Open and quoted in this period" />
+        <StatCard label="Pending value" value={rupees(t.pendingValue)} hint={range.key === "all" ? "Open and quoted, all time" : "Open and quoted in this period"} />
       </div>
 
       {admin && (
         <section>
-          <div className="mb-3 flex items-end justify-between">
+          <div className="mb-3 flex items-end justify-between gap-3">
             <div>
               <h2 className="text-lg">Member performance</h2>
-              <p className="text-sm text-sand-500">Click a member to see their queries.</p>
+              <p className="text-sm text-sand-500">{RANGE_LABEL[range.key]}. Click a member to see their queries.</p>
             </div>
             <Link href="/sales/members" className={`${ui.btnGhost} ${ui.btnSm}`}>Manage members</Link>
           </div>
@@ -184,7 +141,7 @@ export default async function SalesDashboard({
                   </thead>
                   <tbody>
                     {team.map((m) => {
-                      const c = pct(m.t.booked, m.t.created);
+                      const c = pct(m.t);
                       return (
                         <tr key={m.id} className="border-t border-sand-200 hover:bg-sand-50">
                           <td className="px-4 py-3">
@@ -221,14 +178,17 @@ export default async function SalesDashboard({
       <section>
         <div className="mb-3">
           <h2 className="text-lg">Open queries - follow up</h2>
-          <p className="text-sm text-sand-500">Newest first. Anything open more than 5 days is highlighted.</p>
+          <p className="text-sm text-sand-500">
+            Open and quoted queries of the period ({openCount}), newest first
+            {openCount > openRows.length ? `; the latest ${openRows.length} are shown` : ""}. Anything open more than 5 days is highlighted.
+          </p>
         </div>
         <QueriesTable
           rows={openRows}
           memberNames={names}
           showMember={admin}
           showAge
-          empty="No open queries. Create an itinerary to start one."
+          empty={range.key === "all" ? "No open queries. Create an itinerary to start one." : "No open or quoted queries were created in this period."}
         />
       </section>
     </div>
