@@ -152,6 +152,12 @@ Route rules (do not patch phrases around them):
   `real-circuit.test.ts` runs the owner's whole-circuit enquiry on his REAL Master data
   (`real-master.data.ts`, generated from his export of 2 Nov 2026; `real-fixture.ts` = `realCtx`).
   Test reading and routing on real data, never only on made-up rows; regenerate it from a new export.
+- A break from our itinerary ("they go to another resort for 2 days and resume with us", "2 nights
+  at another resort", "not with us for 3 nights", "take a break of 2 days"): the reader adds a
+  city stay `{ city: "", away: true, blank: true, at }` between the lodges (parse-text, `BREAK_RE`;
+  the AI's city nights never drop it, `mergeAiFirst`). Days "Own arrangements", nothing priced;
+  `away_transfer` "own" (default: no transfers, no "no way in / out" check) or "ours" (our car to
+  "@their own hotel" and back, prices typed), set on the Confirm step. Guest: exclusion line.
 - City nights with no hotel named take the city's hotel from Master data (Roseate House for
   Delhi); "hotel in X" (none yet) gets no transfer price box.
 - Misspelt trip words ("nigths", "safaries", "adluts") are read (`fixTripWords`).

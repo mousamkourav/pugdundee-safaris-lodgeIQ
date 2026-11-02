@@ -116,7 +116,7 @@ function standardLists(plan: Plan, lodgeNames: Record<string, string>) {
     if (!list.includes(name)) list.push(name);
     byMeal.set(s.meal_plan, list);
   }
-  const cities = (plan.city_stays ?? []).filter((c) => c.nights > 0);
+  const cities = (plan.city_stays ?? []).filter((c) => c.nights > 0 && !c.away);
   if (byMeal.size === 1 && !cities.length) {
     const m = [...byMeal.keys()][0];
     inc.push(m === "AP" ? "All meals: breakfast, lunch and dinner" : `Meals: ${(MEALS_LINE[m] ?? m).toLowerCase()}`);
@@ -132,6 +132,9 @@ function standardLists(plan: Plan, lodgeNames: Record<string, string>) {
   if (safaris.length) inc.push("Jeep safaris as shown, with permit fee, jeep, park guide, packed breakfast on morning safaris and refreshments on evening safaris");
   if (safaris.some((x) => x.naturalist)) itineraryInc.push("Accompanying lodge naturalist on the safaris shown");
   else if (safaris.length) itineraryExc.push("Accompanying lodge naturalist on safaris");
+  // nights not with us: stay, meals and travel of those days are the guests' own
+  const away = (plan.city_stays ?? []).filter((c) => c.away && c.nights > 0);
+  if (away.length) itineraryExc.push(`Accommodation, meals and travel during your own arrangements (${joinAnd(away.map((c) => `${c.nights} night${c.nights === 1 ? "" : "s"}`))} not with us)`);
   if (plan.own_vehicle) itineraryExc.push("Transfers: the guests travel in their own vehicle");
   else if (plan.days.some((d) => d.own_vehicle)) itineraryExc.push("Transfers on the days the guests travel in their own vehicle");
   if (!plan.own_vehicle && plan.days.some((d) => (d.transfer && !d.own_vehicle) || d.city_transfers?.length)) inc.push("Road transfers shown in the itinerary");

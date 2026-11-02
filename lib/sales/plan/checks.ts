@@ -71,14 +71,17 @@ export function quoteChecks(plan: Plan, ctx: BuilderContext, result: PriceResult
 
   // ---- a way in and a way out for every lodge (a transfer, or their own vehicle)
   const lodges = segs.filter((s) => s.kind === "lodge");
+  // next to nights not with us (own arrangements): they leave / rejoin on their own unless our car is set
+  const awayOwn = (seg: (typeof segs)[number] | undefined) => seg?.kind === "city" && !!seg.stay.away && seg.stay.away_transfer !== "ours";
   lodges.forEach((s, n) => {
     if (s.kind !== "lodge") return;
+    const at = segs.indexOf(s);
     const loc = ctx.locations.find((l) => l.property_id === s.stop.property_id)?.id;
     if (!loc || plan.own_vehicle) return;
     const first = n === 0;
     const last = n === lodges.length - 1;
-    const ownIn = (first ? plan.arrival_mode === "own" : plan.between_lodges === "own") || roadsOn(s.checkIn).some((r) => r.own);
-    const ownOut = (last ? plan.departure_mode === "own" : plan.between_lodges === "own") || roadsOn(s.checkOut).some((r) => r.own);
+    const ownIn = (first ? plan.arrival_mode === "own" : plan.between_lodges === "own") || roadsOn(s.checkIn).some((r) => r.own) || awayOwn(segs[at - 1]);
+    const ownOut = (last ? plan.departure_mode === "own" : plan.between_lodges === "own") || roadsOn(s.checkOut).some((r) => r.own) || awayOwn(segs[at + 1]);
     if (!ownIn && !roadsOn(s.checkIn).some((r) => r.to === loc)) {
       out.push(`${lodge(s.stop.property_id)}: no way in on ${when(s.checkIn)}. Set where our car picks them up (Trip step: arrival point), add the flight before it, or mark their own vehicle.`);
     }
