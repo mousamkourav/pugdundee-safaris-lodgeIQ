@@ -30,6 +30,7 @@ export interface PlanStop {
   want_naturalists?: number | null; // how many with a naturalist; -1 = all of them
   want_extras?: string[]; // experience keywords, e.g. "bush dinner", "boat safari"
   want_sessions?: "morning" | "afternoon"; // only morning (or only evening) safaris
+  want_buffer?: number; // how many of the safaris in the buffer zone ("2 buffer safaris")
   want_jeeps?: number; // jeeps on every safari here ("2 jeeps per safari")
   want_qty?: Record<string, number>; // how many of an experience, by keyword ("camera": 1)
 }

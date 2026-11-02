@@ -4,9 +4,10 @@
 
 import { addDays, dayName } from "@/lib/sales/pricing/dates";
 import { closureFor } from "@/lib/sales/pricing/engine";
-import type { ISODate, RateBasis, SafariInput, StayInput, TransferInput, TripInput } from "@/lib/sales/pricing/types";
+import type { Addon, ISODate, RateBasis, SafariInput, StayInput, TransferInput, TripInput } from "@/lib/sales/pricing/types";
 import type { BuilderContext, CityStay, CityTransfer, DaySafari, Plan, PlanDay, PlanItem, PlanStop } from "./types";
 import { cityParkIds, isCityHotel, sameCity } from "./cities";
+import { DRIVE_CITIES } from "@/lib/sales/master/missing-transfers";
 
 export const MEAL_ORDER = ["AP", "MAP", "CP", "EP"];
 
@@ -272,11 +273,31 @@ function applyWants(plan: Plan, ctx: BuilderContext, days: PlanDay[]): PlanDay[]
         days[range[0]].notes = [...days[range[0]].notes, `${stop.want_safaris} safaris were asked for in ${park}, but only ${slots.length} fit in ${stop.nights} night${stop.nights === 1 ? "" : "s"}.`];
       }
     }
+    // "2 buffer safaris": the last of this stop's safaris move to the buffer zone, where it is open
+    if (stop.want_buffer && stop.want_buffer > 0) {
+      let left = stop.want_buffer;
+      for (const i of [...range].reverse()) {
+        if (left <= 0) break;
+        const safaris = days[i].safaris.map((s) => {
+          if (left <= 0 || !owns(i, s.session) || s.zone === "buffer" || s.session === "full_day") return s;
+          if (closedAt(ctx, plan, stop.park_id, "buffer", s.session, days[i].date)) return s;
+          left--;
+          return { ...s, zone: "buffer" as const };
+        });
+        days[i] = describe(ctx, { ...days[i], safaris }, plan.vehicle_type);
+      }
+      if (left > 0 && range.length) days[range[0]].notes = [...days[range[0]].notes, `${stop.want_buffer} buffer safaris were asked for; ${stop.want_buffer - left} fit (the buffer zone is closed on the other safari times).`];
+    }
     // "full-day safari": one day here becomes a full-day safari (in place of that day's morning
     // and evening safaris; a day without safaris first), on a day the core zone is open
     if ((stop.want_extras ?? []).includes("full-day safari")) {
       const full = range.filter((i) => i > s0 && i < moveOut && !closedAt(ctx, plan, stop.park_id, "core", "full_day", days[i].date));
       const pick = full.filter((i) => !days[i].safaris.length).pop() ?? full[full.length - 1];
+      // no full day here (one night, or the core zone closed on every full day): said, not dropped
+      if (pick === undefined && range.length) {
+        const park = ctx.pricing.parks.find((p) => p.id === stop.park_id)?.name ?? "the park";
+        days[range[0]].notes = [...days[range[0]].notes, `A full-day safari was asked for in ${park}, but this stay has no full day for it (${stop.nights} night${stop.nights === 1 ? "" : "s"}${full.length === 0 && stop.nights > 1 ? ", core zone closed" : ""}). Add a night, or move it to another stop.`];
+      }
       if (pick !== undefined) {
         const naturalist = stop.want_naturalists != null && stop.want_naturalists !== 0;
         const had = days[pick].safaris.length;
@@ -300,10 +321,16 @@ function applyWants(plan: Plan, ctx: BuilderContext, days: PlanDay[]): PlanDay[]
       const found = findAddon(ctx, stop.property_id, kw, plan.guest.nationality);
       if (found) usedIds.add(found.id);
     }
+    // the experiences are spread over the stay: the last night first (as before: "bush dinner
+    // on the last night"), then the other full days, then the arrival evening; one at a time
+    const nightDays = [lastNight, ...Array.from({ length: Math.max(0, lastNight - s0 - 1) }, (_, n) => s0 + 1 + n), ...(lastNight > s0 ? [s0] : [])].filter((i) => i >= 0 && i < days.length);
+    let turn = 0;
+    const dayFor = () => (nightDays.length ? nightDays[turn++ % nightDays.length] : lastNight);
     for (const sp of specials) {
       if (usedIds.has(sp.id)) continue;
       const item: PlanItem = { id: `auto-${k}-sp-${sp.id}`, type: "addon", title: sp.name, detail: "", price: null, addon_id: sp.id, qty: null, auto: `extra:${k}:special:${sp.id}` };
-      days[lastNight] = { ...days[lastNight], items: [...days[lastNight].items, item] };
+      const at = dayFor();
+      days[at] = { ...days[at], items: [...days[at].items, item] };
     }
     for (const kw of extrasHere) {
       if (kw === "special") continue;
@@ -311,7 +338,8 @@ function applyWants(plan: Plan, ctx: BuilderContext, days: PlanDay[]): PlanDay[]
       const item: PlanItem = addon
         ? { id: `auto-${k}-${kw}`, type: "addon", title: addon.name, detail: "", price: null, addon_id: addon.id, qty: stop.want_qty?.[kw] ?? null, auto: `extra:${k}:${kw}` }
         : { id: `auto-${k}-${kw}`, type: "activity", title: kw.replace(/\b\w/g, (c) => c.toUpperCase()), detail: "", price: null, addon_id: null, qty: null, auto: `extra:${k}:${kw}` };
-      days[lastNight] = { ...days[lastNight], items: [...days[lastNight].items, item] };
+      const at = dayFor();
+      days[at] = { ...days[at], items: [...days[at].items, item] };
     }
     // "2 jeeps per safari": on every safari of this stop
     if (stop.want_jeeps && stop.want_jeeps > 0) {
@@ -345,8 +373,16 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
   const out = [...days];
   const lodgeName = (id: string) => ctx.properties.find((p) => p.id === id)?.name ?? "the lodge";
   const flights = plan.flights ?? [];
-  const flew = (a: string, b: string) => flights.some((f) => sameCity(f.from, a) && sameCity(f.to, b));
-  const flewFrom = (a: string) => flights.some((f) => sameCity(f.from, a));
+  const at = (flightCity: string, city: string) => airportServes(ctx, flightCity, city);
+  // two city stays joined by road: a rate between their hotels in Master data, or a road trip pair
+  const driveOk = (a: CityStay, b: CityStay) => {
+    const x = hotelOf(ctx, a).id;
+    const y = hotelOf(ctx, b).id;
+    const rated = ctx.pricing.transferRates.some((r) => r.active !== false && ((r.from_location_id === x && r.to_location_id === y) || (r.from_location_id === y && r.to_location_id === x)));
+    return rated || DRIVE_CITIES.some(([m, n]) => (sameCity(m, a.city) && sameCity(n, b.city)) || (sameCity(n, a.city) && sameCity(m, b.city)));
+  };
+  const flew = (a: string, b: string) => flights.some((f) => at(f.from, a) && at(f.to, b));
+  const flewFrom = (a: string) => flights.some((f) => at(f.from, a));
   const where = (c: CityStay) => (c.hotel ? `${c.hotel}${c.city ? `, ${c.city}` : ""}` : c.city ? `${c.city}; hotel to be confirmed` : "a hotel to be confirmed");
   const place = (c: CityStay) => c.city || "Free day";
   const add = (date: string, make: () => PlanDay, edit: (d: PlanDay) => PlanDay) => {
@@ -368,7 +404,7 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
     );
   // "transfer to Khajuraho for the Delhi flight, drive direct to Agra": from one city stay to the
   // next by a flight to a third city, then by road
-  const connecting = (a: string, b: string) => (flew(a, b) ? undefined : flights.find((f) => sameCity(f.from, a) && !sameCity(f.to, b) && !lodgeAirport(f.to)));
+  const connecting = (a: string, b: string) => (flew(a, b) ? undefined : flights.find((f) => at(f.from, a) && !at(f.to, b) && !lodgeAirport(f.to)));
   const lodgePlace = (propertyId: string) => {
     const id = locationOfProperty(ctx, propertyId);
     return id ? { id, label: lodgeName(propertyId) } : null;
@@ -387,8 +423,15 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
     const extrasDay = c.nights >= 2 ? 1 : 0;
     for (let j = 0; j < c.nights; j++) {
       const date = addDays(seg.checkIn, j);
+      const label = (kw: string) => `${c.city ? `${c.city} ` : ""}${kw === "guide" ? "local guide" : kw === "entrance" ? "entrances" : kw}`.replace(/^\w/, (x) => x.toUpperCase());
       const extraItems: PlanItem[] =
-        j === extrasDay ? extras.map((a, x) => ({ id: `auto-cx-${seg.index}-${x}`, type: "addon", title: a.name, detail: "", price: null, addon_id: a.id, qty: null, auto: `cityextra:${c.city}:${a.id}` })) : [];
+        j === extrasDay
+          ? [
+              ...extras.found.map((a, x): PlanItem => ({ id: `auto-cx-${seg.index}-${x}`, type: "addon", title: a.name, detail: "", price: null, addon_id: a.id, qty: null, auto: `cityextra:${c.city}:${a.id}` })),
+              // not in Master data (Agra sightseeing): shown, and a price to type
+              ...extras.notFound.map((kw): PlanItem => ({ id: `auto-cx-${seg.index}-${kw}`, type: "activity", title: label(kw), detail: "", price: null, addon_id: null, qty: null, auto: `cityextra:${c.city}:${kw}` })),
+            ]
+          : [];
       const hotel: PlanItem[] = c.price
         ? [{ id: `auto-hotel-${seg.index}-${j}`, type: "hotel", title: `Hotel: ${c.hotel || c.city || "to be confirmed"}`, detail: "", price: c.price, addon_id: null, qty: null, auto: `hotel:${date}:${c.hotel || c.city}:${c.price}` }]
         : [];
@@ -396,6 +439,7 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
       let text = c.city ? `A day in ${c.city}. Overnight at ${where(c)}.` : `A free day. Overnight at ${where(c)}.`;
       let transfer: CityTransfer | null | (CityTransfer | null)[] = null;
       let roadToHotel = false; // the last lodge's drive goes straight to this hotel
+      let cityNote: string | null = null; // two cities with no road and no flight between them
       if (j === 0) {
         if (!prev) {
           title = c.city ? `Arrive in ${c.city}` : "Free day";
@@ -406,26 +450,35 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
           const byAir = !!p.city && !!c.city && flew(p.city, c.city);
           const via = !byAir && p.city && c.city ? connecting(p.city, c.city) : undefined;
           title = p.city && c.city ? (via ? `Fly to ${via.to}, drive to ${c.city}` : `${p.city} to ${c.city}`) : place(c);
+          // by road only where Master data has the road or the two cities are a road trip
+          // (Delhi - Agra - Jaipur); else (Siliguri to Delhi) it is a flight still to add
+          const drive = !byAir && !via && !!p.city && !!c.city && driveOk(p, c);
+          const portOut = p.city ? airportOf(ctx, p.city, hotelOf(ctx, p).id).label : "the airport";
           text =
             p.city && c.city
               ? byAir
-                ? `After breakfast, check out and transfer to ${p.city} Airport for the flight to ${c.city}. On arrival, transfer to ${c.hotel || "the hotel"}. Overnight at ${where(c)}.`
+                ? `After breakfast, check out and transfer to ${portOut} for the flight to ${c.city}. On arrival, transfer to ${c.hotel || "the hotel"}. Overnight at ${where(c)}.`
                 : via
-                  ? `After breakfast, check out and transfer to ${p.city} Airport for the flight to ${via.to}. On arrival, drive to ${c.city}. Overnight at ${where(c)}.`
-                  : `After breakfast, drive from ${p.city} to ${c.city}. Overnight at ${where(c)}.`
+                  ? `After breakfast, check out and transfer to ${portOut} for the flight to ${via.to}. On arrival, drive to ${c.city}. Overnight at ${where(c)}.`
+                  : drive
+                    ? `After breakfast, drive from ${p.city} to ${c.city}. Overnight at ${where(c)}.`
+                    : `After breakfast, travel from ${p.city} to ${c.city}. Overnight at ${where(c)}.`
               : text;
+          if (real && !p.blank && p.city && c.city && !byAir && !via && !drive) cityNote = `No road between ${p.city} and ${c.city} in Master data: add the flight (or the way they travel) for this day.`;
           if (real && !p.blank && p.city)
             transfer = byAir
               ? cityTransfer(ctx, airportOf(ctx, c.city, hotelOf(ctx, c).id), hotelOf(ctx, c))
               : via
                 ? cityTransfer(ctx, airportOf(ctx, via.to, hotelOf(ctx, c).id), hotelOf(ctx, c))
-                : cityTransfer(ctx, hotelOf(ctx, p), hotelOf(ctx, c));
+                : drive
+                  ? cityTransfer(ctx, hotelOf(ctx, p), hotelOf(ctx, c))
+                  : null;
         } else if (k === segs.length - 1 || !segs.slice(k + 1).some((s) => s.kind === "lodge")) {
           // the morning the guests leave the last lodge (that day is the lodge's departure day)
           title = c.city ? `Drive to ${c.city}` : "Free day";
           text = c.city ? `After breakfast, drive to ${c.city}{hours}. Overnight at ${where(c)}.` : `After breakfast, check out of ${lodgeName(prev.stop.property_id)}. Overnight at ${where(c)}.`;
           // flown in from the lodges' airport (Nagpur to Delhi): the lodge's departure transfer goes to that airport
-          const inFlight = flights.find((f) => sameCity(f.to, c.city) && !segs.slice(0, k).some((s) => s.kind === "city" && sameCity(s.stay.city, f.from)));
+          const inFlight = flights.find((f) => at(f.to, c.city) && !segs.slice(0, k).some((s) => s.kind === "city" && at(f.from, s.stay.city)));
           // a connecting flight to another city, then the drive (Nagpur to Delhi, then by road to Agra)
           const last = flights[flights.length - 1];
           const transit = !inFlight && last && !sameCity(last.to, c.city) && !isStayCity(last.from) ? last : undefined;
@@ -443,7 +496,7 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
           // between two lodges: flown in from the lodge's airport (Iora Retreat > Guwahati > Delhi), else by road
           title = c.city ? `${lodgeName(prev.stop.property_id)} to ${c.city}` : "Free day";
           text = c.city ? `After breakfast, drive to ${c.city}. Overnight at ${where(c)}.` : `A free day. Overnight at ${where(c)}.`;
-          const inFlight = real ? flights.find((f) => sameCity(f.to, c.city) && !isStayCity(f.from)) : undefined;
+          const inFlight = real ? flights.find((f) => at(f.to, c.city) && !isStayCity(f.from)) : undefined;
           const lodge = lodgePlace(prev.stop.property_id);
           if (real && inFlight) {
             title = `Fly to ${c.city}`;
@@ -467,9 +520,9 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
               if (road) d = { ...d, transfer: { from_location_id: from, to_location_id: hotelLoc } };
             }
             const h = d.transfer ? driveHours(ctx, d.transfer.from_location_id, d.transfer.to_location_id, plan.vehicle_type) : null;
-            return withTransfer({ ...d, title, text: text.replace("{hours}", h ? ` (about ${h} hours)` : ""), items: [...d.items, ...hotel, ...extraItems], stay_index: seg.index, ...(masterOn(date) ? { city_hotel: masterOn(date)! } : {}) }, transfer);
+            return withTransfer({ ...d, title, notes: cityNote ? [...d.notes, cityNote] : d.notes, text: text.replace("{hours}", h ? ` (about ${h} hours)` : ""), items: [...d.items, ...hotel, ...extraItems], stay_index: seg.index, ...(masterOn(date) ? { city_hotel: masterOn(date)! } : {}) }, transfer);
           }
-          return withTransfer({ ...d, title, text: text.replace("{hours}", ""), items: [...d.items, ...hotel, ...extraItems], stay_index: seg.index, ...(masterOn(date) ? { city_hotel: masterOn(date)! } : {}) }, transfer);
+          return withTransfer({ ...d, title, notes: cityNote ? [...d.notes, cityNote] : d.notes, text: text.replace("{hours}", ""), items: [...d.items, ...hotel, ...extraItems], stay_index: seg.index, ...(masterOn(date) ? { city_hotel: masterOn(date)! } : {}) }, transfer);
         }
       );
     }
@@ -542,24 +595,31 @@ const CITY_EXTRA: Record<string, { re: RegExp; not?: RegExp; prefer?: RegExp }> 
   guide: { re: /guide/i, prefer: /sight\s?seeing|local/i },
   entrance: { re: /entrance|entry|ticket|monument/i },
 };
-function cityExtras(ctx: BuilderContext, c: CityStay, nationality: string) {
-  if (!c.want_extras?.length) return [];
+// The city's experiences asked for (sightseeing, guide, entrances): its add-ons in Master data;
+// the ones Master data does not have are given back by name, to be priced by hand.
+function cityExtras(ctx: BuilderContext, c: CityStay, nationality: string): { found: Addon[]; notFound: string[] } {
+  if (!c.want_extras?.length) return { found: [], notFound: [] };
   const hotelId = c.hotel ? ctx.properties.find((p) => p.name.toLowerCase() === c.hotel!.trim().toLowerCase())?.id : undefined;
   const cityParks = new Set(ctx.pricing.parks.filter((p) => c.city && sameCity(p.name, c.city)).map((p) => p.id));
   const offered = ctx.pricing.addons.filter(
     (a) => a.active !== false && !a.alias && ((hotelId && a.property_id === hotelId) || (!a.property_id && a.park_id && cityParks.has(a.park_id)))
   );
   const out: typeof offered = [];
+  const notFound: string[] = [];
   for (const kw of c.want_extras) {
     const rule = CITY_EXTRA[kw];
-    if (!rule) continue;
+    if (!rule) {
+      notFound.push(kw);
+      continue;
+    }
     const list = offered.filter((a) => rule.re.test(a.name) && !(rule.not && rule.not.test(a.name)) && !out.includes(a));
     // the guest's version first when there are Indian and foreign ones
     const forGuest = list.filter((a) => (nationality === "indian" ? !/foreign/i.test(a.name) : !/indian/i.test(a.name)));
     const pick = (forGuest.length ? forGuest : list).sort((a, b) => Number(!!(rule.prefer && rule.prefer.test(b.name))) - Number(!!(rule.prefer && rule.prefer.test(a.name))))[0];
     if (pick) out.push(pick);
+    else notFound.push(kw);
   }
-  return out;
+  return { found: out, notFound };
 }
 
 // A city transfer between two places (each a Master data location, or "@name").
@@ -571,13 +631,31 @@ function cityTransfer(_ctx: BuilderContext, from: { id: string; label: string },
   return { from_location_id: from.id, to_location_id: to.id, from_label: from.label, to_label: to.label };
 }
 
+// Is a flight's city the way in or out of a city stay? The same city, or its airport has a road in
+// Master data to a hotel of that city (Bagdogra for Siliguri). Not matched by the name only.
+export function airportServes(ctx: BuilderContext, flightCity: string, stayCity: string): boolean {
+  if (!flightCity || !stayCity) return false;
+  if (sameCity(flightCity, stayCity)) return true;
+  const ports = ctx.locations.filter((l) => l.type === "airport" && sameCity(l.name, flightCity)).map((l) => l.id);
+  if (!ports.length) return false;
+  const hotels = new Set(
+    ctx.properties
+      .filter((p) => (p.city && sameCity(p.city, stayCity)) || (!!p.park_id && ctx.pricing.parks.some((pk) => pk.id === p.park_id && sameCity(pk.name, stayCity))))
+      .map((p) => ctx.locations.find((l) => l.property_id === p.id)?.id)
+      .filter((x): x is string => !!x)
+  );
+  return ctx.pricing.transferRates.some((r) => r.active !== false && ((ports.includes(r.from_location_id) && hotels.has(r.to_location_id)) || (ports.includes(r.to_location_id) && hotels.has(r.from_location_id))));
+}
+
 // The airport of a city: from Master data > Places when it is there.
 // With two airport places for one city ("Delhi" and "Delhi Airport (IGI)"), the one that has
 // a transfer rate to the hotel wins, then one with any transfer rate, then one called "Airport".
 function airportOf(ctx: BuilderContext, city: string, hotelId?: string): { id: string; label: string } {
-  const all = ctx.locations.filter((l) => l.type === "airport" && sameCity(l.name, city));
   const rates = ctx.pricing.transferRates.filter((r) => r.active !== false);
   const linked = (id: string, other?: string) => rates.some((r) => (r.from_location_id === id && (!other || r.to_location_id === other)) || (r.to_location_id === id && (!other || r.from_location_id === other)));
+  const named = ctx.locations.filter((l) => l.type === "airport" && sameCity(l.name, city));
+  // no airport with the city's name (Siliguri): the airport its hotel has a road to (Bagdogra)
+  const all = named.length ? named : ctx.locations.filter((l) => l.type === "airport" && !!hotelId && linked(l.id, hotelId));
   const loc =
     (hotelId ? all.find((l) => linked(l.id, hotelId)) : undefined) ?? all.find((l) => linked(l.id)) ?? all.find((l) => /airport/i.test(l.name)) ?? all[0];
   return loc ? { id: loc.id, label: loc.name } : { id: `@${city} Airport`, label: `${city} Airport` };
@@ -604,13 +682,40 @@ function addFlights(plan: Plan, days: PlanDay[], ctx?: BuilderContext): PlanDay[
   const firstLodge = days.findIndex((d) => d.kind !== "city");
   const lastLodge = days.length - 1 - [...days].reverse().findIndex((d) => d.kind !== "city");
   const dayOf = (date: string) => days.findIndex((d) => d.date === date);
-  const isCity = (s: Segment | undefined, name: string) => !!s && s.kind === "city" && !!s.stay.city && sameCity(s.stay.city, name);
+  // the stay a flight leaves from or lands at: a city stay of that name or served by that airport
+  // (Bagdogra for Siliguri), or a lodge that airport has a road to (Guwahati for Iora Retreat)
+  const rates = ctx ? ctx.pricing.transferRates.filter((r) => r.active !== false) : [];
+  const lodgeServed = (s: Segment, name: string) => {
+    if (!ctx || s.kind !== "lodge") return false;
+    const loc = ctx.locations.find((l) => l.property_id === s.stop.property_id)?.id;
+    const ports = ctx.locations.filter((l) => l.type === "airport" && sameCity(l.name, name)).map((l) => l.id);
+    return !!loc && rates.some((r) => (ports.includes(r.from_location_id) && r.to_location_id === loc) || (ports.includes(r.to_location_id) && r.from_location_id === loc));
+  };
+  const cityServed = (s: Segment | undefined, name: string) => !!s && s.kind === "city" && !!s.stay.city && (ctx ? airportServes(ctx, name, s.stay.city) : sameCity(s.stay.city, name));
+  // a city stay first (Khajuraho Airport is the Radisson's, though it also has a road to Ken River Lodge)
+  const findStay = (from: number, name: string, not = -1) => {
+    const city = segs.findIndex((s, k) => k >= from && k !== not && cityServed(s, name));
+    return city >= 0 ? city : segs.findIndex((s, k) => k >= from && k !== not && lodgeServed(s, name));
+  };
   const out = [...days];
   let cursor = 0;
   flights.forEach((f, i) => {
     let at = -1;
-    const a = segs.findIndex((s, k) => k >= cursor && isCity(s, f.from));
-    const b = segs.findIndex((s, k) => k >= cursor && k !== a && isCity(s, f.to));
+    // leaving a city stay; else the last lodge that airport serves before the place the flight lands
+    // (Nagpur Airport serves Waghoba and Pench: the flight home leaves from Pench, the last one)
+    let a = segs.findIndex((s, k) => k >= cursor && cityServed(s, f.from));
+    let b: number;
+    if (a >= 0) b = findStay(cursor, f.to, a);
+    else {
+      b = findStay(cursor, f.to);
+      const end = b >= 0 ? b : segs.length;
+      for (let k = end - 1; k >= cursor; k--) {
+        if (lodgeServed(segs[k], f.from)) {
+          a = k;
+          break;
+        }
+      }
+    }
     if (a >= 0 && (b < 0 || a < b)) {
       const nxt = segs[a + 1];
       at = dayOf(nxt ? nxt.checkIn : segs[a].checkOut);
@@ -662,7 +767,7 @@ function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
     const c = prev.stay;
     // the nth stay in a city leaves on the nth flight out of it (Delhi > Guwahati, later Delhi > Jabalpur)
     const nth = segs.slice(0, k - 1).filter((s) => s.kind === "city" && !!c.city && !!s.stay.city && sameCity(s.stay.city, c.city)).length;
-    const outs = c.city ? (plan.flights ?? []).filter((f) => sameCity(f.from, c.city)) : [];
+    const outs = c.city ? (plan.flights ?? []).filter((f) => airportServes(ctx, f.from, c.city)) : [];
     // never an earlier stay's flight: with no flight of its own, it is a drive from the hotel
     const flight = outs[nth];
     if (flight) {
@@ -967,7 +1072,7 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
   const safaris: SafariInput[] = [];
   const transfers: TransferInput[] = [];
   const addons: { addon_id: string; date: string; qty?: number }[] = [];
-  const custom: { date: string; title: string; amount: number; group?: "flight" | "extra" | "hotel" }[] = [];
+  const custom: { date: string; title: string; amount: number | null; group?: "flight" | "extra" | "hotel" }[] = [];
   const flightPax = plan.guest.adults + plan.guest.children.length;
   for (const d of plan.days) {
     if (d.park_id) for (const s of d.safaris) safaris.push({ date: d.date, park_id: d.park_id, zone: s.zone, session: s.session, naturalist: !!s.naturalist, ...(s.jeeps ? { vehicles: s.jeeps } : {}) });
@@ -989,6 +1094,8 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
         // a flight with a fare per person follows the number of guests
         const amount = it.type === "flight" && it.flight?.fare_pp ? it.flight.fare_pp * flightPax : it.price;
         if (amount) custom.push({ date: d.date, title: it.title, amount, group: it.type === "flight" ? "flight" : it.type === "hotel" ? "hotel" : "extra" });
+        // an activity, meal or transfer with no price and no add-on: a price to type (never a silent 0)
+        else if (it.type === "activity" || it.type === "meal" || it.type === "transfer") custom.push({ date: d.date, title: it.title, amount: null, group: "extra" });
       }
     }
   }

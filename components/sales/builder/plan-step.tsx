@@ -1302,6 +1302,8 @@ function MissingFix({ m, plan, ctx, isAdmin }: { m: MissingPrice; plan: Plan; ct
       </div>
     );
   }
+  // an activity with no add-on in Master data (Agra sightseeing): the price typed here is for this quote
+  if (m.kind === "extra") return <p className="mt-1 text-[11px] text-sand-500">Not an add-on in Master data yet{isAdmin ? <>: {link("/sales/admin/addons/new", "add it as an add-on")} so it is priced next time.</> : ". Type the price for this quote."}</p>;
   if (!isAdmin) return <p className="mt-1 text-[11px] text-sand-500">Ask a Sales admin to add this rate to Master data.</p>;
   if (m.kind === "room") {
     const room = parts[2];

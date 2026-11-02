@@ -561,6 +561,17 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
 
   // ---------------- items added by hand ----------------
   for (const c of trip.custom_items ?? []) {
+    // an activity with no price yet (no add-on in Master data): a price to type, never a silent 0
+    if (c.amount === null) {
+      const key = `extra|${c.date}|${c.title}`;
+      needPrice({ key, kind: "extra", label: c.title, unit: "in all, incl. tax", date: c.date }, "no price for an activity");
+      const typed = manual[key];
+      if (typed !== undefined) {
+        const amt = round(typed);
+        lines.push({ kind: "addon", date: c.date, description: c.title, quantity: 1, unit_price: amt, amount: amt, tax: 0, tax_pct: 0, property_id: stayOn(c.date)?.property_id ?? null, ref_id: null, manual: true, key });
+      } else lines.push({ kind: "addon", date: c.date, description: c.title, quantity: 1, unit_price: 0, amount: 0, tax: 0, tax_pct: 0, property_id: stayOn(c.date)?.property_id ?? null, ref_id: null, missing: true, key });
+      continue;
+    }
     const amount = round(c.amount || 0);
     if (!amount) continue;
     lines.push({ kind: "addon", ...(c.group === "flight" || c.group === "hotel" ? { group: c.group } : {}), date: c.date, description: c.title, quantity: 1, unit_price: amount, amount, tax: 0, tax_pct: 0, property_id: stayOn(c.date)?.property_id ?? null, ref_id: null, manual: true });

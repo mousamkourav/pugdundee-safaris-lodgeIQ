@@ -272,13 +272,14 @@ export interface TripInput {
   // Prices typed by the sales person where master data has no rate, by MissingPrice.key.
   manual_prices?: Record<string, number>;
   // Items added by hand to a day (not from master data), already totalled.
-  custom_items?: { date: ISODate; title: string; amount: number; group?: "flight" | "extra" | "hotel" }[];
+  // An amount of null: an activity with no price yet (no add-on in Master data): "price needed".
+  custom_items?: { date: ISODate; title: string; amount: number | null; group?: "flight" | "extra" | "hotel" }[];
 }
 
 // A rate the master data does not have. The sales person can type a price for it.
 export interface MissingPrice {
   key: string;
-  kind: "room" | "safari" | "transfer" | "naturalist";
+  kind: "room" | "safari" | "transfer" | "naturalist" | "extra";
   label: string;
   unit: string; // what the typed price covers
   date: ISODate | null;

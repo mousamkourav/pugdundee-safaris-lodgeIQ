@@ -32,6 +32,7 @@ export interface ParsedTrip {
   flights?: { from: string; to: string; time?: string }[];
   cityStays?: { when: "before" | "after"; city: string; nights: number; hotel?: string; price?: number; want_extras?: string[]; at?: number }[];
   endCity?: string; // "drive back to Delhi for the homebound flight": the last drive goes to this city's airport
+  transferVehicles?: number; // "2 gaadi for all transfers", "2 innovas for transfers": vehicles on every transfer
   reverse?: boolean; // "wrong direction", "the other way round"
   removeParks?: string[]; // parks to take out (from the AI)
   order?: string[]; // parks in a new order (from the AI)
@@ -71,6 +72,7 @@ export interface ParsedPark {
   room?: RoomWish;
   roomName?: string; // a room named by its own word ("stilted" = Stilted River Facing Cottage)
   sessions?: "morning" | "afternoon"; // "morning safaris only"
+  buffer?: number; // "2 buffer safaris", "a buffer safari": that many of the safaris in the buffer zone
   jeeps?: number; // "2 jeeps per safari"
   qty?: Record<string, number>; // "camera 1"
 }
@@ -104,13 +106,32 @@ export const EXTRA_WORDS: [RegExp, string][] = [
   [/\bcameras?\b/, "camera"],
   [/\bcanoe(?:ing)?\b/, "canoe"],
   [/\bwalking\s*safari\b/, "walking safari"],
-  [/\b(?:nature|escorted)\s*walk\b|\bcycling\b|\bnight\s*trail\b/, "nature walk"],
+  [/\b(?:nature|escorted)\s*walk\b|\bnight\s*trail\b/, "nature walk"],
+  [/\bcycl(?:ing|e ride|e)\b|\bbicycl\w*/, "cycling"],
   [/\bvillage\s*(?:safari|walk|visit|haat)\b/, "village"],
   [/\bpicnic\b/, "picnic"],
   [/\bfull[- ]?day\s*safari\b/, "full-day safari"],
   [/\bisland\s*dinner\b/, "island dinner"],
   [/\bculinary|cooking\s*(?:class|workshop)\b/, "culinary"],
+  [/\b(?:special|candle[\s-]?light|romantic|celebration|anniversary|birthday)\s+(?:dinner|meal)\b/, "special dinner"],
+  [/\bbird\s*(?:watching|walk|ing)\b|\bbirding\b/, "bird watching"],
+  [/\bstar\s*gazing\b/, "star gazing"],
+  [/\bsafari\s+breakfast\b|\bbreakfast\s+in\s+the\s+(?:jungle|park)\b/, "safari breakfast"],
+  [/\bsafari\s+lunch\b/, "safari lunch"],
 ];
+
+// The words that name an add-on in a message: its name without the small print ("Cycling (per
+// hour)" -> "cycling", "Tawa cruise (Tawa Dam to the lodge), up to 2 guests" -> "tawa cruise",
+// "Core safari from Moharli gate (extra per safari)" -> "core safari moharli gate"). None for
+// add-ons that are not asked for by name (naturalist, transfers, meals, supplements, full day).
+const ADDON_SMALL = new Set(["the", "a", "an", "of", "for", "with", "and", "from", "to", "up", "per", "extra", "hour", "hours", "day", "days", "guest", "guests", "max", "only", "incl", "including", "each", "all", "by", "at", "on", "in"]);
+export function addonPhrase(name: string): string | null {
+  if (/naturalist|transfer|supplement|maid|extra guest|accommodation|dorm|meal plan|full[\s-]?day|lunch with|gate entry|new year/i.test(name)) return null;
+  const base = name.split(/[(,]/)[0].toLowerCase().replace(/[^a-z\s-]+/g, " ").replace(/-/g, " ");
+  const ws = base.split(/\s+/).filter((w) => w && !ADDON_SMALL.has(w) && !/^\d/.test(w));
+  if (!ws.length || (ws.length === 1 && ws[0].length < 5)) return null;
+  return ws.join(" ");
+}
 
 // Cities guests fly in and out of, or stay in, outside our lodges.
 const CITIES = ["delhi", "new delhi", "mumbai", "bombay", "bengaluru", "bangalore", "kolkata", "calcutta", "chennai", "hyderabad", "jabalpur", "nagpur", "bhopal", "raipur", "khajuraho", "bagdogra", "varanasi", "agra", "jaipur", "udaipur", "indore", "goa", "kathmandu", "jhansi", "satna", "katni", "umaria", "chandrapur", "lucknow", "ahmedabad", "pune", "guwahati", "jorhat", "dibrugarh", "siliguri", "gangtok", "darjeeling", "jodhpur", "jaisalmer", "amritsar", "dehradun", "bhubaneswar", "srinagar", "kochi", "cochin", "orchha", "gwalior"];
@@ -670,14 +691,36 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
         if (/^d/.test(m[2])) p.nightsFromDays = true;
       }
     }
-    const saf = seg.match(new RegExp(`\\b${NUM_NO_DO}\\s*(?:(?:jeep|tiger|core|buffer|game|wildlife)\\s+)?safaris?\\b`));
+    // the number of safaris ("2 buffer safaris" is how many of them are in the buffer, read below)
+    const saf = seg.match(new RegExp(`\\b${NUM_NO_DO}\\s*(?:(?:jeep|tiger|core|game|wildlife)\\s+)?safaris?\\b`));
     if (saf) p.safaris = toNum(saf[1]);
     if (/naturalist/.test(seg)) {
       const some = seg.match(new RegExp(`\\b${NUM}\\s+(?:of them\\s+)?(?:(?:jeep\\s+)?safaris?\\s+)?with\\s+(?:an?\\s+|the\\s+)?naturalists?`));
       if (/\bwithout\s+(?:an?\s+|the\s+)?naturalists?\b|\bno\s+naturalists?\b/.test(seg) && !some && !/\bwith\s+(?:an?\s+|the\s+)?naturalist/.test(seg.replace(/without/g, ""))) p.naturalists = 0;
       else p.naturalists = some ? toNum(some[1]) : p.safaris ?? -1; // -1 = every safari
     }
+    // "2 buffer safaris", "1 buffer safari", "buffer zone safari": those in the buffer zone
+    const buf = seg.match(new RegExp(`\\b(?:${NUM_NO_DO}\\s+)?buffer\\s+(?:zone\\s+)?(?:jeep\\s+)?safaris?\\b`));
+    if (buf) p.buffer = buf[1] ? toNum(buf[1]) : 1;
     const extras = EXTRA_WORDS.filter(([re]) => re.test(seg)).map(([, k]) => k);
+    // and every activity of this park's lodges named as it is in Master data ("buffer walk",
+    // "tawa cruise", "safari breakfast", "royal enfield", "moharli gate"...): a new add-on is read
+    // without a code change
+    {
+      const pk = ctx.pricing.parks.find((x) => x.name === p.name);
+      const here = new Set(ctx.properties.filter((l) => l.park_id === pk?.id && (!p.lodge || l.name === p.lodge)).map((l) => l.id));
+      const words = (x: string) => x.split(" ");
+      for (const a of ctx.pricing.addons) {
+        if (a.active === false || a.alias) continue;
+        if (a.property_id ? !here.has(a.property_id) : !!a.offered_at?.length && !a.offered_at.some((id) => here.has(id))) continue;
+        const phrase = addonPhrase(a.name);
+        // its words in order, at most two words between them ("core safari from moharli gate")
+        if (!phrase || !new RegExp(`\\b${words(phrase).map(escapeRe).join("\\w*(?:\\W+\\w+){0,2}?\\W+")}`).test(seg)) continue;
+        // already asked for by a word above ("boat safari", "bush dinner", "camera")
+        if (extras.some((k) => words(k).every((w) => words(phrase).includes(w)) || words(phrase).every((w) => words(k).includes(w)))) continue;
+        extras.push(phrase);
+      }
+    }
     // fishing: half day or full day (asked when not said)
     const fi = extras.indexOf("fishing");
     if (fi >= 0) {
@@ -881,6 +924,15 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     const lodgeDay = addDays(out.arrival_date, lead);
     if (out.departure_date && out.departure_date <= lodgeDay) delete out.departure_date; // "reach Kanha on 16 Mar" as well
     out.arrival_date = lodgeDay;
+  }
+  // "2 gaadi for all transfers", "2 vehicles for transfers", "2 innovas": vehicles on every road transfer
+  // (not "2 jeeps per safari", read above)
+  {
+    const tv = low.match(new RegExp(`\\b${NUM}\\s*(?:gaadi|gadi|gari|gaadiyan|vehicles?|cars?|cabs?|innovas?|crystas?)\\b(?!\\s*(?:per|each|for each|in each)\\s+safari)`));
+    if (tv && !/\b(?:own|apni|khud)\b/.test(low.slice(Math.max(0, tv.index! - 12), tv.index! + tv[0].length + 12))) {
+      const n = toNum(tv[1]);
+      if (n >= 1 && n <= 10) out.transferVehicles = n;
+    }
   }
   // Hinglish "sab safari naturalist ke saath": every safari at every stop with a naturalist
   if (/\b(?:sab|saari|sabhi|all(?:\s+the)?|every)\s+safaris?\b[^.]{0,40}\bnaturalists?\b/.test(low) && !/\bnaturalists?\s+ke\s+bina\b/.test(low) && !/\bwithout\s+(?:an?\s+|the\s+)?naturalists?\b/.test(low)) {

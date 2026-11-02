@@ -126,6 +126,20 @@ Route rules (do not patch phrases around them):
   hotel - Delhi airport) a missing road is a price to type, not a guard.
 - From one city stay to the next by a connecting flight ("transfer to Khajuraho for the Delhi
   flight, drive direct to Agra"): hotel > airport, the flight, the drive from that airport.
+- Places are linked by Master data, never by name alone (2 Nov 2026): a city's airport is the one
+  named after it OR the one with a road to its hotel (`airportServes`: Bagdogra for Siliguri);
+  flights go on the day of the stay they leave from / land at (a city stay first, then the lodge
+  its airport serves). Two city stays are joined by road only with a rate between their hotels or
+  a `DRIVE_CITIES` pair (Delhi - Agra - Jaipur...); otherwise the day says "No road between ...:
+  add the flight" and the hard checks stop the quote.
+- Experiences: the reader knows `EXTRA_WORDS` AND every add-on's own name in Master data
+  (`addonPhrase`), so a new add-on is read without a code change. A wish with no add-on (Agra
+  sightseeing, special dinner) is an item "price needed" (engine `custom_items` amount null,
+  missing kind "extra"), never a silent 0. A stay's experiences are spread over its days.
+  "N buffer safaris" (`want_buffer`), "2 gaadi for all transfers" (`transfer_vehicles`).
+- Master data > Rate coverage (`lib/sales/master/coverage.ts`) prices every case with the engine
+  (rooms by month, child, safaris, full day, naturalist, experiences understood with no add-on);
+  `full-circuit.test.ts` runs the owner's whole-circuit and every-experience enquiries.
 - City nights with no hotel named take the city's hotel from Master data (Roseate House for
   Delhi); "hotel in X" (none yet) gets no transfer price box.
 - Misspelt trip words ("nigths", "safaries", "adluts") are read (`fixTripWords`).

@@ -232,3 +232,81 @@ export const citiesCtx: BuilderContext = {
 // The owner's all-in-one test enquiry of 1 Nov 2026 (every kind of issue met so far).
 export const ALL_IN_ONE =
   "hi team pls make quote asap - 2 adlts + 1 child 8 yrs + 1 infant from france arrining delhi on 9th jan'27, delhi one night stay than kaziranga 2 nigths with 4 safaris and camera, than come back to delhi one night stay, then they will go to bhopal than satpura 2 nights in forest suite with boat safari and canoe, than kanha 2 nights safaris, Bandhavgarh, 3 nights Tree House Bandhavgarh with 1 full day safari, than khajuraho 2 nights with sighseeing guide and entrances, transfer to khajuraho for delhi flight drive direct to Agra for 2 nights stay with Agra sighseeing; drive back to delhi for homebound flight. 2 gaadi for all transfers, sab safari naturalist ke saath and if any lodge is having unique expeirence add that also";
+
+// Everything we sell, for the full-circuit test (2 Nov 2026): the cities and hotels of
+// citiesCtx plus Siliguri (Mayfair Chumta, by Bagdogra Airport) and Jaipur (ITC Rajputana),
+// Agra's other hotels, and every experience of the owner's rate card at its lodge.
+const fullAddon = (id: string, name: string, property_id: string | null, amount: number, unit: Addon["pricing_unit"] = "per_person"): Addon => ({ id, name, property_id, park_id: null, pricing_unit: unit, rate: amount, tax_pct: 5, active: true });
+export const fullCtx: BuilderContext = {
+  ...citiesCtx,
+  properties: [
+    ...citiesCtx.properties,
+    { id: "MAY", name: "Mayfair Chumta", park_id: "SIL", kind: "city_hotel", fallback_priority: 1, sort: 0, city: "Siliguri" },
+    { id: "ITCJ", name: "ITC Rajputana", park_id: "JAI", kind: "city_hotel", fallback_priority: 1, sort: 0, city: "Jaipur" },
+  ],
+  locations: [
+    ...citiesCtx.locations,
+    { id: "L_MAY", name: "Mayfair Chumta", type: "property", property_id: "MAY" },
+    { id: "L_ITCJ", name: "ITC Rajputana", type: "property", property_id: "ITCJ" },
+    { id: "IXB", name: "Bagdogra Airport", type: "airport", property_id: null, code: "IXB" },
+    { id: "JAI_AP", name: "Jaipur Airport", type: "airport", property_id: null, code: "JAI" },
+  ],
+  rooms: [...citiesCtx.rooms, { id: "MAY_J", property_id: "MAY", name: "Jungle View", sort: 0 }, { id: "ITCJ_R", property_id: "ITCJ", name: "Rajputana Chamber", sort: 0 }],
+  pricing: {
+    ...citiesCtx.pricing,
+    parks: [...citiesCtx.pricing.parks, { id: "SIL", name: "Siliguri" }, { id: "JAI", name: "Jaipur" }],
+    properties: [
+      ...citiesCtx.pricing.properties,
+      { id: "MAY", name: "Mayfair Chumta", park_id: "SIL", kind: "city_hotel" },
+      { id: "ITCJ", name: "ITC Rajputana", park_id: "JAI", kind: "city_hotel" },
+    ],
+    rooms: [
+      ...citiesCtx.pricing.rooms,
+      { id: "MAY_J", property_id: "MAY", name: "Jungle View", max_adults: 2, max_children: 1, extra_bed: true },
+      { id: "ITCJ_R", property_id: "ITCJ", name: "Rajputana Chamber", max_adults: 2, max_children: 1, extra_bed: true },
+    ],
+    roomRates: [...citiesCtx.pricing.roomRates, cityRate("MAY_1", "MAY_J", 17000), cityRate("ITCJ_1", "ITCJ_R", 25000)],
+    locations: [
+      ...citiesCtx.pricing.locations,
+      { id: "L_MAY", name: "Mayfair Chumta", property_id: "MAY" },
+      { id: "L_ITCJ", name: "ITC Rajputana", property_id: "ITCJ" },
+      { id: "IXB", name: "Bagdogra Airport", property_id: null },
+      { id: "JAI_AP", name: "Jaipur Airport", property_id: null },
+    ],
+    transferRates: [...citiesCtx.pricing.transferRates, road("IXB", "L_MAY", 3000, 1), road("JAI_AP", "L_ITCJ", 3000, 0.5), road("L_KL", "L_THH", 0, 0.2), road("L_WEL", "L_KEL", 17500, 7), road("L_THH", "L_RAD", 11500, 5), road("L_KRL", "L_RAD", 3500, 1)],
+    addons: [
+      ...citiesCtx.pricing.addons,
+      fullAddon("NAT", "Accompanying naturalist (per safari)", null, 2000, "per_vehicle"),
+      fullAddon("CYC", "Cycling (per hour)", "KRL", 300),
+      fullAddon("ENF", "Royal Enfield (per day)", "KRL", 4000, "per_vehicle"),
+      fullAddon("ISL", "Island dinner (per couple)", "KRL", 15000, "per_group"),
+      fullAddon("BW_DBE", "Buffer walk", "DBE", 3000),
+      fullAddon("BW_KEL", "Buffer walk", "KEL", 3000),
+      fullAddon("BW_PTL", "Buffer walk", "PTL", 3000),
+      fullAddon("TAWA", "Tawa cruise (Tawa Dam to the lodge), up to 2 guests", "DBE", 20000, "per_group"),
+      fullAddon("SB", "Safari breakfast (outside jeeps), up to 2 guests", null, 1000, "per_group"),
+      fullAddon("SL", "Safari lunch (outside jeeps, full day)", null, 4000, "per_group"),
+      fullAddon("PIC", "Picnic lunch", null, 4000),
+      fullAddon("CUL", "Culinary workshop", null, 2500),
+      fullAddon("VIL", "Village walk", null, 1500),
+      fullAddon("TB1", "Tadoba boat safari, 1 hour", "WEL", 11000, "per_group"),
+      fullAddon("MOH", "Core safari from Moharli gate (extra per safari)", "WEL", 4000, "per_vehicle"),
+      fullAddon("GYP", "Modified Gypsy (extra per safari)", "WEL", 6000, "per_vehicle"),
+      fullAddon("FD_KL", "Full-day safari (up to 3 guests)", "KL", 60000, "per_vehicle"),
+      fullAddon("SIGHT_D", "Delhi sightseeing: Innova (per day)", "ROS", 8000, "per_vehicle"),
+      fullAddon("GUIDE_D", "Local guide (per day)", "ROS", 8000, "per_group"),
+      fullAddon("ENT_D", "Delhi entrances", "ROS", 2500),
+      fullAddon("SIGHT_K", "Khajuraho sightseeing: vehicle, per day", "RAD", 6000, "per_vehicle"),
+      fullAddon("GUIDE_K", "Khajuraho sightseeing: guide, per day", "RAD", 5000, "per_group"),
+      fullAddon("ENT_K", "Khajuraho temple entrances", "RAD", 1500),
+    ],
+  },
+};
+
+// The owner's full-circuit test enquiry of 2 Nov 2026.
+export const FULL_CIRCUIT =
+  "Hi team pls make quote - Mr & Mrs Clarke + 1 child 8 yrs + 1 infant from UK, 2 rooms, arriving delhi on 10th feb'27. delhi one night stay with delhi sighseeing, guide and entrances, next day fly to jorhat, kaziranga 2 nigths at iora with 4 safaris and camera, than drive to guwahati and fly to bagdogra, siliguri 2 nights at mayfair chumta jungle view room, than fly bagdogra to delhi and one night stay delhi, then they will go to bhopal than satpura 2 nights in forest suite with boat safari and canoe, than pench 2 nights in tree house room, than tadoba 2 nights at waghoba with 1 full day safari, than kanha 2 nights, Bandhavgarh, 1 night kings lodge then 2 nights tree house hideaway, than ken river 2 nights with night boat safari and fishing, than khajuraho 1 night with sightseeing guide and entrances, transfer to khajuraho for delhi flight drive direct to Agra for 2 nights stay with Agra sighseeing and local guide, than drive to jaipur 2 nights at itc rajputana, drive back to delhi for homebound flight. 2 gaadi for all transfers, sab safari naturalist ke saath and if any lodge is having unique expeirence add that also";
+
+// Every experience we sell, 2-3 nights a lodge (the owner's test of 2 Nov 2026).
+export const ALL_ACTIVITIES =
+  "Hi team pls make quote - 2 adlts + 1 child 8 yrs from UK, 1 room, arriving delhi on 10th jan'27. delhi one night stay with delhi sighseeing, guide and entrances, next day fly to jorhat, kaziranga 3 nigths at iora with 6 safaris and camera, than drive to guwahati and fly to delhi, delhi one night stay, then they will go to bhopal than satpura 3 nights in forest suite with boat safari, canoe, buffer walk, tawa cruise and bush dinner, than pench 3 nights in tree house room with 2 buffer safaris, village walk, culinary workshop and safari breakfast, than tadoba 3 nights at waghoba with 1 full day safari, tadoba boat safari, core safari from moharli gate, modified gypsy and safari lunch, than kanha 3 nights with buffer walk, special dinner and picnic lunch, Bandhavgarh, 1 night kings lodge with full day safari then 2 nights tree house hideaway with bird watching, than ken river 3 nights with night boat safari, half day fishing, island dinner, cycling, royal enfield and nature walk, than khajuraho 1 night with sightseeing guide and entrances, transfer to khajuraho for delhi flight drive direct to Agra for 2 nights stay with Agra sighseeing and local guide, than drive to jaipur 2 nights at itc rajputana, drive back to delhi for homebound flight. 2 gaadi for all transfers, sab safari naturalist ke saath";

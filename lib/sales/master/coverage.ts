@@ -17,6 +17,7 @@ import { priceTrip } from "@/lib/sales/pricing/engine";
 import { addDays } from "@/lib/sales/pricing/dates";
 import type { ISODate, PricingData, SafariInput, StayInput, TripInput } from "@/lib/sales/pricing/types";
 import { cityParkIds, isCityHotel } from "@/lib/sales/plan/cities";
+import { EXTRA_WORDS } from "@/lib/sales/plan/parse-text";
 
 export type CoverageArea = "Accommodation" | "Child rate" | "Safari" | "Full-day safari" | "Naturalist" | "Activity";
 export interface CoverageIssue {
@@ -145,6 +146,16 @@ export function rateCoverage(d: PricingData, today: ISODate, months = seasonMont
       return r.missing.some((m) => m.kind === "naturalist");
     });
     if (nat) out.push({ area: "Naturalist", item: parkName(pk.id), detail: "no naturalist fee on the safari rate and no naturalist add-on", href: "/sales/admin/addons" });
+  }
+
+  // ---- experiences the assistant understands in an enquiry but no lodge has as an add-on: a quote
+  // that asks for one gets a price to type (special dinner, bird watching...)
+  const norm = (x: string) => ` ${x.toLowerCase().replace(/[^a-z0-9]+/g, " ")} `;
+  for (const kw of [...new Set(EXTRA_WORDS.map(([, k]) => k))]) {
+    if (kw === "full-day safari" || kw === "fishing") continue; // the full day is a safari (above); fishing is half / full day
+    const words = kw.split(/[\s-]+/);
+    const has = d.addons.some((a) => a.active !== false && !a.alias && words.every((w) => norm(a.name).includes(` ${w}`)));
+    if (!has) out.push({ area: "Activity", item: kw.replace(/^\w/, (c) => c.toUpperCase()), detail: "understood in enquiries, but no add-on in Master data: quotes ask for its price", href: "/sales/admin/addons" });
   }
 
   // ---- activities with no price

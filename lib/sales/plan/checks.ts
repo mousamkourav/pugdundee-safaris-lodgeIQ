@@ -66,6 +66,9 @@ export function quoteChecks(plan: Plan, ctx: BuilderContext, result: PriceResult
     }
   }
 
+  // ---- two cities with no road and no flight between them (Siliguri to Delhi): the day says so
+  for (const d of plan.days) for (const n of d.notes) if (/^No road between /.test(n)) out.push(`${when(d.date)}: ${n}`);
+
   // ---- a way in and a way out for every lodge (a transfer, or their own vehicle)
   const lodges = segs.filter((s) => s.kind === "lodge");
   lodges.forEach((s, n) => {

@@ -529,6 +529,7 @@ export function chatTurn(
     if (p.naturalists != null) wish.want_naturalists = p.naturalists;
     if (p.extras?.length) wish.want_extras = [...new Set([...(next.stops[i].want_extras ?? []), ...p.extras])];
     if (p.sessions) wish.want_sessions = p.sessions;
+    if (p.buffer) wish.want_buffer = p.buffer;
     if (p.jeeps) wish.want_jeeps = p.jeeps;
     if (p.qty) wish.want_qty = { ...(next.stops[i].want_qty ?? {}), ...p.qty };
     if (p.room || p.roomName) {
@@ -657,6 +658,10 @@ export function chatTurn(
       const where = stayWhere(c, next.stops, ctx.pricing.parks);
       chips.push(`${c.nights} night${c.nights === 1 ? "" : "s"} in ${c.city} ${where}${c.want_extras?.length ? ` with ${c.want_extras.join(", ")}` : ""}`);
     }
+  }
+  if (parsed.transferVehicles) {
+    next.transfer_vehicles = parsed.transferVehicles;
+    chips.push(`${parsed.transferVehicles} vehicle${parsed.transferVehicles === 1 ? "" : "s"} on every transfer`);
   }
   if (parsed.endCity) {
     next.end_city = parsed.endCity;

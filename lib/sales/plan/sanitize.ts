@@ -30,6 +30,7 @@ export function sanitizePlan(input: unknown): Plan | null {
       ...(Number.isInteger(Number(s.want_naturalists)) && s.want_naturalists !== null && s.want_naturalists !== undefined ? { want_naturalists: Math.max(-1, Math.min(20, Number(s.want_naturalists))) } : {}),
       ...(Array.isArray(s.want_extras) ? { want_extras: s.want_extras.map((x) => str(x, 40)).filter(Boolean).slice(0, 10) } : {}),
       ...(s.want_sessions === "morning" || s.want_sessions === "afternoon" ? { want_sessions: s.want_sessions } : {}),
+      ...(Number.isInteger(s.want_buffer) && Number(s.want_buffer) > 0 && Number(s.want_buffer) <= 30 ? { want_buffer: Number(s.want_buffer) } : {}),
       ...(Number.isInteger(Number(s.want_jeeps)) && Number(s.want_jeeps) >= 1 ? { want_jeeps: Math.min(10, Number(s.want_jeeps)) } : {}),
       ...(() => {
         const q = Object.entries(obj(s.want_qty))
