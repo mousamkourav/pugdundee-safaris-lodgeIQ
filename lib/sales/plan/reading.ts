@@ -330,6 +330,16 @@ export function mergeAiFirst(ai: ParsedTrip, rule: ParsedTrip): { parsed: Parsed
   const fillStop = (a: ParsedPark, r: ParsedPark | undefined): ParsedPark => {
     if (!r) return a;
     const p = { ...a } as Record<string, unknown>;
+    // experiences: both lists (the AI only knows the shared keywords; the reader also reads each
+    // add-on's own name from Master data: "tawa cruise...", "moharli gate entry", "boat safari 1 hour"),
+    // the more specific kept ("boat safari 1 hour" over "boat safari", "half day fishing" over "fishing")
+    if (a.extras?.length && r.extras?.length) {
+      const all = [...new Set([...r.extras, ...a.extras])];
+      const words = (x: string) => x.split(/\s+/);
+      const kept = all.filter((x) => !all.some((y) => y !== x && words(x).every((w) => words(y).includes(w))));
+      if (kept.some((x) => !a.extras!.includes(x))) added.add("experiences");
+      p.extras = kept;
+    }
     for (const [k, v] of Object.entries(r)) {
       if (empty(p[k]) && !empty(v)) {
         p[k] = v;

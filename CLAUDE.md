@@ -132,14 +132,18 @@ Route rules (do not patch phrases around them):
   its airport serves). Two city stays are joined by road only with a rate between their hotels or
   a `DRIVE_CITIES` pair (Delhi - Agra - Jaipur...); otherwise the day says "No road between ...:
   add the flight" and the hard checks stop the quote.
-- Experiences: the reader knows `EXTRA_WORDS` AND every add-on's own name in Master data
-  (`addonPhrase`), so a new add-on is read without a code change. A wish with no add-on (Agra
+- Experiences: the reader knows `EXTRA_WORDS` AND each add-on by the word only it has in Master
+  data (`addonTriggers`: Tawa, Moharli, Enfield, Gypsy, Scorpio, Banjar; "via X" for a road's extra),
+  never by common words (lunch, safari, walk), so a new add-on is read without a code change. With
+  AI reading on, the AI's keywords and the reader's add-on names are merged (the specific one wins). A wish with no add-on (Agra
   sightseeing, special dinner) is an item "price needed" (engine `custom_items` amount null,
   missing kind "extra"), never a silent 0. A stay's experiences are spread over its days.
   "N buffer safaris" (`want_buffer`), "2 gaadi for all transfers" (`transfer_vehicles`).
 - Master data > Rate coverage (`lib/sales/master/coverage.ts`) prices every case with the engine
   (rooms by month, child, safaris, full day, naturalist, experiences understood with no add-on);
-  `full-circuit.test.ts` runs the owner's whole-circuit and every-experience enquiries.
+  `real-circuit.test.ts` runs the owner's whole-circuit enquiry on his REAL Master data
+  (`real-master.data.ts`, generated from his export of 2 Nov 2026; `real-fixture.ts` = `realCtx`).
+  Test reading and routing on real data, never only on made-up rows; regenerate it from a new export.
 - City nights with no hotel named take the city's hotel from Master data (Roseate House for
   Delhi); "hotel in X" (none yet) gets no transfer price box.
 - Misspelt trip words ("nigths", "safaries", "adluts") are read (`fixTripWords`).

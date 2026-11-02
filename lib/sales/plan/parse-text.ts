@@ -11,7 +11,7 @@
 
 import type { ISODate } from "@/lib/sales/pricing/types";
 import { addDays } from "@/lib/sales/pricing/dates";
-import { defaultStop, mealPlansOf, roomsOf } from "./planner";
+import { defaultStop, findAddon, mealPlansOf, roomsOf } from "./planner";
 import type { BuilderContext, Plan, TravelMode } from "./types";
 import { findCountry, countryName } from "@/lib/sales/countries";
 import { resolveRoute, type RouteEntry } from "./route";
@@ -106,6 +106,8 @@ export const EXTRA_WORDS: [RegExp, string][] = [
   [/\bcameras?\b/, "camera"],
   [/\bcanoe(?:ing)?\b/, "canoe"],
   [/\bwalking\s*safari\b/, "walking safari"],
+  // "buffer walk", "walk in the buffer" (Master data: "Walking safari in buffer zone")
+  [/\bbuffer\s*walks?\b|\bwalk(?:ing)?\s+in\s+(?:the\s+)?buffer\b/, "buffer walk"],
   [/\b(?:nature|escorted)\s*walk\b|\bnight\s*trail\b/, "nature walk"],
   [/\bcycl(?:ing|e ride|e)\b|\bbicycl\w*/, "cycling"],
   [/\bvillage\s*(?:safari|walk|visit|haat)\b/, "village"],
@@ -120,17 +122,31 @@ export const EXTRA_WORDS: [RegExp, string][] = [
   [/\bsafari\s+lunch\b/, "safari lunch"],
 ];
 
-// The words that name an add-on in a message: its name without the small print ("Cycling (per
-// hour)" -> "cycling", "Tawa cruise (Tawa Dam to the lodge), up to 2 guests" -> "tawa cruise",
-// "Core safari from Moharli gate (extra per safari)" -> "core safari moharli gate"). None for
-// add-ons that are not asked for by name (naturalist, transfers, meals, supplements, full day).
-const ADDON_SMALL = new Set(["the", "a", "an", "of", "for", "with", "and", "from", "to", "up", "per", "extra", "hour", "hours", "day", "days", "guest", "guests", "max", "only", "incl", "including", "each", "all", "by", "at", "on", "in"]);
-export function addonPhrase(name: string): string | null {
-  if (/naturalist|transfer|supplement|maid|extra guest|accommodation|dorm|meal plan|full[\s-]?day|lunch with|gate entry|new year/i.test(name)) return null;
-  const base = name.split(/[(,]/)[0].toLowerCase().replace(/[^a-z\s-]+/g, " ").replace(/-/g, " ");
-  const ws = base.split(/\s+/).filter((w) => w && !ADDON_SMALL.has(w) && !/^\d/.test(w));
-  if (!ws.length || (ws.length === 1 && ws[0].length < 5)) return null;
-  return ws.join(" ");
+// An add-on asked for by its own name (2 Nov 2026, from the owner's real Master data): the words
+// only it has ("Tawa cruise to the lodge by boat" -> tawa, cruise; "Moharli gate entry (per safari)"
+// -> moharli; "Royal Enfield Bullet motorcycle" -> royal, enfield, bullet, motorcycle; "Banjar River
+// picnic" -> banjar), or "via X" for a road's extra ("Bhopal transfer via Bhimbetka caves" -> "via
+// bhimbetka"). Common words (safari, walk, lunch, boat, dinner...) never pick an add-on on their own:
+// those come through EXTRA_WORDS. The keyword given back is the add-on's head (its name before
+// "(" or ","), which finds exactly that add-on.
+const ADDON_COMMON = new Set(
+  ("the a an of for with and from to up per by at on in each all incl including max only extra hour hours day days guest guests group vehicle " +
+    "safari safaris boat night nature walk walking trail cycling cycle dinner lunch breakfast packed meal meals snacks pre transfer river lodge island " +
+    "high tea experience experiences accompanying naturalist naturalists full half morning evening buffer zone core gate entry modified fishing angling " +
+    "village picnic culinary workshop bush farm innova crysta etios dzire caves cave dam falls camp overnight stay double room rooms sightseeing guide " +
+    "guides entrances entrance temple monument driver dormitory jeep jeeps outside maid sharing supplement mandatory year eve new couple per person " +
+    "people foreign indian nationals national park reserve tiger trip ride rides tour visit visits tours").split(" ")
+);
+export function addonHead(name: string): string {
+  return name.split(/[(,]/)[0].toLowerCase().replace(/[^a-z0-9\s]+/g, " ").replace(/\s+/g, " ").trim();
+}
+export function addonTriggers(name: string, placeWords: Set<string>): { via?: string; words: string[] } {
+  const low = name.toLowerCase();
+  const via = low.match(/\bvia\s+([a-z]+)/)?.[1];
+  if (via) return { via, words: [] };
+  if (/naturalist|maid|supplement|new year|dormitor|meal plan|^extra |packed meal|full[\s-]?day safari/i.test(name)) return { words: [] };
+  const words = [...new Set(low.split(/[^a-z]+/).filter((w) => w.length >= 4 && !ADDON_COMMON.has(w) && !placeWords.has(w)))];
+  return { words };
 }
 
 // Cities guests fly in and out of, or stay in, outside our lodges.
@@ -703,29 +719,51 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     const buf = seg.match(new RegExp(`\\b(?:${NUM_NO_DO}\\s+)?buffer\\s+(?:zone\\s+)?(?:jeep\\s+)?safaris?\\b`));
     if (buf) p.buffer = buf[1] ? toNum(buf[1]) : 1;
     const extras = EXTRA_WORDS.filter(([re]) => re.test(seg)).map(([, k]) => k);
+    // "boat safari 1 hour, boat safari 2 hours": each length its own (Master data: "Boat safari - 1 hour")
+    const bi = extras.indexOf("boat safari");
+    if (bi >= 0) {
+      const hrs = [...new Set([...seg.matchAll(/(?<!night\s)\bboat\s*safari\s*(?:-\s*|of\s+)?(\d)\s*h(?:ou)?rs?\b/g)].map((m) => Number(m[1])))];
+      if (hrs.length) extras.splice(bi, 1, ...hrs.map((h) => `boat safari ${h} hour`));
+    }
     // and every activity of this park's lodges named as it is in Master data ("buffer walk",
     // "tawa cruise", "safari breakfast", "royal enfield", "moharli gate"...): a new add-on is read
     // without a code change
     {
       const pk = ctx.pricing.parks.find((x) => x.name === p.name);
       const here = new Set(ctx.properties.filter((l) => l.park_id === pk?.id && (!p.lodge || l.name === p.lodge)).map((l) => l.id));
-      const words = (x: string) => x.split(" ");
+      const cityWords = new Set(cities.flatMap((c) => c.split(" ")));
+      const places = new Set([...placeWords, ...cityWords]);
+      // the add-ons the words above already found at this lodge ("boat safari", "camera", "cycling")
+      const found = new Set(
+        extras.flatMap((k) => [...here].map((id) => findAddon(ctx, id, k)?.id).filter((x): x is string => !!x))
+      );
+      const seenVia = new Set<string>();
       for (const a of ctx.pricing.addons) {
-        if (a.active === false || a.alias) continue;
+        if (a.active === false || a.alias || found.has(a.id)) continue;
         if (a.property_id ? !here.has(a.property_id) : !!a.offered_at?.length && !a.offered_at.some((id) => here.has(id))) continue;
-        const phrase = addonPhrase(a.name);
-        // its words in order, at most two words between them ("core safari from moharli gate")
-        if (!phrase || !new RegExp(`\\b${words(phrase).map(escapeRe).join("\\w*(?:\\W+\\w+){0,2}?\\W+")}`).test(seg)) continue;
-        // already asked for by a word above ("boat safari", "bush dinner", "camera")
-        if (extras.some((k) => words(k).every((w) => words(phrase).includes(w)) || words(phrase).every((w) => words(k).includes(w)))) continue;
-        extras.push(phrase);
+        const t = addonTriggers(a.name, places);
+        const hit = t.via
+          ? new RegExp(`\\bvia\\s+(?:the\\s+)?${escapeRe(t.via)}`).test(seg)
+          : t.words.some((w) => new RegExp(`\\b${escapeRe(w)}\\b`).test(seg));
+        if (!hit) continue;
+        // one extra per road "via" (the Innova row when there is one for each vehicle)
+        if (t.via) {
+          if (seenVia.has(t.via)) continue;
+          const same = ctx.pricing.addons.filter((x) => x.active !== false && addonTriggers(x.name, places).via === t.via && (x.property_id ? here.has(x.property_id) : true));
+          const pick = same.find((x) => /innova|crysta/i.test(x.name)) ?? a;
+          seenVia.add(t.via);
+          extras.push(addonHead(pick.name));
+          continue;
+        }
+        extras.push(addonHead(a.name));
       }
     }
     // fishing: half day or full day (asked when not said)
     const fi = extras.indexOf("fishing");
     if (fi >= 0) {
-      const len = seg.match(/\b(half|full)[- ]?day\s+fishing\b|\bfishing\s*\(?\s*(half|full)[- ]?day\b/);
-      if (len) extras[fi] = `${len[1] ?? len[2]} day fishing`;
+      // "half day fishing, full day fishing": both
+      const lens = [...new Set([...seg.matchAll(/\b(half|full)[- ]?day\s+fishing\b|\bfishing\s*\(?\s*(half|full)[- ]?day\b/g)].map((m) => m[1] ?? m[2]))];
+      if (lens.length) extras.splice(fi, 1, ...lens.map((l) => `${l} day fishing`));
       else ask({ key: `fishing:${p.name}`, text: `Fishing at ${p.lodge ?? p.name}: half day or full day?`, quick: ["Half-day fishing", "Full-day fishing"] });
     }
     if (extras.length) p.extras = extras;
@@ -898,7 +936,8 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     const win = low.slice(s.at, end);
     const want: string[] = [];
     if (/\b(sight\s?seeing|sightseeings?|sighseeing|sightseing|sight\s?seing|sighting|city tour|temple tour)\b/.test(win)) want.push("sightseeing");
-    if (/\bguides?\b/.test(win)) want.push("guide");
+    if (/\bguides?\b/.test(win.replace(/\baccompanying\s+guides?\b/g, ""))) want.push("guide");
+    if (/\baccompanying\s+guides?\b/.test(win)) want.push("accompanying guide");
     if (/\b(entrances?|entry|entries|tickets?|monument fees?)\b/.test(win)) want.push("entrance");
     if (want.length) s.want_extras = want;
   }

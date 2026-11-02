@@ -564,7 +564,9 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     // an activity with no price yet (no add-on in Master data): a price to type, never a silent 0
     if (c.amount === null) {
       const key = `extra|${c.date}|${c.title}`;
-      needPrice({ key, kind: "extra", label: c.title, unit: "in all, incl. tax", date: c.date }, "no price for an activity");
+      const at = stayOn(c.date)?.property_id;
+      const where = at ? data.properties.find((p) => p.id === at)?.name : null;
+      needPrice({ key, kind: "extra", label: where && !c.title.includes(where) ? `${c.title} at ${where}` : c.title, unit: "in all, incl. tax", date: c.date }, "no price for an activity");
       const typed = manual[key];
       if (typed !== undefined) {
         const amt = round(typed);

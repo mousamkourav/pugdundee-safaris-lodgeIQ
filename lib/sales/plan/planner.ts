@@ -273,21 +273,6 @@ function applyWants(plan: Plan, ctx: BuilderContext, days: PlanDay[]): PlanDay[]
         days[range[0]].notes = [...days[range[0]].notes, `${stop.want_safaris} safaris were asked for in ${park}, but only ${slots.length} fit in ${stop.nights} night${stop.nights === 1 ? "" : "s"}.`];
       }
     }
-    // "2 buffer safaris": the last of this stop's safaris move to the buffer zone, where it is open
-    if (stop.want_buffer && stop.want_buffer > 0) {
-      let left = stop.want_buffer;
-      for (const i of [...range].reverse()) {
-        if (left <= 0) break;
-        const safaris = days[i].safaris.map((s) => {
-          if (left <= 0 || !owns(i, s.session) || s.zone === "buffer" || s.session === "full_day") return s;
-          if (closedAt(ctx, plan, stop.park_id, "buffer", s.session, days[i].date)) return s;
-          left--;
-          return { ...s, zone: "buffer" as const };
-        });
-        days[i] = describe(ctx, { ...days[i], safaris }, plan.vehicle_type);
-      }
-      if (left > 0 && range.length) days[range[0]].notes = [...days[range[0]].notes, `${stop.want_buffer} buffer safaris were asked for; ${stop.want_buffer - left} fit (the buffer zone is closed on the other safari times).`];
-    }
     // "full-day safari": one day here becomes a full-day safari (in place of that day's morning
     // and evening safaris; a day without safaris first), on a day the core zone is open
     if ((stop.want_extras ?? []).includes("full-day safari")) {
@@ -313,6 +298,22 @@ function applyWants(plan: Plan, ctx: BuilderContext, days: PlanDay[]): PlanDay[]
         );
       }
     }
+    // "2 buffer safaris": the last of this stop's safaris move to the buffer zone, where it is open
+    // (after the full day is placed, so the full day never takes them away)
+    if (stop.want_buffer && stop.want_buffer > 0) {
+      let left = stop.want_buffer;
+      for (const i of [...range].reverse()) {
+        if (left <= 0) break;
+        const safaris = days[i].safaris.map((s) => {
+          if (left <= 0 || !owns(i, s.session) || s.zone === "buffer" || s.session === "full_day") return s;
+          if (closedAt(ctx, plan, stop.park_id, "buffer", s.session, days[i].date)) return s;
+          left--;
+          return { ...s, zone: "buffer" as const };
+        });
+        days[i] = describe(ctx, { ...days[i], safaris }, plan.vehicle_type);
+      }
+      if (left > 0 && range.length) days[range[0]].notes = [...days[range[0]].notes, `${stop.want_buffer} buffer safaris were asked for; ${stop.want_buffer - left} fit (the buffer zone is closed on the other safari times).`];
+    }
     const extrasHere = (stop.want_extras ?? []).filter((kw) => kw !== "full-day safari"); // the full day is a safari, not an add-on
     const specials = extrasHere.includes("special") ? lodgeSpecials(ctx, stop.property_id, plan.guest.nationality) : [];
     const usedIds = new Set<string>();
@@ -337,8 +338,10 @@ function applyWants(plan: Plan, ctx: BuilderContext, days: PlanDay[]): PlanDay[]
       const addon = findAddon(ctx, stop.property_id, kw, plan.guest.nationality);
       const item: PlanItem = addon
         ? { id: `auto-${k}-${kw}`, type: "addon", title: addon.name, detail: "", price: null, addon_id: addon.id, qty: stop.want_qty?.[kw] ?? null, auto: `extra:${k}:${kw}` }
-        : { id: `auto-${k}-${kw}`, type: "activity", title: kw.replace(/\b\w/g, (c) => c.toUpperCase()), detail: "", price: null, addon_id: null, qty: null, auto: `extra:${k}:${kw}` };
-      const at = dayFor();
+        : { id: `auto-${k}-${kw}`, type: "activity", title: WISH_NAME[kw] ?? kw.replace(/^\w/, (c) => c.toUpperCase()), detail: "", price: null, addon_id: null, qty: null, auto: `extra:${k}:${kw}` };
+      // the safari lunch goes with the full-day safari, on that day
+      const fullDay = /safari lunch|full[\s-]?day/i.test(item.title) ? nightDays.find((i) => days[i].safaris.some((x) => x.session === "full_day")) : undefined;
+      const at = fullDay ?? dayFor();
       days[at] = { ...days[at], items: [...days[at].items, item] };
     }
     // "2 jeeps per safari": on every safari of this stop
@@ -590,9 +593,24 @@ function masterHotelOptions(ctx: BuilderContext, name: string | undefined, want:
 
 // The add-ons of a city stay's hotel (or of its city) for what was asked: one each for
 // sightseeing (the vehicle), the guide and the entrances.
+// A wish the lodge has no add-on for, by its usual name (shown, and a price to type)
+const WISH_NAME: Record<string, string> = {
+  village: "Village walk",
+  culinary: "Culinary workshop",
+  picnic: "Picnic",
+  "buffer walk": "Buffer walk",
+  "bush dinner": "Bush dinner",
+  "special dinner": "Special dinner",
+  "bird watching": "Bird watching",
+  "star gazing": "Star gazing",
+  "walking safari": "Walking safari",
+  "nature walk": "Nature walk",
+};
+
 const CITY_EXTRA: Record<string, { re: RegExp; not?: RegExp; prefer?: RegExp }> = {
   sightseeing: { re: /sight\s?seeing|city tour|temple tour/i, not: /guide|entrance|ticket/i },
-  guide: { re: /guide/i, prefer: /sight\s?seeing|local/i },
+  guide: { re: /guide/i, not: /accompanying/i, prefer: /sight\s?seeing|local/i },
+  "accompanying guide": { re: /accompanying guide/i },
   entrance: { re: /entrance|entry|ticket|monument/i },
 };
 // The city's experiences asked for (sightseeing, guide, entrances): its add-ons in Master data;

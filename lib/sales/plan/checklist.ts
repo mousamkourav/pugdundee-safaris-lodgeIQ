@@ -4,6 +4,16 @@
 import { countryName } from "@/lib/sales/countries";
 import { fmtDate } from "@/lib/sales/format";
 import { lodgesInPark, roomsOf } from "./planner";
+import { addDays } from "@/lib/sales/pricing/dates";
+
+// The day they arrive: in the first city when there are city nights first ("10 Jan 2027 in Delhi,
+// first lodge 11 Jan 2027"), else the first lodge's day (the plan's arrival date).
+function arrivalText(plan: Plan): string {
+  const before = (plan.city_stays ?? []).filter((c) => c.when === "before" && !c.at);
+  const lead = before.reduce((t, c) => t + c.nights, 0);
+  if (!lead || !before[0]?.city) return fmtDate(plan.arrival_date);
+  return `${fmtDate(addDays(plan.arrival_date, -lead))} in ${before[0].city} (first lodge ${fmtDate(plan.arrival_date)})`;
+}
 import { safariOnly, stayKey, stayWhere } from "./cities";
 import type { BuilderContext, Plan, PlanStop, TravelMode } from "./types";
 import type { ChatFlags } from "./chat";
@@ -40,7 +50,7 @@ export function tripChecklist(plan: Plan, f: ChatFlags, full: BuilderContext): C
     plan.dateless
       ? { key: "date", label: "Arrival date", ok: true, text: "Dates not fixed: priced by season" }
       : f.dateSet
-        ? { key: "date", label: "Arrival date", ok: true, text: fmtDate(plan.arrival_date) }
+        ? { key: "date", label: "Arrival date", ok: true, text: arrivalText(plan) }
         : { key: "date", label: "Arrival date", ok: false, text: dateAsk?.text ?? "When do they arrive?" }
   );
 
@@ -122,7 +132,7 @@ export function tripChecklist(plan: Plan, f: ChatFlags, full: BuilderContext): C
 function stopText(s: PlanStop, lodge: string, room: string) {
   const parts = [`${lodge}, ${plural(s.nights, "night")}${room ? `, ${room}` : ""}`];
   const saf = s.want_safaris == null ? "safaris as many as fit" : s.want_safaris === 0 ? "no safaris" : plural(s.want_safaris, "safari");
-  parts.push(saf + (s.want_sessions ? ` (${s.want_sessions === "morning" ? "mornings" : "evenings"} only)` : "") + (s.want_jeeps ? `, ${plural(s.want_jeeps, "jeep")} each` : ""));
+  parts.push(saf + (s.want_buffer ? `, ${plural(s.want_buffer, "buffer safari")}` : "") + (s.want_sessions ? ` (${s.want_sessions === "morning" ? "mornings" : "evenings"} only)` : "") + (s.want_jeeps ? `, ${plural(s.want_jeeps, "jeep")} each` : ""));
   if (s.want_naturalists) parts.push(s.want_naturalists < 0 ? "naturalist on every safari" : `naturalist on ${plural(s.want_naturalists, "safari")}`);
   const extras = (s.want_extras ?? []).map((x) => (x === "special" ? "the lodge's own experiences" : `${x}${s.want_qty?.[x] ? ` x${s.want_qty[x]}` : ""}`));
   if (extras.length) parts.push(extras.join(", "));
