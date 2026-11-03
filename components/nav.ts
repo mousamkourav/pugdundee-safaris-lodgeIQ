@@ -4,7 +4,7 @@ import type { Role } from "@/lib/auth";
 // module the current page is in, so Lodge Reporting and Sales each get a clean
 // sidebar. To add a future module: add it to Module, give its groups that
 // module, and teach moduleForPath() its URL prefix.
-export type Module = "reporting" | "sales";
+export type Module = "reporting" | "sales" | "sop";
 
 export interface NavItem {
   label: string;
@@ -24,6 +24,8 @@ const ADMIN: Role[] = ["super_admin", "senior_manager", "delhi_accounts"];
 const SUPER: Role[] = ["super_admin", "senior_manager"];
 // Sales admin features: super roles plus the Sales-only admin.
 const SALES_ADMIN: Role[] = ["super_admin", "senior_manager", "sales_admin"];
+// SOP: only the super admin edits (lib/sop/access.ts).
+const SOP_EDITOR: Role[] = ["super_admin"];
 
 export const NAV: NavGroup[] = [
   // ---------------- Lodge Reporting ----------------
@@ -89,9 +91,30 @@ export const NAV: NavGroup[] = [
       { label: "Members", href: "/sales/members", icon: "users", roles: SALES_ADMIN },
     ],
   },
+
+  // ---------------- SOP ----------------
+  // Shown only to people with SOP access (the layout decides; see modulesFor).
+  {
+    title: "SOP",
+    module: "sop",
+    items: [{ label: "Read the SOP", href: "/sop", icon: "fileText", exact: true }],
+  },
+  {
+    title: "SOP admin",
+    module: "sop",
+    items: [
+      { label: "Edit draft", href: "/sop/edit", icon: "edit", roles: SOP_EDITOR },
+      { label: "Import from Word", href: "/sop/import", icon: "inbox", roles: SOP_EDITOR },
+      { label: "Versions", href: "/sop/versions", icon: "clock", roles: SOP_EDITOR },
+      { label: "Who has read", href: "/sop/reads", icon: "checkCircle", roles: SOP_EDITOR },
+      { label: "Access", href: "/sop/access", icon: "shield", roles: SOP_EDITOR },
+      { label: "Audit log", href: "/sop/audit", icon: "list", roles: SOP_EDITOR },
+    ],
+  },
 ];
 
 export function moduleForPath(pathname: string, role: Role): Module {
+  if (pathname === "/sop" || pathname.startsWith("/sop/")) return "sop";
   if (role === "sales_member" || role === "sales_admin") return "sales";
   return pathname === "/sales" || pathname.startsWith("/sales/") ? "sales" : "reporting";
 }
@@ -99,7 +122,24 @@ export function moduleForPath(pathname: string, role: Role): Module {
 export const MODULES: { key: Module; label: string; href: string }[] = [
   { key: "reporting", label: "Lodge Reporting", href: "/dashboard" },
   { key: "sales", label: "Sales & Itinerary", href: "/sales" },
+  { key: "sop", label: "SOP", href: "/sop" },
 ];
 
 // Only super roles can switch modules. Duplicated role list, see SUPER above.
 export const canSwitchModules = (role: Role) => SUPER.includes(role);
+
+// The tabs of the module switcher. Super roles: Lodge Reporting and Sales, plus SOP when they
+// may read it. Anyone else given SOP access: their own module and SOP. Without SOP access the
+// tabs are what they always were (none for those who cannot switch).
+export function modulesFor(role: Role, sopAccess: boolean): { key: Module; label: string; href: string }[] {
+  const sop = MODULES.filter((m) => m.key === "sop");
+  if (canSwitchModules(role)) return [...MODULES.filter((m) => m.key !== "sop"), ...(sopAccess ? sop : [])];
+  if (!sopAccess) return [];
+  const own =
+    role === "sales_member" || role === "sales_admin"
+      ? { key: "sales" as const, label: "Sales & Itinerary", href: "/sales" }
+      : role === "task_creator"
+        ? { key: "reporting" as const, label: "Trip reports", href: "/trip-reports" }
+        : { key: "reporting" as const, label: "Lodge Reporting", href: "/dashboard" };
+  return [own, ...sop];
+}

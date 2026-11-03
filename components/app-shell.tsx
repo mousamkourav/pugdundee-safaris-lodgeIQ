@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { NAV, MODULES, moduleForPath, canSwitchModules, type Module } from "./nav";
+import { NAV, moduleForPath, modulesFor, type Module } from "./nav";
 import { Icon } from "./icons";
 import type { Role } from "@/lib/auth";
 import { signOut } from "@/app/login/actions";
@@ -20,8 +20,8 @@ function initials(name: string) {
 
 const roleLabel = (role: string) => role.replace(/_/g, " ");
 
-// Segmented control to jump between modules (super roles only).
-function ModuleSwitcher({ current, className = "" }: { current: Module; className?: string }) {
+// Segmented control to jump between modules (super roles; and anyone given SOP access).
+function ModuleSwitcher({ modules, current, className = "" }: { modules: { key: Module; label: string; href: string }[]; current: Module; className?: string }) {
   return (
     <div
       className={
@@ -30,7 +30,7 @@ function ModuleSwitcher({ current, className = "" }: { current: Module; classNam
       role="navigation"
       aria-label="Switch module"
     >
-      {MODULES.map((m) => (
+      {modules.map((m) => (
         <Link
           key={m.key}
           href={m.href}
@@ -52,10 +52,14 @@ function ModuleSwitcher({ current, className = "" }: { current: Module; classNam
 export function AppShell({
   role,
   name,
+  sopAccess = false,
+  sopUnread = null,
   children,
 }: {
   role: Role;
   name: string;
+  sopAccess?: boolean; // may read the SOP (adds the SOP tab)
+  sopUnread?: number | null; // a published SOP version this person has not marked as read
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -65,7 +69,8 @@ export function AppShell({
   useEffect(() => setMobileOpen(false), [pathname]);
 
   const currentModule = moduleForPath(pathname, role);
-  const switcher = canSwitchModules(role);
+  const modules = modulesFor(role, sopAccess);
+  const switcher = modules.length > 1;
 
   const groups = NAV.filter((g) => g.module === currentModule)
     .map((g) => ({
@@ -121,7 +126,7 @@ export function AppShell({
         {/* module switcher inside the drawer on small screens */}
         {switcher && (
           <div className="px-3 pb-2 md:hidden">
-            <ModuleSwitcher current={currentModule} className="flex w-full" />
+            <ModuleSwitcher modules={modules} current={currentModule} className="flex w-full" />
           </div>
         )}
 
@@ -206,7 +211,7 @@ export function AppShell({
             LodgeIQ
           </span>
 
-          {switcher && <ModuleSwitcher current={currentModule} className="hidden md:inline-flex" />}
+          {switcher && <ModuleSwitcher modules={modules} current={currentModule} className="hidden md:inline-flex" />}
 
           <div className="ml-auto flex items-center gap-1 sm:gap-2">
             <Link
@@ -256,6 +261,15 @@ export function AppShell({
         </header>
 
         <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+          {sopUnread != null && currentModule !== "sop" && (
+            <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-gold-200 bg-gold-50 px-4 py-3 text-sm text-gold-800 print:hidden">
+              <Icon name="fileText" className="h-5 w-5 shrink-0" />
+              <span className="font-semibold">New SOP version {sopUnread} - please read.</span>
+              <Link href="/sop" className="ml-auto font-semibold text-olive-700 underline underline-offset-2 hover:text-olive-800">
+                Open the SOP
+              </Link>
+            </div>
+          )}
           {children}
         </main>
       </div>

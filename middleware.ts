@@ -8,10 +8,10 @@ type CookieToSet = {
 };
 
 // Paths a sales member may open. Everything else belongs to Lodge Reporting
-// and sends them to /sales.
-const SALES_MEMBER_PATHS = ["/sales", "/hub", "/account", "/notifications"];
+// and sends them to /sales. /sop: the SOP pages check access themselves (by person or role).
+const SALES_MEMBER_PATHS = ["/sales", "/hub", "/account", "/notifications", "/sop"];
 // Paths a task creator may open. Everything else sends them to /trip-reports.
-const TASK_CREATOR_PATHS = ["/trip-reports", "/hub", "/account", "/notifications"];
+const TASK_CREATOR_PATHS = ["/trip-reports", "/hub", "/account", "/notifications", "/sop"];
 
 const within = (path: string, list: string[]) =>
   list.some((p) => path === p || path.startsWith(p + "/"));

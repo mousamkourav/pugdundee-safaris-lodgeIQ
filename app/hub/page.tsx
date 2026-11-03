@@ -5,6 +5,7 @@ import { requireUser, isSuperAdmin, homePathFor, ROLE_LABELS, type Role } from "
 import { createClient } from "@/lib/supabase/server";
 import { Icon } from "@/components/icons";
 import { ui } from "@/components/ui";
+import { sopStatus } from "@/lib/sop/server";
 
 // Module picker shown after sign-in to super roles. Everyone else is sent
 // straight to their own module.
@@ -19,6 +20,8 @@ export default async function HubPage() {
     .select("id", { count: "exact", head: true })
     .is("deleted_at", null)
     .eq("status", "open");
+
+  const sop = await sopStatus();
 
   const name: string = profile?.full_name || "there";
   const first = name.split(" ")[0];
@@ -44,6 +47,19 @@ export default async function HubPage() {
       band: "bg-olive-600",
       stat: `${openCount ?? 0} open ${openCount === 1 ? "query" : "queries"}`,
     },
+    // the third module, for those who may read the SOP
+    ...(sop.canView
+      ? [
+          {
+            href: "/sop",
+            title: "SOP",
+            body: "Standard operating procedures for every lodge: read, search, download.",
+            icon: "fileText",
+            band: "bg-gold-700",
+            stat: sop.version ? `Version ${sop.version}` : "Not published yet",
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -77,7 +93,7 @@ export default async function HubPage() {
           Choose where you want to work. You can switch anytime from the top bar.
         </p>
 
-        <div className="mt-10 grid gap-6 md:grid-cols-2">
+        <div className={`mt-10 grid gap-6 ${cards.length > 2 ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
           {cards.map((c) => (
             <Link
               key={c.href}
