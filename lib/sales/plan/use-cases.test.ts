@@ -5,9 +5,14 @@
 // engine, and checked with the same hard checks as saveItinerary. Every case asserts the final
 // ROUTE (day by day: where they sleep, every drive, car and flight) AND the exact TOTAL.
 //
-// One correction is applied to the export (the same as supabase/sales_indian_rates_fix.sql): the
-// old "per BAR policy" lodge rates are for foreign guests, so Indian guests pay the published
-// Indian rate. Without it Indian guests are quoted the foreign BAR rate (see the last test).
+// The export is used EXACTLY as exported. Our lodges' rooms are priced by the "... per BAR policy"
+// rows (lodge exceptions, all guests, priority 10): the owner's BAR sheets for 2026-27, "Per night
+// tariff for Indian Nationals, 01 Oct 2026 to 30 Jun 2027". Cottage / bungalow double: Shoulder
+// 18,000, High 22,000, Peak 23,000; Treehouse double 21,000 / 25,500 / 26,500. Shoulder 1-31 Oct,
+// 1-20 Dec, 5-31 Jan, 16 May-30 Jun; High Nov, 1 Feb-30 Apr, 1-15 May; Peak 21 Dec-4 Jan and the
+// long weekends (Dussehra 17-20 Oct, Diwali 6-14 Nov, Holi 19-22 Mar). The "published tariff"
+// 30,000 / 33,000 is the rack rate, not what Indian guests are sold. Foreign guests get the same
+// seasonal rates today (open question for management, not a test).
 //
 // Totals are in rupees incl. GST. The sums are worked out in the comments from the rates in the
 // export (room rate x 1.18, safari / transfer x 1.05) so a changed total is a real change.
@@ -21,7 +26,6 @@ import { sanitizePlan } from "./sanitize";
 import { extractTrip, scrubForAI } from "./parse-text";
 import { parseCities } from "./car-packages";
 import { priceTrip } from "@/lib/sales/pricing/engine";
-import { checkData } from "@/lib/sales/pricing/health";
 import type { Addon, CarPackage, PriceResult } from "@/lib/sales/pricing/types";
 import { canUpdateInPlace, defaultVersionMode } from "@/lib/sales/versions";
 import { canMoveStatus, NEXT_STATUS, QUERY_STATUSES } from "@/lib/sales/status";
@@ -35,15 +39,7 @@ const TODAY = "2026-11-02";
 
 // ---------------------------------------------------------------- the data
 
-// the export with the "per BAR policy" rows marked foreign (sales_indian_rates_fix.sql)
-const roomOf = new Map(realCtx.rooms.map((r) => [r.id, r]));
-const ownIds = new Set(realCtx.properties.filter((p) => p.kind === "own_lodge").map((p) => p.id));
-const isBar = (r: { room_category_id: string; nationality?: string; notes?: string | null; priority?: number }) =>
-  (r.nationality ?? "all") === "all" && /per BAR policy/i.test(String(r.notes ?? "")) && ownIds.has(roomOf.get(r.room_category_id)?.property_id ?? "");
-const ctx: BuilderContext = {
-  ...realCtx,
-  pricing: { ...realCtx.pricing, roomRates: realCtx.pricing.roomRates.map((r) => (isBar(r as never) ? { ...r, nationality: "foreign" as const } : r)) },
-};
+const ctx: BuilderContext = realCtx;
 
 // ---------------------------------------------------------------- helpers
 
@@ -94,17 +90,18 @@ const KANHA_ROUTE = [
   "01-13 - | drive Kanha Earth Lodge>Jabalpur Airport",
 ];
 
-test("Indian guests: the published Indian rate, Indian safari rates", () => {
+test("Indian guests: the BAR rate for the season (January = shoulder), Indian safari rates", () => {
   const p = read(ctx, `2 adults indian, ${KANHA}`);
   assert.equal(p.guest.nationality, "indian");
   assert.deepEqual(route(p), KANHA_ROUTE);
   const { r, checks } = quote(p);
   ready(r, checks);
-  // rooms 3 x 30,000 x 1.18 = 1,06,200; safaris 4 x 14,500 x 1.05 = 60,900; drives 2 x 7,500 x 1.05 = 15,750
-  assert.equal(sumOf(r, "room"), 106_200);
+  // rooms 3 x 18,000 (shoulder) x 1.18 = 63,720; safaris 4 x 14,500 x 1.05 = 60,900; drives 2 x 7,500 x 1.05 = 15,750
+  // 63,720 + 60,900 + 15,750 = 1,40,370
+  assert.equal(sumOf(r, "room"), 63_720);
   assert.equal(sumOf(r, "safari"), 60_900);
   assert.equal(sumOf(r, "transfer"), 15_750);
-  assert.equal(r.totals.grand, 182_850);
+  assert.equal(r.totals.grand, 140_370);
 });
 
 test("foreign guests: the seasonal rate (January = shoulder), foreign safari rates", () => {
@@ -114,20 +111,10 @@ test("foreign guests: the seasonal rate (January = shoulder), foreign safari rat
   const { r, checks } = quote(p);
   ready(r, checks);
   // rooms 3 x 18,000 x 1.18 = 63,720; safaris 4 x 17,500 x 1.05 = 73,500; drives 15,750
+  // 63,720 + 73,500 + 15,750 = 1,52,970
   assert.equal(sumOf(r, "room"), 63_720);
   assert.equal(sumOf(r, "safari"), 73_500);
   assert.equal(r.totals.grand, 152_970);
-});
-
-test("real data as exported: the old BAR rows give Indian guests the foreign rate, and Master data says so", () => {
-  const p = read(realCtx, `2 adults indian, ${KANHA}`);
-  const r = priceTrip(planToTrip(markConfirmed(p, TODAY), TODAY), realCtx.pricing);
-  assert.equal(sumOf(r, "room"), 63_720, "18,000 (foreign shoulder) instead of the Indian 30,000");
-  const warn = checkData(realCtx.pricing, TODAY).filter((i) => /replace the Indian published rate/.test(i.message));
-  assert.equal(warn.length, 8);
-  assert.ok(warn.some((i) => i.message.startsWith("Kanha Earth Lodge - AC Deluxe Bungalow:")));
-  // once corrected, no warning
-  assert.equal(checkData(ctx.pricing, TODAY).filter((i) => /replace the Indian published rate/.test(i.message)).length, 0);
 });
 
 // ---------------------------------------------------------------- children and infants
@@ -142,13 +129,14 @@ test("a child of 8 pays 25% of the double, an infant of 1 is free; one jeep and 
   ]);
   const { r, checks } = quote(p);
   ready(r, checks);
-  // room (30,000 + 25% child 7,500) x 1.18 = 44,250 a night x 2 = 88,500; infant free
-  assert.equal(sumOf(r, "room"), 88_500);
+  // February = high: room (22,000 + 25% child 5,500) x 1.18 = 32,450 a night x 2 = 64,900; infant free
+  assert.equal(sumOf(r, "room"), 64_900);
   // safaris 2 x 14,500 x 1.05 = 30,450 (one jeep); Innova 2 x 9,000 x 1.05 = 18,900
   assert.equal(sumOf(r, "safari"), 30_450);
   assert.equal(sumOf(r, "transfer"), 18_900);
   assert.ok(r.lines.filter((l) => l.kind === "transfer").every((l) => /Innova/.test(l.description)));
-  assert.equal(r.totals.grand, 137_850);
+  // 64,900 + 30,450 + 18,900 = 1,14,250
+  assert.equal(r.totals.grand, 114_250);
 });
 
 // ---------------------------------------------------------------- dates fixed and not fixed
@@ -162,10 +150,11 @@ test("dates not fixed: Day 1, 2... priced by season, and the quote is still chec
   assert.match(route(p)[3], /- \| drive Kings Lodge>Jabalpur Airport$/);
   const { r, checks } = quote(p);
   ready(r, checks);
-  // Indian rate is the same all year: 3 x 30,000 x 1.18 = 1,06,200
+  // no dates: priced on the default basis, high season: 3 x 22,000 x 1.18 = 77,880
   // safaris 4 x 14,500 x 1.05 = 60,900; Jabalpur drives 2 x 7,000 x 1.05 = 14,700
-  assert.deepEqual([sumOf(r, "room"), sumOf(r, "safari"), sumOf(r, "transfer")], [106_200, 60_900, 14_700]);
-  assert.equal(r.totals.grand, 181_800);
+  // 77,880 + 60,900 + 14,700 = 1,53,480
+  assert.deepEqual([sumOf(r, "room"), sumOf(r, "safari"), sumOf(r, "transfer")], [77_880, 60_900, 14_700]);
+  assert.equal(r.totals.grand, 153_480);
   // a check on a trip without dates speaks of "Day 1", never of the placeholder date
   const open = read(ctx, "2 adults indian, bandhavgarh 3 nights kings lodge, dates not fixed");
   const c = quote(open).checks;
@@ -219,7 +208,9 @@ test("monsoon (Bandhavgarh in August): the core is closed, every safari in the b
   assert.ok(p.days.flatMap((d) => d.notes).some((n) => /monsoon closure/.test(n)));
   const { r, checks } = quote(p);
   ready(r, checks);
+  // August 2027 is after the BAR sheet (to 30 Jun 2027): the export's row from 1 Jul 2027, 30,000
   // rooms 3 x 30,000 x 1.18 = 1,06,200; buffer safaris 4 x 13,500 x 1.05 = 56,700; drives 14,700
+  // 1,06,200 + 56,700 + 14,700 = 1,77,600
   assert.deepEqual([sumOf(r, "room"), sumOf(r, "safari"), sumOf(r, "transfer")], [106_200, 56_700, 14_700]);
   assert.equal(r.totals.grand, 177_600);
 });
@@ -365,8 +356,9 @@ test("own vehicle: no transfer planned or charged, and no 'no way in / out' chec
   const { r, checks } = quote(p);
   ready(r, checks);
   assert.equal(sumOf(r, "transfer"), 0);
-  // rooms 2 x 30,000 x 1.18 = 70,800; safaris 2 x 14,500 x 1.05 = 30,450
-  assert.equal(r.totals.grand, 101_250);
+  // February = high: rooms 2 x 22,000 x 1.18 = 51,920; safaris 2 x 14,500 x 1.05 = 30,450
+  // 51,920 + 30,450 = 82,370
+  assert.equal(r.totals.grand, 82_370);
 });
 
 test("by train both ways at Itarsi (fixed 2 Nov 2026: 'arriving and departing by train at')", () => {
@@ -378,8 +370,9 @@ test("by train both ways at Itarsi (fixed 2 Nov 2026: 'arriving and departing by
   ]);
   const { r, checks } = quote(p);
   ready(r, checks);
-  // rooms 2 x 30,000 x 1.18 = 70,800; safaris 2 x 13,500 x 1.05 = 28,350; drives 2 x 5,500 x 1.05 = 11,550
-  assert.equal(r.totals.grand, 110_700);
+  // February = high: rooms 2 x 22,000 x 1.18 = 51,920; safaris 2 x 13,500 x 1.05 = 28,350; drives 2 x 5,500 x 1.05 = 11,550
+  // 51,920 + 28,350 + 11,550 = 91,820
+  assert.equal(r.totals.grand, 91_820);
 });
 
 test("both ends in one phrase: 'arriving and departing', 'pickup and drop', 'arrival/departure'", () => {
