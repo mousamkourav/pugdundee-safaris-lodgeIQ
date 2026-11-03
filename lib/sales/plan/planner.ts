@@ -516,6 +516,19 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
           } else if (real && lodge) transfer = cityTransfer(ctx, lodge, hotelOf(ctx, c));
         }
       }
+      // nights not with us (own arrangements): nothing priced; our car drops them only when set
+      if (c.away) {
+        const ours = c.away_transfer === "ours";
+        const fromLodge = j === 0 && prev?.kind === "lodge" ? prev.stop.property_id : null;
+        title = j === 0 ? `Own arrangements (${c.nights} night${c.nights === 1 ? "" : "s"})` : "Own arrangements";
+        text = fromLodge
+          ? `After breakfast, check out of ${lodgeName(fromLodge)}${ours ? "; our car drops you at your hotel" : ""}. The next ${c.nights === 1 ? "night is" : `${c.nights} nights are`} your own arrangements (not included in this itinerary).`
+          : "Your own arrangements (not included in this itinerary).";
+        const lodge = fromLodge ? lodgePlace(fromLodge) : null;
+        transfer = ours && lodge ? cityTransfer(ctx, lodge, AWAY_PLACE) : null;
+        roadToHotel = false;
+        cityNote = null;
+      }
       add(
         date,
         () => cityDay(date, title, text),
@@ -539,6 +552,20 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
     }
     // leaving this stay
     const leave = seg.checkOut;
+    if (c.away && next?.kind === "lodge") {
+      // they rejoin us at the next lodge: picked up by our car ("ours"), or they come on their own
+      const ours = c.away_transfer === "ours";
+      const lodge = lodgePlace(next.stop.property_id);
+      const rejoin = ours
+        ? `After your own arrangements, our car picks you up from your hotel and drives you to ${lodgeName(next.stop.property_id)}.`
+        : `After your own arrangements, you rejoin us at ${lodgeName(next.stop.property_id)}.`;
+      add(
+        leave,
+        () => cityDay(leave, `Rejoin at ${lodgeName(next.stop.property_id)}`, rejoin),
+        (d) => withTransfer({ ...d, title: `Rejoin at ${lodgeName(next.stop.property_id)}`, text: d.text.replace(/^After breakfast, (?:drive|check out)[^.]*\.\s*/, `${rejoin} `), transfer: null }, ours && lodge ? cityTransfer(ctx, AWAY_PLACE, lodge) : null)
+      );
+      return;
+    }
     if (!next) {
       const end = plan.end_city && real && !sameCity(plan.end_city, c.city) ? plan.end_city : null;
       add(
@@ -652,6 +679,9 @@ function cityExtras(ctx: BuilderContext, c: CityStay, nationality: string): { fo
   }
   return { found: out, notFound };
 }
+
+// The guests' own hotel during nights not with us: not in Master data, a transfer to it is priced by hand.
+const AWAY_PLACE = { id: "@their own hotel", label: "their own hotel" };
 
 // A city transfer between two places (each a Master data location, or "@name").
 function cityTransfer(_ctx: BuilderContext, from: { id: string; label: string }, to: { id: string; label: string }): CityTransfer | null {

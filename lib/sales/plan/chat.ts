@@ -574,7 +574,7 @@ export function chatTurn(
     // ends: its flights are connections, and the airports this message gave for the ends are kept
     const lodgesNow = next.stops.length;
     const isMid = (c: { at?: number }) => c.at != null && c.at > 0 && c.at < lodgesNow;
-    const allCityStays = allStays ?? parsed.cityStays ?? [];
+    const allCityStays = (allStays ?? parsed.cityStays ?? []).filter((c) => !c.away && c.city); // nights away from us are no city
     const hasMid = allCityStays.some(isMid);
     const stays = allCityStays.filter((c) => !isMid(c));
     const keepIn = hasMid && !!arr && next.arrival_location_id === arr.id;
@@ -664,6 +664,10 @@ export function chatTurn(
     next.city_stays = [...keep, ...parsed.cityStays];
     for (const c of parsed.cityStays) {
       const where = stayWhere(c, next.stops, ctx.pricing.parks);
+      if (c.away) {
+        chips.push(`${c.nights} night${c.nights === 1 ? "" : "s"} not with us (own arrangements) ${where}`);
+        continue;
+      }
       chips.push(`${c.nights} night${c.nights === 1 ? "" : "s"} in ${c.city} ${where}${c.want_extras?.length ? ` with ${c.want_extras.join(", ")}` : ""}`);
     }
   }
@@ -678,7 +682,7 @@ export function chatTurn(
   // a city hotel from Master data named in the message: "1 night in Delhi at Roseate House"
   if (f.pending !== "hotel") {
     next.city_stays = (next.city_stays ?? []).map((c) => {
-      if (c.hotel) return c;
+      if (c.hotel || c.away || !c.city) return c;
       const h = cityHotelNamed(msg, full, c.city);
       if (!h) return c;
       chips.push(`${c.city}: ${h.name}`);
@@ -962,7 +966,7 @@ export function nextQuestion(
   // The hotel for nights in a city (Delhi) before or after the safari.
   const hotelStay = [...(plan.city_stays ?? [])]
     .sort((a, b) => (a.when === b.when ? 0 : a.when === "before" ? -1 : 1))
-    .find((c) => !c.hotel && !(f.hotelAsked ?? []).includes(stayKey(c)));
+    .find((c) => !c.hotel && !c.away && !(f.hotelAsked ?? []).includes(stayKey(c)));
   if (hotelStay) {
     const other = (plan.city_stays ?? []).find((c) => c !== hotelStay && c.city === hotelStay.city && c.hotel);
     return {

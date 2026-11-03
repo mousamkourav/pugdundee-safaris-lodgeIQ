@@ -128,7 +128,17 @@ export function ConfirmStep({
                         <span className={ui.label}>Nights</span>
                         <input type="number" min={1} max={30} className={`${ui.inputSm} w-20`} value={c.nights} onChange={(e) => e.target.value && change((p) => editStay(p, k2, { nights: Number(e.target.value) }))} aria-label="Nights" />
                       </label>
-                      <p className="flex-1 text-sand-500">Change the hotel or the city on the Trip step (Route).</p>
+                      {c.away ? (
+                        <label className="flex flex-1 flex-col gap-1">
+                          <span className={ui.label}>Leaving and rejoining</span>
+                          <select className={ui.inputSm} value={c.away_transfer === "ours" ? "ours" : "own"} onChange={(e) => change((p) => editStay(p, k2, { away_transfer: e.target.value === "ours" ? "ours" : "own" }))} aria-label="Leaving and rejoining">
+                            <option value="own">On their own (no transfers)</option>
+                            <option value="ours">Our car drops and picks up (price typed)</option>
+                          </select>
+                        </label>
+                      ) : (
+                        <p className="flex-1 text-sand-500">Change the hotel or the city on the Trip step (Route).</p>
+                      )}
                       <button
                         type="button"
                         className={`${ui.btnDangerOutline} ${ui.btnSm}`}

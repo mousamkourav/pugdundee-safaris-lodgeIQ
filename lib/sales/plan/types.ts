@@ -47,6 +47,10 @@ export interface CityStay {
   at?: number; // how many lodges come before it; unset = before all ("before") or after all ("after")
   blank?: boolean; // added with "Add a day"
   want_extras?: string[]; // asked for here: "sightseeing", "guide", "entrance" (matched to this city's add-ons)
+  // nights not with us ("they go to another resort for 2 days and resume with us"): own
+  // arrangements, nothing priced; always blank. Our car drops and picks up only with "ours".
+  away?: boolean;
+  away_transfer?: "ours" | "own";
 }
 
 // A road transfer in a city (airport to hotel...). A place not in Master data has

@@ -30,7 +30,7 @@ export interface ParsedTrip {
   meal_plan?: "AP" | "MAP" | "CP" | "EP";
   notes: string[]; // assumptions made while reading
   flights?: { from: string; to: string; time?: string }[];
-  cityStays?: { when: "before" | "after"; city: string; nights: number; hotel?: string; price?: number; want_extras?: string[]; at?: number }[];
+  cityStays?: { when: "before" | "after"; city: string; nights: number; hotel?: string; price?: number; want_extras?: string[]; at?: number; away?: boolean; blank?: boolean }[];
   endCity?: string; // "drive back to Delhi for the homebound flight": the last drive goes to this city's airport
   transferVehicles?: number; // "2 gaadi for all transfers", "2 innovas for transfers": vehicles on every transfer
   reverse?: boolean; // "wrong direction", "the other way round"
@@ -926,12 +926,37 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
       text: `"${label}${st ? `, ${st.nights} nights` : ""}" is a touring package. Which one (for example Delhi - Agra - Jaipur - Delhi, ${st ? `${st.nights} nights / ${st.nights + 1} days` : "4 nights / 5 days"}), and how many nights in each city?`,
     });
   }
+  // A break from our itinerary: "they will go to another resort for 2 days and take a break from
+  // our itinerary, then resume with us", "2 nights on their own", "not with us for 2 nights".
+  // Nights of their own arrangements (nothing priced), at their place between the lodges. The
+  // number is the first "N days / nights" after the words (up to the next lodge or park), else the
+  // last one before them in the same clause. (2 Nov 2026)
+  {
+    const BREAK_RE =
+      /\b(?:take|taking|takes|took)\s+(?:a\s+)?break\b|\bbreak\s+(?:of|for|from)\b|\b(?:another|other|different|some other|their own)\s+(?:resort|hotel|lodge|property|place|camp|homestay)\b|\bnot\s+with\s+us\b|\b(?:away|out|off)\s+(?:from|of)\s+(?:our|the)\s+(?:itinerary|itineary|itinieary|itinary|itenary|tour|trip|programm?e?)\b|\bon\s+their\s+own\s+for\b|\bown\s+arrangements?\b/g;
+    const DAYS_RE = new RegExp(`\\b${NUM}\\s*(?:days?|nights?|din|raat(?:ein|en|e)?)\\b`, "g");
+    const done = new Set<number>();
+    for (const m of low.matchAll(BREAK_RE)) {
+      const t = m.index!;
+      const gap = parksBefore(t);
+      if (done.has(gap)) continue;
+      const nextPark = order.find((o) => o.at > t)?.at ?? low.length;
+      const fwd = [...low.slice(t, nextPark).matchAll(DAYS_RE)][0];
+      const clauseStart = Math.max(0, ...[...low.slice(0, t).matchAll(/[,.;]|\b(?:then|than|after that)\b/g)].map((x) => x.index! + x[0].length));
+      const back = [...low.slice(clauseStart, t).matchAll(DAYS_RE)].pop();
+      const n = toNum((fwd ?? back)?.[1] ?? "");
+      if (!(n >= 1 && n <= 30)) continue;
+      done.add(gap);
+      stays.push({ when: whenAt(t), city: "", nights: n, away: true, blank: true, at: t } as (typeof stays)[number] & { at: number });
+    }
+  }
   // in the order they are mentioned
   const staysAt = (stays as ((typeof stays)[number] & { at: number })[]).sort((a, b) => a.at - b.at);
   // what they want to do in a city: "Khajuraho 2 nights with sightseeing, guide and entrances"
   // (read up to the next city or park mentioned)
   const marks = [...staysAt.map((s) => s.at), ...parkHits.map((h) => h.index)].sort((a, b) => a - b);
   for (const s of staysAt) {
+    if (s.away) continue;
     const end = Math.min(marks.find((x) => x > s.at) ?? low.length, s.at + 200);
     const win = low.slice(s.at, end);
     const want: string[] = [];
@@ -945,7 +970,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   const endM = [...low.matchAll(new RegExp(`\\b(?:drive|driving|transfer|drop|return|head)\\s+(?:back\\s+)?(?:direct(?:ly)?\\s+)?to\\s+(${CITY_RE})\\b(?:\\s+airport)?[^.;]{0,30}?\\b(?:homebound|onward|international|return|departure|connecting)?\\s*(?:flight|connection)`, "g"))].pop();
   if (endM && endM.index! > lastPark) {
     const city = cityName(endM[1]);
-    const lastStay = staysAt.filter((s) => s.when === "after").pop();
+    const lastStay = staysAt.filter((s) => s.when === "after" && !s.away).pop();
     if (lastStay && lastStay.city !== city) out.endCity = city;
   }
   // a night written between two parks: its place in the trip (how many parks come before it)
@@ -1072,7 +1097,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   if (order.length && (staysAt.length || flights.length)) {
     const entries: RouteEntry[] = [
       // a touring package ("Delhi - Agra - Jaipur") is left from its last city
-      ...staysAt.map((s) => ({ kind: "city" as const, city: s.city.split(/\s+-\s+/).pop() ?? s.city, pos: s.at })),
+      ...staysAt.filter((s) => !s.away).map((s) => ({ kind: "city" as const, city: s.city.split(/\s+-\s+/).pop() ?? s.city, pos: s.at })),
       ...order.map(({ p, at }) => {
         const park = ctx.pricing.parks.find((x) => x.name === p.name);
         const lodge = p.lodge ? ctx.properties.find((l) => l.name === p.lodge) : undefined;

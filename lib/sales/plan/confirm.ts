@@ -95,6 +95,16 @@ export function tripSummary(plan: Plan, ctx: BuilderContext): SummaryLine[] {
   segs.forEach((s) => {
     if (s.kind === "city") {
       const c = s.stay;
+      if (c.away) {
+        put(s.checkIn, 3.5, {
+          kind: "city",
+          date: s.checkIn,
+          stay: s.index,
+          text: `Not with us: ${plural(c.nights, "night")} (own arrangements, not priced)`,
+          detail: c.away_transfer === "ours" ? "Our car drops them at their hotel and picks them up (transfer prices typed on Plan & price)" : "They leave and rejoin on their own (no transfers)",
+        });
+        return;
+      }
       const where = c.city || "A free day";
       const hotel = c.hotel ? ` at ${c.hotel}` : c.city ? ", hotel to be confirmed" : "";
       put(s.checkIn, 3.5, {
@@ -197,12 +207,13 @@ export function editStop(plan: Plan, ctx: BuilderContext, i: number, edit: StopE
   return { ...plan, stops };
 }
 
-export type StayEdit = { nights: number } | "remove";
+export type StayEdit = { nights: number } | { away_transfer: "ours" | "own" } | "remove";
 
 export function editStay(plan: Plan, k: number, edit: StayEdit): Plan {
   const stays = [...(plan.city_stays ?? [])];
   if (!stays[k]) return plan;
   if (edit === "remove") stays.splice(k, 1);
+  else if ("away_transfer" in edit) stays[k] = { ...stays[k], away_transfer: edit.away_transfer };
   else stays[k] = { ...stays[k], nights: Math.max(1, Math.min(30, Math.round(edit.nights))) };
   // the trip date is the first lodge's day: city nights before it move the start, not the lodges
   return { ...plan, city_stays: stays };

@@ -118,8 +118,8 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
     if (seg.kind === "city") {
       const c = seg.stay;
       return {
-        place: c.city || "Free day",
-        detail: c.hotel || (c.blank ? "Hotel to be confirmed" : "City stay"),
+        place: c.away ? "Own arrangements" : c.city || "Free day",
+        detail: c.away ? "Not included" : c.hotel || (c.blank ? "Hotel to be confirmed" : "City stay"),
         nights: c.nights,
         flightIn: !!c.city && flights.some((f) => sameCity(f.to, c.city)),
       };

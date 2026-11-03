@@ -404,6 +404,13 @@ export function mergeAiFirst(ai: ParsedTrip, rule: ParsedTrip): { parsed: Parsed
     });
   }
 
+  // ---- nights not with us (a break from our itinerary): read by the reader only; never lost
+  const awayOf = (c: ParsedTrip["cityStays"]) => (c ?? []).filter((x) => x.away);
+  if (awayOf(rule.cityStays).length && !awayOf(out.cityStays).length) {
+    out.cityStays = [...(out.cityStays ?? []), ...awayOf(rule.cityStays)];
+    added.add("city nights");
+  }
+
   // ---- the trip date is the day they reach the first lodge. "20 Apr 2027 1 night Delhi": an AI
   // that gives the day they land in Delhi is the same trip as the reader's 21 Apr (that day plus
   // the city nights before the first lodge): the lodge day is kept.

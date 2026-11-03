@@ -188,7 +188,8 @@ export function aiToParsed(raw: unknown, full: BuilderContext): ParsedTrip {
     .slice(0, 6);
   const cityStays = arr(o.city_stays)
     .map(obj)
-    .filter((c) => (c.when === "before" || c.when === "after") && str(c.city) && int(c.nights, 1, 14))
+    // a city, never "another resort" / "their own hotel" (a break from our itinerary: the reader reads it)
+    .filter((c) => (c.when === "before" || c.when === "after") && str(c.city) && !/\b(?:resort|hotel|lodge|camp|homestay|break|own|another|other|itinerary)\b/i.test(str(c.city) ?? "") && int(c.nights, 1, 14))
     .map((c) => ({
       when: c.when as "before" | "after",
       city: str(c.city, 40)!,
