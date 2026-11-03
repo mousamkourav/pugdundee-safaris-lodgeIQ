@@ -373,6 +373,14 @@ export function mergeAiFirst(ai: ParsedTrip, rule: ParsedTrip): { parsed: Parsed
     }
   }
 
+  // the same lodge twice in a row from the AI where the reader read two lodges of the park
+  // ("2 nights kings 2 nights tree house"): the reader's lodge (3 Nov 2026)
+  out.parks = out.parks.map((p, k) => {
+    const prev = out.parks[k - 1];
+    const r = rule.parks[k];
+    return prev && p.lodge && prev.name === p.name && prev.lodge === p.lodge && r?.name === p.name && r.lodge && r.lodge !== p.lodge ? { ...p, lodge: r.lodge } : p;
+  });
+
   // ---- flights and city nights: the AI's list; the reader's when it holds all of them and more
   const legs = (f: ParsedTrip["flights"]) => (f ?? []).map((x) => `${x.from}>${x.to}`);
   if (empty(ai.flights) && !empty(rule.flights)) {

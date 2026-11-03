@@ -158,6 +158,17 @@ Route rules (do not patch phrases around them):
   the AI's city nights never drop it, `mergeAiFirst`). Days "Own arrangements", nothing priced;
   `away_transfer` "own" (default: no transfers, no "no way in / out" check) or "ours" (our car to
   "@their own hotel" and back, prices typed), set on the Confirm step. Guest: exclusion line.
+- Long free-text enquiries (owner's USA group, 3 Nov 2026, `big-enquiry.test.ts`): city names are
+  spelling-corrected ("khazuraho"); "three house" = tree house; "4 nights 2 nights kings 2 nights
+  tree house" = the split; "N nights there" / "stay one night there" (a city they leave "from" is
+  never "there"); "agra and jaipur for 4 days" = 3 nights split (said in a note); "back to Delhi
+  ... fly to USA" ends at Delhi; "go to X from Y airport" is a flight. A wish written once for the
+  whole trip ("all the unique experience that we offer like cycling, walking", "safaris with
+  naturalists") goes to every lodge (`tripExtras`). Dates not fixed: `DATELESS_RE` in chat.ts.
+- Flights: each leaves from the last stay its airport serves before the place it lands; two
+  lodges in different regions joined by a flight get the drives to and from the airports (no "far
+  apart" question); a city's flight that does not reach the next lodge is not its way in
+  (`airportReachesLodge`).
 - City nights with no hotel named take the city's hotel from Master data (Roseate House for
   Delhi); "hotel in X" (none yet) gets no transfer price box.
 - Misspelt trip words ("nigths", "safaries", "adluts") are read (`fixTripWords`).

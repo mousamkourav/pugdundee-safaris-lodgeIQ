@@ -5,7 +5,7 @@
 import { addDays, dayName } from "@/lib/sales/pricing/dates";
 import { closureFor } from "@/lib/sales/pricing/engine";
 import type { Addon, ISODate, RateBasis, SafariInput, StayInput, TransferInput, TripInput } from "@/lib/sales/pricing/types";
-import type { BuilderContext, CityStay, CityTransfer, DaySafari, Plan, PlanDay, PlanItem, PlanStop } from "./types";
+import type { BuilderContext, CityStay, CityTransfer, DaySafari, Plan, PlanDay, PlanFlight, PlanItem, PlanStop } from "./types";
 import { cityParkIds, isCityHotel, sameCity } from "./cities";
 import { DRIVE_CITIES } from "@/lib/sales/master/missing-transfers";
 import { applyCarPackages } from "./car-packages";
@@ -393,7 +393,8 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
     return rated || DRIVE_CITIES.some(([m, n]) => (sameCity(m, a.city) && sameCity(n, b.city)) || (sameCity(n, a.city) && sameCity(m, b.city)));
   };
   const flew = (a: string, b: string) => flights.some((f) => at(f.from, a) && at(f.to, b));
-  const flewFrom = (a: string) => flights.some((f) => at(f.from, a));
+  // a flight's airport has a road to this lodge (Khajuraho > Ken River Lodge; Delhi does not)
+  const servesLodge = (city: string, propertyId: string) => airportReachesLodge(ctx, city, locationOfProperty(ctx, propertyId));
   const where = (c: CityStay) => (c.hotel ? `${c.hotel}${c.city ? `, ${c.city}` : ""}` : c.city ? `${c.city}; hotel to be confirmed` : "a hotel to be confirmed");
   const place = (c: CityStay) => c.city || "Free day";
   const add = (date: string, make: () => PlanDay, edit: (d: PlanDay) => PlanDay) => {
@@ -489,7 +490,11 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
           title = c.city ? `Drive to ${c.city}` : "Free day";
           text = c.city ? `After breakfast, drive to ${c.city}{hours}. Overnight at ${where(c)}.` : `After breakfast, check out of ${lodgeName(prev.stop.property_id)}. Overnight at ${where(c)}.`;
           // flown in from the lodges' airport (Nagpur to Delhi): the lodge's departure transfer goes to that airport
-          const inFlight = flights.find((f) => at(f.to, c.city) && !segs.slice(0, k).some((s) => s.kind === "city" && at(f.from, s.stay.city)));
+          // (a flight from the last lodge's airport counts even when that city was a stay earlier:
+          // Khajuraho 2 nights, Panna, then Khajuraho > Delhi)
+          const lastLodgeLoc = locationOfProperty(ctx, prev.stop.property_id);
+          const fromLastLodge = (f: PlanFlight) => !!lastLodgeLoc && airportReachesLodge(ctx, f.from, lastLodgeLoc) && ctx.locations.some((l) => l.type === "airport" && sameCity(l.name, f.from));
+          const inFlight = flights.find((f) => at(f.to, c.city) && (fromLastLodge(f) || !segs.slice(0, k).some((s) => s.kind === "city" && at(f.from, s.stay.city))));
           // a connecting flight to another city, then the drive (Nagpur to Delhi, then by road to Agra)
           const last = flights[flights.length - 1];
           const transit = !inFlight && last && !sameCity(last.to, c.city) && !isStayCity(last.from) ? last : undefined;
@@ -578,7 +583,7 @@ function addCityDays(plan: Plan, days: PlanDay[], ctx: BuilderContext): PlanDay[
       );
     } else if (real && next.kind === "city" && next.stay.city && !next.stay.blank && (flew(c.city, next.stay.city) || !!connecting(c.city, next.stay.city))) {
       add(leave, () => cityDay(leave, "", ""), (d) => withTransfer(d, cityTransfer(ctx, hotelOf(ctx, c), airportOf(ctx, c.city, hotelOf(ctx, c).id))));
-    } else if (real && next.kind === "lodge" && flewFrom(c.city)) {
+    } else if (real && next.kind === "lodge" && flights.some((f) => at(f.from, c.city) && servesLodge(f.to, next.stop.property_id))) {
       // flying on to the lodges: hotel to the airport first
       add(leave, () => cityDay(leave, "", ""), (d) => withTransfer(d, cityTransfer(ctx, hotelOf(ctx, c), airportOf(ctx, c.city, hotelOf(ctx, c).id))));
     }
@@ -722,6 +727,17 @@ function airportOf(ctx: BuilderContext, city: string, hotelId?: string): { id: s
   return loc ? { id: loc.id, label: loc.name } : { id: `@${city} Airport`, label: `${city} Airport` };
 }
 
+// Does the airport of this city have a road to the lodge (Khajuraho > Ken River Lodge; Delhi does
+// not)? A lodge with no airport roads in Master data: unknown, so yes.
+function airportReachesLodge(ctx: BuilderContext, city: string, lodgeLoc: string | null | undefined): boolean {
+  if (!lodgeLoc) return true;
+  const rates = ctx.pricing.transferRates.filter((r) => r.active !== false);
+  const linked = new Set(rates.flatMap((r) => (r.to_location_id === lodgeLoc ? [r.from_location_id] : r.from_location_id === lodgeLoc ? [r.to_location_id] : [])));
+  const ports = ctx.locations.filter((l) => l.type === "airport" && linked.has(l.id));
+  if (!ports.length) return true;
+  return ports.some((l) => l.id === airportOf(ctx, city, lodgeLoc).id || sameCity(l.name, city));
+}
+
 // The hotel of a city stay: a Master data hotel with a place (Roseate House), else its typed name.
 function hotelOf(ctx: BuilderContext, c: CityStay): { id: string; label: string } {
   const name = (c.hotel ?? "").trim();
@@ -762,20 +778,21 @@ function addFlights(plan: Plan, days: PlanDay[], ctx?: BuilderContext): PlanDay[
   let cursor = 0;
   flights.forEach((f, i) => {
     let at = -1;
-    // leaving a city stay; else the last lodge that airport serves before the place the flight lands
-    // (Nagpur Airport serves Waghoba and Pench: the flight home leaves from Pench, the last one)
-    let a = segs.findIndex((s, k) => k >= cursor && cityServed(s, f.from));
-    let b: number;
-    if (a >= 0) b = findStay(cursor, f.to, a);
-    else {
-      b = findStay(cursor, f.to);
-      const end = b >= 0 ? b : segs.length;
-      for (let k = end - 1; k >= cursor; k--) {
-        if (lodgeServed(segs[k], f.from)) {
-          a = k;
-          break;
-        }
-      }
+    // The flight leaves from the last stay its airport serves (a city stay or a lodge) before the
+    // place it lands: Nagpur Airport serves Waghoba and Pench, so the flight home leaves from Pench;
+    // "Khajuraho 2 nights, Panna 2 nights, back to Delhi from Khajuraho" leaves after Ken River
+    // Lodge, not after the Khajuraho nights (3 Nov 2026)
+    let a = -1;
+    let b = findStay(cursor, f.to);
+    const before = (end: number) => {
+      for (let k = end - 1; k >= cursor; k--) if (cityServed(segs[k], f.from) || lodgeServed(segs[k], f.from)) return k;
+      return -1;
+    };
+    a = before(b >= 0 ? b : segs.length);
+    // landing at a place that is also where it leaves (a city stay of the same airport): the next one
+    if (a < 0 && b >= 0 && (cityServed(segs[b], f.from) || lodgeServed(segs[b], f.from))) {
+      a = b;
+      b = findStay(cursor, f.to, a);
     }
     if (a >= 0 && (b < 0 || a < b)) {
       const nxt = segs[a + 1];
@@ -829,8 +846,12 @@ function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
     // the nth stay in a city leaves on the nth flight out of it (Delhi > Guwahati, later Delhi > Jabalpur)
     const nth = segs.slice(0, k - 1).filter((s) => s.kind === "city" && !!c.city && !!s.stay.city && sameCity(s.stay.city, c.city)).length;
     const outs = c.city ? (plan.flights ?? []).filter((f) => airportServes(ctx, f.from, c.city)) : [];
-    // never an earlier stay's flight: with no flight of its own, it is a drive from the hotel
-    const flight = outs[nth];
+    // never an earlier stay's flight: with no flight of its own, it is a drive from the hotel.
+    // A flight that lands somewhere else is not the way to this lodge (Khajuraho, then Ken River
+    // Lodge by road; the flight Khajuraho > Delhi is after Panna) (3 Nov 2026)
+    const lodgeLoc = locationOfProperty(ctx, plan.stops[i]?.property_id ?? "");
+    const reaches = (f: PlanFlight) => airportReachesLodge(ctx, f.to, lodgeLoc);
+    const flight = outs[nth] && reaches(outs[nth]) ? outs[nth] : undefined;
     if (flight) {
       const ap = airportOf(ctx, flight.to);
       return { loc: ap.id.startsWith("@") ? null : ap.id, flown: true };
@@ -856,7 +877,31 @@ function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
     // two lodges far apart (Pench, then Iora Retreat) in a trip with flights: never a road
     // transfer; the chat asks how the guests travel between them
     const far = i > 0 && !viaCity && !!plan.flights?.length && !!fromLoc && !!toLoc && farApart(ctx, fromLoc, toLoc, regions);
-    days.push(
+    // ...unless a flight of the trip joins them: the last lodge's airport to this lodge's
+    // (Iora Retreat > Guwahati, fly to Bhopal > Denwa): the drives to and from the airports (3 Nov 2026)
+    const portFor = (lodgeLoc: string, city: string) => {
+      const p = airportOf(ctx, city, lodgeLoc);
+      return !p.id.startsWith("@") && ctx.pricing.transferRates.some((r) => r.active !== false && ((r.from_location_id === p.id && r.to_location_id === lodgeLoc) || (r.to_location_id === p.id && r.from_location_id === lodgeLoc))) ? p : null;
+    };
+    const hop = far && fromLoc && toLoc ? (plan.flights ?? []).map((f) => ({ f, out: portFor(fromLoc, f.from), in: portFor(toLoc, f.to) })).find((x) => x.out && x.in) : undefined;
+    if (hop) {
+      days.push(
+        describe(ctx, {
+          date: checkIn,
+          kind: "arrival",
+          property_id: stop.property_id,
+          park_id: stop.park_id,
+          safaris: [],
+          transfer: { from_location_id: hop.in!.id, to_location_id: toLoc! },
+          city_transfers: [{ from_location_id: fromLoc!, to_location_id: hop.out!.id, from_label: ctx.properties.find((p) => p.id === legs[i - 1].stop.property_id)?.name ?? "", to_label: hop.out!.label }],
+          title: "",
+          text: "",
+          notes: [],
+          items: [],
+          ...(own ? { own_vehicle: true } : {}),
+        }, vehicle)
+      );
+    } else days.push(
       describe(ctx, {
         date: checkIn,
         kind: i === 0 || viaCity?.flown ? "arrival" : "transfer",

@@ -399,7 +399,10 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   const COMMON = new Set([...GENERIC, "national", "park", "tiger", "reserve", "sanctuary", "wildlife", "forest", "hotel"]);
   const vocabulary = [...allParkAliases, ...lodgeItems.flatMap((l) => l.aliases)].flatMap((a) => a.split(/[\s-]+/)).filter((w) => !COMMON.has(w));
 
-  const text = normaliseText(input, vocabulary, out.notes, ctx.readerRules);
+  // city names are corrected too ("khazuraho" -> khajuraho); "three house" is the Tree House
+  // "bandhavgarh 4 nights 2 nights kings 2 nights tree house": a total right before its split is
+  // not a stay of its own (the split is read)
+  const text = normaliseText(input.replace(/\bthree\s+house\b(?!s)/gi, "tree house").replace(/\b\d{1,2}\s*nights?\s+(?=\d{1,2}\s*nights?\s+[a-z])/gi, ""), [...vocabulary, ...cities.filter((c) => /^[a-z]+$/.test(c))], out.notes, ctx.readerRules);
   const low = text.toLowerCase();
   const asks: Ask[] = [];
   const ask = (a: Ask) => !asks.some((x) => x.key === a.key) && asks.push(a);
@@ -607,7 +610,8 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   // "...kings for 1 night, then 1 night in tree house" inside the Bandhavgarh part:
   // "tree house" there is the park's other lodge (Tree House Hideaway), not a room.
   // ("bandhavgarh kings 1n, tree house 1n" too)
-  for (const m of low.matchAll(/(?:\b(?:in|at)\s+(?:the\s+)?|[,+&]\s*|\b(?:and|then|phir)\s+)tree\s?house\b(?!\s*hideaway)/g)) {
+  // ("2 nights kings 2 nights tree house" too, 3 Nov 2026)
+  for (const m of low.matchAll(/(?:\b(?:in|at)\s+(?:the\s+)?|[,+&]\s*|\b(?:and|then|phir)\s+|\b\d{1,2}\s*(?:n|nights?)\s+)tree\s?house\b(?!\s*hideaway)/g)) {
     const at = m.index! + m[0].search(/tree/);
     const prev = parkHits.filter((h) => h.end <= at).pop();
     if (!prev) continue;
@@ -638,9 +642,16 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   const prefixStyle = tokens.filter((t) => t.before !== undefined && t.after === undefined).length;
   const suffixStyle = tokens.filter((t) => t.after !== undefined && t.before === undefined).length;
   const nightsFor = new Map<number, number>();
+  let splitStyle: "before" | null = null; // "bandhavgarh 2 nights kings 2 nights tree house": counts before each lodge
   for (const t of tokens) {
     let target = t.before ?? t.after;
-    if (t.before !== undefined && t.after !== undefined) {
+    const pa = t.after !== undefined ? parkHits[t.after] : undefined;
+    const pb = t.before !== undefined ? parkHits[t.before] : undefined;
+    if (pa && pb && pa.name === pb.name && pb.lodge && (!pa.lodge || splitStyle === "before")) {
+      // a park, then "N nights LODGE": the count is the lodge's; the next lodge of that park the same way
+      target = t.before;
+      splitStyle = "before";
+    } else if (t.before !== undefined && t.after !== undefined) {
       // "Bandhavgarh, 3 nights Kanha": the comma ends the Bandhavgarh part, so the 3 nights are Kanha's.
       // "Kanha 3 nights, Pench": the comma after the count ends Kanha's part.
       const breakBefore = /[,;.]|\b(?:then|and|phir)\b/i.test(text.slice(parkHits[t.after].end, t.start));
@@ -692,6 +703,28 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     all.sessions = /morning/.test(m[0]) ? "morning" : "afternoon";
   });
   global(new RegExp(`\\b${NUM}\\s+(?:jeeps?|vehicles?|gypsys?|gypsies)\\s+(?:per|each|for each|for every|every|in each)\\s+safari\\b`, "g"), (m) => (all.jeeps = toNum(m[1])));
+  // A wish for the whole trip, written after the places: "they will do safaris with naturalists
+  // and want all the unique experience that we offer like cycling, walking". From the last place
+  // named before it to the next one (or the end): every stop gets it, no single stop takes it.
+  // ("do all the special activities there" is that stop's own.) (3 Nov 2026)
+  const tripExtras: string[] = [];
+  {
+    const placeMarks = [
+      ...parkHits.map((h) => [h.index, h.end] as const),
+      ...cities.flatMap((c) => [...low.matchAll(new RegExp(`\\b${escapeRe(c)}\\b`, "g"))].map((m) => [m.index!, m.index! + m[0].length] as const)),
+    ];
+    const WIDE = /\b(?:all|every)\s+(?:the\s+|of\s+the\s+)?(?:unique|special|signature)\s+(?:experiences?|activit\w*)\b/g;
+    for (const m of low.matchAll(WIDE)) {
+      if (/^[^,.;]{0,25}\b(?:there|here)\b/.test(low.slice(m.index! + m[0].length))) continue;
+      const from = Math.max(0, ...placeMarks.filter(([, e]) => e <= m.index!).map(([, e]) => e));
+      const to = Math.min(low.length, ...placeMarks.filter(([s]) => s > m.index!).map(([s]) => s));
+      const win = low.slice(from, to);
+      tripExtras.push("special", ...EXTRA_WORDS.filter(([re]) => re.test(win)).map(([, k]) => k));
+      if (/\bwalk(?:s|ing)?\b/.test(win) && !tripExtras.some((x) => /walk/.test(x))) tripExtras.push("nature walk");
+      if (/\bsafaris?\s+with\s+(?:an?\s+|the\s+)?naturalists?\b/.test(win) && !/\bwithout\b/.test(win)) all.naturalists = -1;
+      lowSeg = lowSeg.slice(0, from) + " ".repeat(to - from) + lowSeg.slice(to);
+    }
+  }
 
   order.forEach(({ p, at }, k) => {
     const end = k + 1 < order.length ? order[k + 1].at : text.length;
@@ -719,6 +752,8 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     const buf = seg.match(new RegExp(`\\b(?:${NUM_NO_DO}\\s+)?buffer\\s+(?:zone\\s+)?(?:jeep\\s+)?safaris?\\b`));
     if (buf) p.buffer = buf[1] ? toNum(buf[1]) : 1;
     const extras = EXTRA_WORDS.filter(([re]) => re.test(seg)).map(([, k]) => k);
+    // "do all the special activities there": the lodge's own experiences
+    if (/\b(?:special|unique|signature)\s+(?:experiences?|activit\w*|acitvit\w*|acitivit\w*)\b/.test(seg)) extras.push("special");
     // "boat safari 1 hour, boat safari 2 hours": each length its own (Master data: "Boat safari - 1 hour")
     const bi = extras.indexOf("boat safari");
     if (bi >= 0) {
@@ -779,6 +814,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
       .find((r) => r.name.toLowerCase().split(/[^a-z]+/).some((w) => w.length >= 5 && !ROOM_GENERIC.has(w) && !placeWords.has(w) && new RegExp(`\\b${w}\\b`).test(seg)));
     if (named) p.roomName = named.name;
     for (const key of Object.keys(all) as (keyof typeof all)[]) if (p[key] === undefined) Object.assign(p, { [key]: all[key] });
+    if (tripExtras.length) p.extras = [...new Set([...(p.extras ?? []), ...tripExtras])];
   });
   // "4N4D kanha bandhavgarh": the total is given, not the split. Asked.
   const total = low.match(/\b(\d{1,2})\s*n\s*\/?\s*(\d{1,2})\s*d\b/);
@@ -830,6 +866,13 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     const f = { from: cityName(m[1]), to: cityName(m[2]) };
     addFlight(f, m.index!);
   }
+  // "go to Khajuraho from Nagpur airport", "back to Delhi from Khajuraho airport": by air from that airport (3 Nov 2026)
+  for (const m of low.matchAll(new RegExp(`\\b(?:go|going|goes|went|fly|flying|move|moving|back|reach|reaching|head(?:ing)?)\\s+(?:back\\s+)?(?:to\\s+)?(${cities.join("|")})\\s+from\\s+(?:the\\s+)?(${cities.join("|")})(?:\\s+(airport))?\\b`, "g"))) {
+    const tail = low.slice(m.index! + m[0].length, m.index! + m[0].length + 20);
+    if (/^\W*(?:by\s+)?(?:road|car|train|drive|driving)\b/.test(tail)) continue;
+    // "from X airport" says the flight; "back to Delhi from Khajuraho" too (cities of different regions are a flight either way)
+    addFlight({ from: cityName(m[2]), to: cityName(m[1]) }, m.index!);
+  }
   // "flight 6:40 am" written apart from the route: noted on the one flight, and asked which way it is
   const clock = low.match(/\bflights?\s+(?:time\s+)?(?:is\s+)?(?:at\s+|@\s*)?(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|hrs)?\b(?!\s*(?:n|nights?|pax|adults?|days?)\b)/);
   if (clock && flights.length === 1 && !flights[0].time && (clock[2] || clock[3])) {
@@ -852,6 +895,8 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     new RegExp(`\\b(?:stay(?:ing)?|overnight|spend(?:ing)?)\\s+(?:in\\s+|at\\s+)?(?<city>${CITY_RE}|there)\\s+(?:for\\s+)?(?<n>${NUM.slice(1, -1)})\\s*nights?\\b`, "g"),
     // "stay one night at Delhi", "spend 2 nights in Delhi"
     new RegExp(`\\b(?:stay(?:ing)?|spend(?:ing)?)\\s+(?:for\\s+)?(?<n>${NUM.slice(1, -1)})\\s*nights?\\s+(?:in|at)\\s+(?<city>${CITY_RE}|there)\\b`, "g"),
+    // "stay one night there", "khajuraho from nagpur airport 2 nights there" (3 Nov 2026)
+    new RegExp(`\\b(?<n>${NUM.slice(1, -1)})\\s*nights?\\s+(?:stay\\s+)?(?<city>there)\\b`, "g"),
     // "1 night in Delhi", "1 nights stay at delhi", "1 night khajuraho"
     new RegExp(`\\b(?<n>${NUM.slice(1, -1)})\\s*nights?\\s+(?:stay\\s+|halt\\s+)?(?:(?:in|at|to)\\s+)?(?:the\\s+)?(?<city>${CITY_RE})\\b`, "g"),
     // "Delhi 1 nights stay", "transfer to Khajuraho 2 nights", "Delhi - 1 night", "delhi stay for 2 nights"
@@ -869,8 +914,10 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
       if (taken(m)) continue;
       let city: string | undefined;
       if (m.groups!.city === "there") {
-        // "there" is the nearest place mentioned before: if that is a park, this is not a city stay
-        const c = cityHits.filter((h) => h.at < m.index!).pop();
+        // "there" is the nearest place mentioned before: if that is a park, this is not a city stay.
+        // A city they leave from is not it: "go to Khajuraho from Nagpur airport, 2 nights there",
+        // "back to Delhi from Khajuraho, stay one night there"
+        const c = cityHits.filter((h) => h.at < m.index! && !/\bfrom\s+(?:the\s+)?$/.test(low.slice(Math.max(0, h.at - 10), h.at))).pop();
         const pk = parkHits.filter((h) => h.index < m.index!).pop();
         if (!c || (pk && pk.index > c.at)) continue;
         city = c.city;
@@ -881,6 +928,23 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
       seen.push([m.index!, m.index! + m[0].length]);
       stays.push({ when, city, nights: toNum(m.groups!.n), at: m.index! } as (typeof stays)[number] & { at: number });
     }
+  }
+  // "go to agra and jaipur for 4 days": two cities, one length. 4 days = 3 nights (the outstation
+  // packages count the same way); split as evenly as it goes, the second city the longer, and
+  // said so it can be changed on the Confirm step (3 Nov 2026)
+  for (const m of low.matchAll(new RegExp(`\\b(${CITY_RE})\\s*(?:and|&|\\+|,)\\s*(${CITY_RE})\\b[^.;]{0,30}?\\bfor\\s+${NUM}\\s*(days?|nights?|n\\b)`, "g"))) {
+    if (taken(m)) continue;
+    const [a, b] = [cityName(m[1]), cityName(m[2])];
+    const n = toNum(m[3]);
+    const total = /^d/.test(m[4]) ? n - 1 : n;
+    if (a === b || !(total >= 2 && total <= 20)) continue;
+    const first = Math.floor(total / 2);
+    const when = whenAt(m.index!);
+    seen.push([m.index!, m.index! + m[0].length]);
+    const bAt = m.index! + m[0].indexOf(m[2], m[1].length);
+    stays.push({ when, city: a, nights: first, at: m.index! } as (typeof stays)[number] & { at: number });
+    stays.push({ when, city: b, nights: total - first, at: bAt } as (typeof stays)[number] & { at: number });
+    out.notes.push(`${a} and ${b} "for ${m[3]} ${m[4]}": read as ${a} ${first} night${first === 1 ? "" : "s"}, ${b} ${total - first} night${total - first === 1 ? "" : "s"}. Change the nights on the Confirm step if they want it the other way.`);
   }
   // a night at a city hotel from Master data without the city's name, anywhere in the trip (also
   // in the middle): "1 night stay at Roseate House", "1 night Roseate House", "1 night Roseate
@@ -967,7 +1031,12 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     if (want.length) s.want_extras = want;
   }
   // "drive back to Delhi for (the) homebound flight" after the last city: the trip ends at that city's airport
-  const endM = [...low.matchAll(new RegExp(`\\b(?:drive|driving|transfer|drop|return|head)\\s+(?:back\\s+)?(?:direct(?:ly)?\\s+)?to\\s+(${CITY_RE})\\b(?:\\s+airport)?[^.;]{0,30}?\\b(?:homebound|onward|international|return|departure|connecting)?\\s*(?:flight|connection)`, "g"))].pop();
+  // ("than back to delhi and they will fly to usa" too)
+  const endM = [
+    ...low.matchAll(
+      new RegExp(`\\b(?:(?:drive|driving|transfer|drop|return|head)\\s+(?:back\\s+)?|back\\s+)(?:direct(?:ly)?\\s+)?to\\s+(${CITY_RE})\\b(?:\\s+airport)?[^.;]{0,30}?(?:\\b(?:homebound|onward|international|return|departure|connecting)?\\s*(?:flight|connection)|\\bfly(?:ing)?\\s+(?:back\\s+)?(?:home|to|out))`, "g")
+    ),
+  ].pop();
   if (endM && endM.index! > lastPark) {
     const city = cityName(endM[1]);
     const lastStay = staysAt.filter((s) => s.when === "after" && !s.away).pop();

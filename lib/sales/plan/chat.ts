@@ -117,6 +117,10 @@ const placesOf = (ctx: BuilderContext) => {
 };
 
 // ---------------------------------------------------------------------------
+// "dates not fixed", "dates are not fixed yet", "proceed without date", "no dates yet", "dates TBC" (3 Nov 2026)
+export const DATELESS_RE =
+  /\bdates?\s+(?:are\s+|is\s+)?(?:still\s+)?(?:not\s+(?:yet\s+)?(?:fixed|final(?:i[sz]ed)?|confirmed|decided|known|sure)|unknown|open|flexible|tbc|tbd|to be (?:confirmed|decided))\b|\b(?:no|without|w\/o)\s+(?:any\s+|fixed\s+|exact\s+|a\s+)?(?:travel\s+)?dates?\b|\bdateless\b|\bdate\s+(?:not\s+(?:fixed|decided|known)|tbc|tbd)\b/;
+
 export function chatTurn(
   plan: Plan,
   flags: ChatFlags,
@@ -446,7 +450,7 @@ export function chatTurn(
     next.arrival_date = landing ? addDays(parsed.arrival_date, firstNights) : parsed.arrival_date;
     f.dateSet = true;
     chips.push(landing ? `arriving ${parsed.arrival_date} (first lodge ${next.arrival_date})` : `arriving ${parsed.arrival_date}`);
-  } else if (/\bdates?\s+not\s+fixed\b|\bno\s+fixed\s+dates?\b|\bdateless\b/.test(low) && !f.dateSet) {
+  } else if (DATELESS_RE.test(low) && !f.dateSet) {
     next.dateless = true;
     f.dateSet = true;
     chips.push("dates not fixed: priced by season");
@@ -790,7 +794,13 @@ export function chatTurn(
 
   // Two lodges far apart with nothing between them (Pench, then Iora Retreat) in a trip with
   // flights: no drive is planned between them (planner); ask how the guests travel, once.
-  for (const leg of farLegs(next, full)) {
+  // (not when a flight of the trip already joins them: Iora Retreat > Guwahati, fly to Bhopal > Denwa)
+  const flownTo = (lodge: string) =>
+    (next.days ?? []).some((d) => d.property_id === lodge && d.kind === "arrival" && !!d.transfer && full.locations.find((l) => l.id === d.transfer!.from_location_id)?.type === "airport");
+  const legs = farLegs(next, full);
+  f.asks = (f.asks ?? []).filter((a) => !legs.some((leg) => leg.key === a.key && flownTo(leg.to)));
+  for (const leg of legs) {
+    if (flownTo(leg.to)) continue;
     if ((f.farAsked ?? []).includes(leg.key)) continue;
     f.farAsked = [...(f.farAsked ?? []), leg.key];
     const name = (id: string) => full.properties.find((p) => p.id === id)?.name ?? "the lodge";
