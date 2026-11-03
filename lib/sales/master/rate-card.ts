@@ -22,6 +22,8 @@ export const CARD_LODGES: Record<string, string[]> = {
   Tadoba: ["Waghoba Eco Lodge"],
   Panna: ["Ken River Lodge"],
   Iora: ["Iora Retreat"],
+  "Roseate House": ["Roseate House"],
+  Mayfair: ["Mayfair"],
 };
 
 // The places a town on the card stands for (owner, 31 Oct 2026): the airport, and the
@@ -39,6 +41,8 @@ export const CARD_PLACES: Record<string, { names: string[]; types: ("airport" | 
   "Guwahati Airport": { names: ["Guwahati"], types: ["airport"] },
   "Jorhat Airport": { names: ["Jorhat"], types: ["airport"] },
   "Chandrapur station": { names: ["Chandrapur"], types: ["railway"] },
+  "Delhi Airport": { names: ["Delhi Airport"], types: ["airport"] },
+  "Bagdogra Airport": { names: ["Bagdogra"], types: ["airport"] },
 };
 
 export interface CardTransfer {
@@ -73,7 +77,8 @@ export const CARD_TRANSFERS: CardTransfer[] = [
   { from: "Bandhavgarh", to: "Katni", innova: 5000, dzire: 4000 },
   { from: "Bandhavgarh", to: "Umaria", innova: 4000, dzire: 3500 },
   { from: "Bandhavgarh", to: "Panna", innova: 9500, dzire: 7500 },
-  { from: "Bandhavgarh", to: "Pench", innova: 15000, dzire: 11500 },
+  // the card prints 15,000 one way and 15,500 the other: 15,500 (management, 3 Nov 2026)
+  { from: "Bandhavgarh", to: "Pench", innova: 15500, dzire: 11500 },
   { from: "Bandhavgarh", to: "Khajuraho", innova: 11000, dzire: 9000 },
   { from: "Pench", to: "Nagpur", innova: 9000, dzire: 7000 },
   { from: "Pench", to: "Satpura", innova: 11500, dzire: 9000 },
@@ -88,6 +93,9 @@ export const CARD_TRANSFERS: CardTransfer[] = [
   // Iora Retreat (Kaziranga): + 5% GST for now (owner, 31 Oct 2026; to be confirmed)
   { from: "Iora", to: "Guwahati Airport", innova: 13000, source: "Partner hotels" },
   { from: "Iora", to: "Jorhat Airport", innova: 10000, source: "Partner hotels" },
+  // the partner hotels' airport transfers are road transfer rates in Master data
+  { from: "Roseate House", to: "Delhi Airport", innova: 3000, source: "Partner hotels" },
+  { from: "Mayfair", to: "Bagdogra Airport", innova: 3000, source: "Partner hotels" },
 ];
 export const CARD_TRANSFER_GST = 5;
 export const VEHICLES = { innova: "Innova / Crysta", dzire: "Dzire / Etios" } as const;
@@ -177,7 +185,8 @@ export const CARD_CALENDAR: { season: "shoulder" | "high" | "peak"; from: string
   { season: "shoulder", from: "2026-12-01", to: "2026-12-20" },
   { season: "peak", from: "2026-12-21", to: "2027-01-04" },
   { season: "shoulder", from: "2027-01-05", to: "2027-01-31" },
-  { season: "high", from: "2027-02-01", to: "2027-03-10" },
+  // the sheet has 10 Mar in both; Peak wins (Peak from 10 Mar)
+  { season: "high", from: "2027-02-01", to: "2027-03-09" },
   { season: "peak", from: "2027-03-10", to: "2027-04-30" },
   { season: "high", from: "2027-05-01", to: "2027-05-15" },
   { season: "shoulder", from: "2027-05-16", to: "2027-06-30" },
@@ -241,6 +250,8 @@ export const CARD_SAFARIS: CardSafari[] = [
   { source: INDIAN, park: "Tadoba", zone: "core", nationality: "indian", on: "2026-12-15", weekday: 14000, weekend: 18500, tax_pct: 5, book: [60, 120] },
   { source: INDIAN, park: "Tadoba", zone: "buffer", nationality: "indian", on: "2026-12-15", weekday: 13000, weekend: 14000, tax_pct: 5 },
   // Ken River Lodge: entry, guide and naturalist included, taxes included, all guests
+  // Iora Retreat: Kaziranga jeep safari, naturalist included, + 5% as in Master data
+  { source: "Partner hotels", park: "Kaziranga", zone: "core", nationality: "all", on: "2026-12-15", weekday: 15000, weekend: 15000, naturalist: 0, tax_pct: 5 },
   { source: "Ken River Lodge B2B", park: "Panna", zone: "core", nationality: "all", on: "2026-12-15", weekday: 15000, weekend: 16000, naturalist: 0, tax_pct: 0 },
 ];
 
@@ -249,7 +260,7 @@ export const CARD_SAFARIS: CardSafari[] = [
 // An experience or service from a document: an add-on at that hotel (or a general one).
 export interface CardAddon {
   source: string;
-  hotel: string | null; // null = a general add-on (or at any of our lodges)
+  hotel: string | null; // null = a general add-on (or at any of our lodges, but Ken River: its own B2B sheet)
   name: RegExp; // the add-on's name in Master data
   label: string; // what the document calls it
   rate: number;
@@ -267,7 +278,6 @@ const krl = (name: RegExp, label: string, rate: number, o: Partial<CardAddon> = 
 
 export const CARD_ADDONS: CardAddon[] = [
   // Roseate House (Delhi)
-  { source: "Partner hotels", hotel: "Roseate House", name: /airport/i, label: "Delhi airport transfer", rate: 3000 },
   { source: "Partner hotels", hotel: "Roseate House", name: /innova|sight\s?seeing|vehicle|car\b/i, label: "Innova for Delhi sightseeing (per day)", rate: 8000 },
   { source: "Partner hotels", hotel: "Roseate House", name: /entrance|entry|monument/i, label: "Delhi entrances", rate: 2500, unit: "per_person" },
   { source: "Partner hotels", hotel: "Roseate House", name: /^(?!.*accompany).*guide/i, label: "Local guide (per day)", rate: 8000 },
@@ -277,13 +287,11 @@ export const CARD_ADDONS: CardAddon[] = [
   { source: "Partner hotels", hotel: "Roseate House", name: /jaipur.*3\s*n|3\s*n.*jaipur/i, label: "Delhi-Agra-Jaipur-Delhi, 3 nights", rate: 40000 },
   { source: "Partner hotels", hotel: "Roseate House", name: /jaipur.*4\s*n|4\s*n.*jaipur/i, label: "Delhi-Agra-Jaipur-Delhi, 4 nights", rate: 50000 },
   // Iora Retreat (Kaziranga)
-  { source: "Partner hotels", hotel: "Iora", name: /safari/i, label: "Kaziranga jeep safari, incl. naturalist", rate: 15000 },
   { source: "Partner hotels", hotel: "Iora", name: /camera/i, label: "Camera fee", rate: 500 },
   // Mayfair Chumta
-  { source: "Partner hotels", hotel: "Mayfair", name: /airport/i, label: "Airport transfer", rate: 3000 },
   // Radisson Khajuraho
   { source: "Partner hotels", hotel: "Radisson", name: /sight\s?seeing/i, label: "Khajuraho sightseeing", rate: 6000 },
-  { source: "Partner hotels", hotel: "Radisson", name: /guide/i, label: "Khajuraho guide", rate: 5000 },
+  { source: "Partner hotels", hotel: "Radisson", name: /guide/i, label: "Khajuraho guide", rate: 6000 },
   { source: "Partner hotels", hotel: "Radisson", name: /entrance|entry|ticket/i, label: "Khajuraho entrances", rate: 1500, unit: "per_person" },
   // Ken River Lodge B2B 2026-27 (taxes included)
   krl(/^(?!.*night).*boat/i, "Boat safari (1.5 hours, up to 4 guests)", 5000),
@@ -301,10 +309,10 @@ export const CARD_ADDONS: CardAddon[] = [
   fx("Denwa Backwater Escape", /canoe/i, "Canoe ride", 4000, { unit: "per_person", min_guests: 2 }),
   fx("Denwa Backwater Escape", /buffer walk|walk.*buffer/i, "Buffer walk", 3000, { unit: "per_person", min_guests: 2 }),
   fx("Kanha Earth Lodge", /buffer walk|walk.*buffer/i, "Buffer walk", 3000, { unit: "per_person", min_guests: 2 }),
-  fx("Pench Tree Lodge", /buffer walk|walk.*buffer/i, "Buffer walk", 3000, { unit: "per_person", min_guests: 2 }),
+  fx("Pench Tree Lodge", /buffer walk|walk.*buffer|runi jhuni/i, "Buffer walk", 3000, { unit: "per_person", min_guests: 2 }),
   fx("Denwa Backwater Escape", /tawa cruise|cruise/i, "Tawa cruise (Tawa Dam to the lodge), up to 2 guests", 20000, { unit: "per_group", included: 2, extra: 1500 }),
   fx(null, /bush dinner|farm dinner/i, "Bush / farm dinner", 4000, { unit: "per_person", min_guests: 2, tax_pct: 18 }),
-  fx(null, /picnic lunch/i, "Picnic lunch", 4000, { unit: "per_person", min_guests: 2, tax_pct: 18 }),
+  fx(null, /picnic/i, "Picnic lunch", 4000, { unit: "per_person", min_guests: 2, tax_pct: 18 }),
   fx(null, /culinary|cooking/i, "Culinary workshop", 2500, { unit: "per_person", min_guests: 2 }),
   fx(null, /escorted nature walk|^nature walk/i, "Escorted nature walk", 1500, { unit: "per_person", min_guests: 2 }),
   fx(null, /safari breakfast/i, "Safari breakfast (outside jeeps), up to 2 guests", 1000, { unit: "per_group", included: 2, extra: 500, tax_pct: 18 }),

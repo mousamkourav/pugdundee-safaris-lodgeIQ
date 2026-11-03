@@ -311,7 +311,10 @@ function auditAddons(d: AuData): AuditRow[] {
       continue;
     }
     // a general activity can also be kept at each lodge
-    const list = d.addons.filter((a) => a.active && !a.alias && c.name.test(a.name) && (c.hotel ? hotels.some((h) => h.id === a.property_id) : true));
+    // a general (foreigners' sheet) activity can also be kept at each lodge; Ken River's own
+    // add-ons follow its B2B sheet (checked there), not the general rate
+    const krl = new Set(d.properties.filter((p) => starts(p.name, "Ken River")).map((p) => p.id));
+    const list = d.addons.filter((a) => a.active && !a.alias && c.name.test(a.name) && (c.hotel ? hotels.some((h) => h.id === a.property_id) : !(a.property_id && krl.has(a.property_id))));
     if (!list.length) {
       rows.push({ source: c.source, item, expected, found: "-", status: "missing" });
       continue;
