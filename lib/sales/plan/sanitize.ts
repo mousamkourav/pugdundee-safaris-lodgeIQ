@@ -171,6 +171,7 @@ export function sanitizePlan(input: unknown): Plan | null {
     ...(p.confirmed && typeof p.confirmed === "object" && typeof (p.confirmed as { key?: unknown }).key === "string"
       ? { confirmed: { key: str((p.confirmed as { key: string }).key, 20000), at: str((p.confirmed as { at?: unknown }).at, 40) } }
       : {}),
+    ...(typeof p.enquiry === "string" && p.enquiry.trim() ? { enquiry: p.enquiry.slice(-6000) } : {}),
     ...(Number.isInteger(Number(p.transfer_vehicles)) && p.transfer_vehicles !== null && p.transfer_vehicles !== undefined && Number(p.transfer_vehicles) >= 1 ? { transfer_vehicles: Math.min(20, Number(p.transfer_vehicles)) } : {}),
     ...(p.route_vehicles && typeof p.route_vehicles === "object"
       ? {

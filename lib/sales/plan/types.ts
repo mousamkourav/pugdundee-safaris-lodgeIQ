@@ -178,6 +178,9 @@ export interface Plan {
   // The sales person checked the trip in plain words (Confirm step) for this route (confirmKey);
   // Plan & price opens, and a quote is saved for the guest, only while the route is unchanged.
   confirmed?: { key: string; at: string };
+  // the messages that described the trip, as written (names, emails and phones are not sent
+  // anywhere): the coverage check (unread.ts) makes sure every place and night in them is in the trip
+  enquiry?: string;
 }
 
 // flight / train: to or from that airport or station (with our transfer to the lodge);

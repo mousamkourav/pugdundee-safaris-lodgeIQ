@@ -327,8 +327,16 @@ export function mergeAiFirst(ai: ParsedTrip, rule: ParsedTrip): { parsed: Parsed
 
   // ---- the stops: the AI's, each detail it left empty from the reader's same stop. Stops the
   // AI gave no quote for (it named fewer, in the same order) come from the reader.
+  // the AI and the reader read different nights for the same stop: one question, never a silent
+  // pick (3 Nov 2026). The AI's nights stay until it is answered.
+  const conflicts: Ask[] = [];
   const fillStop = (a: ParsedPark, r: ParsedPark | undefined): ParsedPark => {
     if (!r) return a;
+    if (a.nights && r.nights && a.nights !== r.nights && (!a.lodge || !r.lodge || a.lodge === r.lodge)) {
+      const label = (a.lodge ?? r.lodge ?? a.name).replace(/\s+(National Park|Tiger Reserve)$/, "");
+      const n = (x: number) => `${x} night${x === 1 ? "" : "s"}`;
+      conflicts.push({ key: `nights-conflict:${label}`, text: `${label}: ${a.nights} or ${r.nights} nights? The message can be read both ways.`, quick: [`${label} ${n(a.nights)}`, `${label} ${n(r.nights)}`] });
+    }
     const p = { ...a } as Record<string, unknown>;
     // experiences: both lists (the AI only knows the shared keywords; the reader also reads each
     // add-on's own name from Master data: "tawa cruise...", "moharli gate entry", "boat safari 1 hour"),
@@ -433,7 +441,7 @@ export function mergeAiFirst(ai: ParsedTrip, rule: ParsedTrip): { parsed: Parsed
     (key === "date" && !!ai.arrival_date) ||
     (key === "flight-time" && (ai.flights ?? []).some((f) => !!f.time));
   const asks: Ask[] = [];
-  for (const a of [...(rule.asks ?? []), ...(ai.asks ?? [])]) if (!asks.some((x) => x.key === a.key) && !answered(a.key)) asks.push(a);
+  for (const a of [...conflicts, ...(rule.asks ?? []), ...(ai.asks ?? [])]) if (!asks.some((x) => x.key === a.key) && !answered(a.key)) asks.push(a);
   out.asks = asks;
   out.notes = rule.notes;
   return { parsed: out, fromReader: [...added] };

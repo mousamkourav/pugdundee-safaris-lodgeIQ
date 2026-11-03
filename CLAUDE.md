@@ -114,8 +114,18 @@ One reading flow, AI first (`lib/sales/plan/reading.ts`):
    `aiToParsed` checks names against Master data (unknown ones are dropped and asked).
 3. The built-in reader (`parse-text.ts`): the backup. It reads alone when the AI is off,
    fails, times out or has no credit; otherwise it fills only what the AI left empty
-   (`mergeAiFirst`), never overriding a value the AI quoted. There is no "I read X, the AI
-   read Y" question: only what is missing or unclear is asked.
+   (`mergeAiFirst`), never overriding a value the AI quoted. Where the two read different nights
+   for the same stop, one question is asked ("Kanha: 3 or 4 nights?"; owner, 3 Nov 2026).
+Accuracy first (3 Nov 2026):
+- Nothing dropped silently (`lib/sales/plan/unread.ts`, `unreadParts`): every place and every "N
+  nights / N days" of the enquiry (`plan.enquiry`, the trip's messages as written; `ParsedTrip.mentions`)
+  must be in the trip; what is not is listed in red on the Confirm step and said in the chat.
+- The AI's form covers the whole trip: `dateless`, `breaks`, `end_city`, `trip_wide` (wishes for
+  every stop), two lodges in one park, every place and night (each through the evidence rule).
+- A long enquiry (250+ characters) is read by `GEMINI_MODEL_LONG` (default gemini-2.5-pro, thinking
+  on, 40 s); if Google does not know it, by `GEMINI_MODEL`.
+- `enquiry-corpus.ts`: every real enquiry so far; `unread.test.ts` checks each on the real Master
+  data (nothing unread, no impossible road). Add every new enquiry there.
 The chat shows where a reading came from ("from memory", "read by the AI; the built-in reader
 added: ...", "built-in reader"). `enquiries.test.ts` checks every enquiry with a worst-case
 Gemini too (invented quotes, an empty answer): the trip must not change.
@@ -165,6 +175,9 @@ Route rules (do not patch phrases around them):
   ... fly to USA" ends at Delhi; "go to X from Y airport" is a flight. A wish written once for the
   whole trip ("all the unique experience that we offer like cycling, walking", "safaris with
   naturalists") goes to every lodge (`tripExtras`). Dates not fixed: `DATELESS_RE` in chat.ts.
+- Two cities Master data shows apart (Khajuraho > Delhi) are a flight unless a road trip pair
+  (`DRIVE_CITIES`) or a flight written out of the first city (route.ts). The way in / out is a flight
+  whose airport reaches the first / last lodge (`airportReachesLodge`).
 - Flights: each leaves from the last stay its airport serves before the place it lands; two
   lodges in different regions joined by a flight get the drives to and from the airports (no "far
   apart" question); a city's flight that does not reach the next lodge is not its way in
@@ -228,4 +241,5 @@ Add a test for every bug fixed in `lib/sales/**`.
 
 ## Environment variables (`.env.local`, never commit)
 NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY (server
-only), RESEND_API_KEY, EMAIL_FROM, CRON_SECRET, GEMINI_API_KEY, GEMINI_MODEL (optional).
+only), RESEND_API_KEY, EMAIL_FROM, CRON_SECRET, GEMINI_API_KEY, GEMINI_MODEL (optional), GEMINI_MODEL_LONG
+(optional; long enquiries).

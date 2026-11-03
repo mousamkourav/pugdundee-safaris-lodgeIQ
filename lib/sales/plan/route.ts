@@ -14,6 +14,7 @@
 import type { BuilderContext } from "./types";
 import { roadRegions } from "./planner";
 import { sameCity } from "./cities";
+import { DRIVE_CITIES } from "@/lib/sales/master/missing-transfers";
 
 export type RouteEntry =
   | { kind: "city"; city: string; pos: number }
@@ -53,7 +54,14 @@ export function resolveRoute(input: {
 
   // a road joins A and B (or Master data cannot tell: then nothing is invented)
   const joined = (a: RouteEntry, b: RouteEntry): boolean => {
-    if (a.kind === "city" && b.kind === "city") return true; // Delhi > Agra: a drive unless a flight is written
+    if (a.kind === "city" && b.kind === "city") {
+      // Delhi > Agra: a drive unless a flight is written. Two cities Master data shows are apart
+      // (their places have roads, none to each other's region: Khajuraho > Delhi) are a flight (3 Nov 2026)
+      if (DRIVE_CITIES.some(([x, y]) => (sameCity(x, a.city) && sameCity(y, b.city)) || (sameCity(y, a.city) && sameCity(x, b.city)))) return true;
+      const ra = cityRegions(a.city);
+      const rb = cityRegions(b.city);
+      return !ra.size || !rb.size || [...ra].some((r) => rb.has(r));
+    }
     if (a.kind === "lodge" && b.kind === "lodge") {
       const ra = regionOf(a);
       const rb = regionOf(b);
@@ -129,6 +137,9 @@ export function resolveRoute(input: {
     const a = entries[i - 1];
     const b = entries[i];
     if (joined(a, b)) continue;
+    // two cities with a flight written out of the first (Khajuraho for the Delhi flight, then the
+    // drive to Agra): that connecting flight is the way; nothing is added
+    if (a.kind === "city" && b.kind === "city" && out.some((f) => sameCity(f.from, a.city) && f.pos >= a.pos - 5 && f.pos <= b.pos + 5)) continue;
     // the flight already written for this leg, if any
     const written = out.filter((f) => f.pos >= a.pos - 5 && f.pos <= b.pos + 5 && sideHas(a, f.from) && sideHas(b, f.to));
     const window = cityMentions.filter((m) => m.at > a.pos && m.at < b.pos);

@@ -69,7 +69,8 @@ test("AI first: a value the AI quoted wins; the reader fills only what the AI le
   assert.equal(parsed.parks[0].lodge, "Waghoba Eco Lodge"); // the AI gave no lodge: the reader's
   assert.equal(parsed.adults, 2);
   assert.deepEqual(fromReader.sort(), ["guests", "lodge"]);
-  assert.deepEqual(parsed.asks, []); // never a question about the two readings
+  // the two readings differ on the nights: one question (owner, 3 Nov 2026), the AI's 3 until answered
+  assert.deepEqual(parsed.asks?.map((a) => [a.text, a.quick]), [["Waghoba Eco Lodge: 3 or 1 nights? The message can be read both ways.", ["Waghoba Eco Lodge 3 nights", "Waghoba Eco Lodge 1 night"]]]);
   // a fuller list of city nights from the reader (the AI quoted fewer) is taken
   const g = mergeAiFirst(
     { parks: [], notes: [], cityStays: [{ when: "before", city: "Delhi", nights: 1, hotel: "Roseate House" }] },

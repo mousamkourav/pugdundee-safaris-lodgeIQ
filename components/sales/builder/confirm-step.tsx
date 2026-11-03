@@ -2,7 +2,8 @@
 
 // "Confirm the trip": what the reader understood, in plain words and in order, with a
 // one-click correction on each line. Plan & price opens after "Correct, continue".
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { unreadParts } from "@/lib/sales/plan/unread";
 import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { editStay, editStop, removeFlight, stopChoices, tripSummary, type SummaryLine } from "@/lib/sales/plan/confirm";
@@ -35,6 +36,8 @@ export function ConfirmStep({
   confirmed: boolean;
 }) {
   const lines = tripSummary(plan, ctx);
+  // nothing dropped silently: what the enquiry names that is not in this trip
+  const unread = useMemo(() => unreadParts(plan.enquiry, plan, ctx), [plan, ctx]);
   const [open, setOpen] = useState<string | null>(null); // the line being corrected
   const change = (u: (p: Plan) => Plan) => {
     setPlan(u);
@@ -48,6 +51,19 @@ export function ConfirmStep({
         <div className="border-b border-sand-200 px-4 py-3">
           <h2 className="text-lg">Confirm the trip</h2>
           <p className="text-sm text-sand-500">Read it line by line. Correct anything that is wrong with Edit; then press &ldquo;Correct, continue&rdquo;. No price is shown until then.</p>
+          {unread.length > 0 && (
+            <div className={`${ui.alertError} mt-3`} role="alert">
+              <p className="font-semibold">The enquiry says this, but it is not in the trip below. Please check:</p>
+              <ul className="mt-1 list-disc pl-5">
+                {unread.map((u, k) => (
+                  <li key={k}>
+                    &ldquo;{u.quote}&rdquo;: {u.why}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-xs">Correct it with Edit or in the chat (for example &ldquo;add 2 nights Khajuraho after Waghoba&rdquo;), or continue if it is right as it is.</p>
+            </div>
+          )}
         </div>
         <ol className="divide-y divide-sand-100">
           {lines.map((l, k) => {

@@ -729,7 +729,7 @@ function airportOf(ctx: BuilderContext, city: string, hotelId?: string): { id: s
 
 // Does the airport of this city have a road to the lodge (Khajuraho > Ken River Lodge; Delhi does
 // not)? A lodge with no airport roads in Master data: unknown, so yes.
-function airportReachesLodge(ctx: BuilderContext, city: string, lodgeLoc: string | null | undefined): boolean {
+export function airportReachesLodge(ctx: BuilderContext, city: string, lodgeLoc: string | null | undefined): boolean {
   if (!lodgeLoc) return true;
   const rates = ctx.pricing.transferRates.filter((r) => r.active !== false);
   const linked = new Set(rates.flatMap((r) => (r.to_location_id === lodgeLoc ? [r.from_location_id] : r.from_location_id === lodgeLoc ? [r.to_location_id] : [])));

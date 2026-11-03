@@ -16,7 +16,21 @@ import type { BuilderContext, Plan, TravelMode } from "./types";
 import { findCountry, countryName } from "@/lib/sales/countries";
 import { resolveRoute, type RouteEntry } from "./route";
 
+// Every place and every "N nights / N days" the enquiry names, where (in the reader's text): the
+// coverage check (unread.ts) makes sure each one is in the trip, so nothing is dropped silently.
+export interface Mentions {
+  text: string; // the enquiry as the reader read it (lower case, spelling corrected)
+  places: { at: number; end: number; park?: string; lodge?: string; city?: string }[];
+  counts: { at: number; end: number; n: number; days: boolean }[];
+}
+
+// "dates not fixed", "dates are not fixed yet", "proceed without date", "no dates yet", "dates TBC" (3 Nov 2026)
+export const DATELESS_RE =
+  /\bdates?\s+(?:are\s+|is\s+)?(?:still\s+)?(?:not\s+(?:yet\s+)?(?:fixed|final(?:i[sz]ed)?|confirmed|decided|known|sure)|unknown|open|flexible|tbc|tbd|to be (?:confirmed|decided))\b|\b(?:no|without|w\/o)\s+(?:any\s+|fixed\s+|exact\s+|a\s+)?(?:travel\s+)?dates?\b|\bdateless\b|\bdate\s+(?:not\s+(?:fixed|decided|known)|tbc|tbd)\b/;
+
 export interface ParsedTrip {
+  mentions?: Mentions;
+  dateless?: boolean; // "dates not fixed" (the AI's reading; the chat also reads it from the words)
   adults?: number;
   children?: number[]; // ages
   rooms?: number;
@@ -1163,7 +1177,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   // ---- the route: places one after the other that no road joins are joined by a flight,
   // written or not ("than kaziranga", "come back to delhi", "go to bhopal than satpura").
   // The airports for each lodge come from the text, else from the roads in Master data.
-  if (order.length && (staysAt.length || flights.length)) {
+  if (order.length && (staysAt.length || flights.length || order.length > 1)) {
     const entries: RouteEntry[] = [
       // a touring package ("Delhi - Agra - Jaipur") is left from its last city
       ...staysAt.filter((s) => !s.away).map((s) => ({ kind: "city" as const, city: s.city.split(/\s+-\s+/).pop() ?? s.city, pos: s.at })),
@@ -1274,6 +1288,16 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   const unknown = unknownWords(text, ctx, hotels);
   if (unknown.length) out.unknown = unknown;
   if (asks.length) out.asks = asks;
+  out.mentions = {
+    text: low,
+    places: [
+      ...parkHits.map((h) => ({ at: h.index, end: h.end, park: h.name, ...(h.lodge ? { lodge: h.lodge } : {}) })),
+      ...cityHits.filter((c) => !parkHits.some((h) => c.at >= h.index && c.at < h.end)).map((c) => ({ at: c.at, end: c.at + c.city.length, city: c.city })),
+    ].sort((a, b) => a.at - b.at),
+    counts: [...low.matchAll(new RegExp(`\\b${NUM}\\s*(nights?|n\\b|nts?\\b|days?|raat(?:ein|en|e)?\\b|din\\b)`, "g"))]
+      .map((m) => ({ at: m.index!, end: m.index! + m[0].length, n: toNum(m[1]), days: /^d/.test(m[2]) }))
+      .filter((c) => c.n >= 1 && c.n <= 30),
+  };
   return out;
 }
 

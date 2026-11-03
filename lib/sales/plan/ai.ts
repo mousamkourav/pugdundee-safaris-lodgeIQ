@@ -101,6 +101,13 @@ export function buildPrompt(input: {
     '- arrival_mode / departure_mode: "flight", "train", "own" (their own vehicle) or "transfer" (our car); between: "own" or "ours" (between the lodges); own_all: true for their own vehicle all the way.',
     '- For a change to the trip so far ("make Pench 2 nights", "add Kanha"), give only what changes. For a whole new route, replace_route {"value": true, "quote": "..."}.',
     '- "wrong direction" / "reverse" -> reverse. A new order -> order (park names in the new order). Taking a park out -> remove_parks.',
+    '- Travel dates not fixed yet ("dates not fixed", "dates are not fixed yet", "proceed without date", "no dates yet"): dateless V(true). Never invent a date.',
+    '- A break from our itinerary ("they go to another resort for 2 days and resume with us", "2 nights on their own", "not with us for 3 nights"): breaks [{"at": how many lodges come before it, "nights": V(n), "quote": "the words that say the break"}]. Not a city stay, not a stop.',
+    '- end_city: the city the trip ends in by road after the last stay ("drive back to Delhi for the flight home", "back to delhi and they will fly to USA").',
+    "- A wish written once for the whole trip (\"they will do safaris with naturalists\", \"all the unique experiences that we offer like cycling, walking\"): trip_wide {\"naturalists\": V(-1), \"extras\": [V(keyword)]} (\"special\" for the lodges' own experiences, \"nature walk\" for walking). Never put it in one stop only.",
+    '- Two lodges in one park ("bandhavgarh 4 nights: 2 nights kings, 2 nights tree house"): two stops, each with its own lodge and nights; the total is not a stop.',
+    '- Several cities with one length ("agra and jaipur for 4 days"): each city its own city_stay, in order, WITHOUT nights (the nights are split by the team).',
+    '- Every place and every "N nights / N days" of the message must be somewhere in your answer: a stop, a city stay, a flight, a break or end_city. Read the whole message to the end; long enquiries name 10 or more places.',
     "",
     "JSON (every V is {\"value\": ..., \"quote\": \"...\"}; leave out what the message does not say):",
     '{"replace_route": V(true), "adults": V(n), "children_ages": V([n]), "rooms": V(n), "country": V("ISO2"), "nationality": V("indian"|"foreign"),',
@@ -109,7 +116,8 @@ export function buildPrompt(input: {
     ' "stops": [{"park": V(name), "lodge": V(name), "nights": V(n), "room": V("cottage"|"tree"|"suite"|"deluxe"), "safaris": V(n), "naturalists": V(n), "extras": [V(keyword)]}],',
     ' "city_stays": [{"when": "before"|"after", "at": n, "city": V(city), "nights": V(n), "hotel": V(name)}],',
     ' "flights": [{"from": city, "to": city, "time": "HH:MM", "quote": "the words that say this flight"}],',
-    ' "remove_parks": [V(name)], "order": V([name]), "reverse": V(true)}',
+    ' "remove_parks": [V(name)], "order": V([name]), "reverse": V(true),',
+    ' "dateless": V(true), "end_city": V(city), "breaks": [{"at": n, "nights": V(n), "quote": "..."}], "trip_wide": {"naturalists": V(-1), "extras": [V(keyword)]}}',
     "",
     input.examples.length
       ? `SIMILAR ENQUIRIES THIS TEAM HAS QUOTED (for understanding only; the values and quotes still come from the LAST MESSAGE):\n${input.examples.map((e) => `Enquiry: ${e.message}\nQuoted as: ${e.expected}`).join("\n\n")}`
@@ -205,7 +213,22 @@ export function aiToParsed(raw: unknown, full: BuilderContext): ParsedTrip {
   if (str(o.departure_place) && !departure && str(o.departure_place) !== str(o.arrival_place)) unknownName(str(o.departure_place)!, "airport, station or place");
   const meal = String(o.meal_plan ?? "").toUpperCase();
   const names = (v: unknown) => arr(v).map((x) => parkOf(x)?.name).filter((x): x is string => !!x);
+  // the whole trip (3 Nov 2026): breaks from the itinerary, wishes for every stop, where it ends
+  for (const b of arr(o.breaks).map(obj)) {
+    const n = int(b.nights, 1, 30);
+    const at = int(b.at, 0, 20);
+    if (n) cityStays.push({ when: "after", city: "", nights: n, away: true, blank: true, ...(at !== undefined ? { at } : {}) } as (typeof cityStays)[number]);
+  }
+  const tw = obj(o.trip_wide);
+  const twExtras = arr(tw.extras).filter((x): x is string => typeof x === "string" && EXTRA_KEYWORDS.includes(x));
+  for (const p of parks) {
+    if (tw.naturalists === -1 && p.naturalists === undefined) p.naturalists = -1;
+    if (twExtras.length) p.extras = [...new Set([...(p.extras ?? []), ...twExtras])];
+  }
+  const endCity = str(o.end_city, 40);
   return {
+    ...(o.dateless === true ? { dateless: true } : {}),
+    ...(endCity ? { endCity: endCity.replace(/\s+airport.*$/i, "") } : {}),
     adults: int(o.adults, 1, 50),
     children: arr(o.children_ages).map((a) => int(a, 0, 17)).filter((a): a is number => a !== undefined).slice(0, 20),
     rooms: int(o.rooms, 1, 30),

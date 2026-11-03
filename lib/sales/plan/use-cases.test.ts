@@ -309,22 +309,22 @@ test("Delhi in the middle: the trip still starts at Nagpur and ends at Jorhat (f
 // ("pench 2 nights, then kaziranga 2 nights") gets no flight and no airport drives. It is SAFE:
 // it is never priced as a drive, and the hard checks stop the quote until the flight is added.
 // When the planner learns lodge > airport > flight > airport > lodge, turn this into a route test.
-test("Pench then Kaziranga (no road, no city night): never a drive, the quote is stopped until the flight is added", () => {
+test("Pench then Kaziranga (no road, no city night): the flight Nagpur > Guwahati is planned, with the drives to and from the airports", () => {
   const p = read(ctx, "2 adults from UK, arriving nagpur 12 feb 2027, pench 2 nights pench tree lodge, then kaziranga 2 nights iora, depart guwahati");
   assert.deepEqual(route(p), [
     "02-12 Pench Tree Lodge | drive Nagpur Airport>Pench Tree Lodge",
     "02-13 Pench Tree Lodge | 2 safaris",
-    "02-14 Iora Retreat",
+    "02-14 Iora Retreat | drive Guwahati Airport>Iora Retreat | car Pench Tree Lodge>Nagpur Airport | Flight Nagpur to Guwahati",
     "02-15 Iora Retreat | 2 safaris",
     "02-16 - | drive Iora Retreat>Guwahati Airport",
   ]);
   const { r, checks } = quote(p);
+  // never a drive between the two lodges; the gap closed by the flight (audit finding 5, 3 Nov 2026)
   assert.ok(!r.lines.some((l) => l.kind === "transfer" && /Pench Tree Lodge to Iora Retreat/.test(l.description)));
-  assert.ok(checks.some((c) => /No road between Pench Tree Lodge and Iora Retreat/.test(c)), checks.join(" / "));
-  assert.ok(checks.some((c) => /Pench Tree Lodge: no way out/.test(c)));
-  assert.ok(checks.some((c) => /Iora Retreat: no way in/.test(c)));
-  // what it would cost so far (no flight, no airport drives): rooms, safaris, the two end drives
-  assert.equal(r.totals.grand, 176_570);
+  assert.deepEqual(checks.filter((c) => !/^Price needed/.test(c)), []);
+  // 176,570 (rooms, safaris, Nagpur Airport > Pench 7,350, Iora > Guwahati Airport 13,650)
+  // + Pench > Nagpur Airport 7,350 + Guwahati Airport > Iora 13,650 = 197,570 (the flight fare is typed)
+  assert.equal(r.totals.grand, 197_570);
 });
 
 // ---------------------------------------------------------------- Kaziranga via Guwahati / Jorhat

@@ -29,6 +29,12 @@ import { timed } from "@/lib/timing";
 // JSON out, 20 s per try, one retry when Google is busy (429 / 503). The page allows 60 s.
 const MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
 const TIMEOUT_MS = 20_000;
+// A long enquiry (a whole trip in one message) is read by a stronger model, thinking on, with
+// more time: GEMINI_MODEL_LONG in Vercel (default gemini-2.5-pro). If Google does not know that
+// model, the normal one reads it. Accuracy first; the cost can be tuned later (3 Nov 2026).
+const MODEL_LONG = process.env.GEMINI_MODEL_LONG || "gemini-2.5-pro";
+const LONG_TIMEOUT_MS = 40_000;
+export const isLongEnquiry = async (message: string) => message.length >= 250 || message.split(/\s+/).length >= 45;
 const RETRY_AFTER_MS = 1_500;
 
 export async function aiEnabled(): Promise<boolean> {
@@ -44,16 +50,17 @@ export async function aiEnabled(): Promise<boolean> {
 
 const UNAVAILABLE = "The AI is not available right now (busy, or its credit has run out); the built-in reader was used.";
 
-async function callGemini(prompt: string): Promise<{ json?: unknown; error?: string }> {
+async function callGemini(prompt: string, model = MODEL, long = false): Promise<{ json?: unknown; error?: string; missing?: boolean }> {
   const key = process.env.GEMINI_API_KEY!;
-  // "thinking" off: a model that does not allow switching it off is asked once more without it
-  let thinkingOff = true;
+  // "thinking" off for short messages (fast); on for a long enquiry (accuracy). A model that does
+  // not allow switching it off is asked once more without it
+  let thinkingOff = !long;
   let retried = false;
   for (let attempt = 0; attempt < 3; attempt++) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), long ? LONG_TIMEOUT_MS : TIMEOUT_MS);
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": key },
         body: JSON.stringify({
@@ -72,7 +79,7 @@ async function callGemini(prompt: string): Promise<{ json?: unknown; error?: str
         await new Promise((ok) => setTimeout(ok, RETRY_AFTER_MS));
         continue;
       }
-      if (res.status === 404) return { error: `The AI model "${MODEL}" was not found (GEMINI_MODEL in Vercel); the built-in reader was used.` };
+      if (res.status === 404) return { missing: true, error: `The AI model "${model}" was not found (${long ? "GEMINI_MODEL_LONG" : "GEMINI_MODEL"} in Vercel); the built-in reader was used.` };
       if (res.status === 429 || res.status === 503 || res.status === 402 || res.status === 403) return { error: UNAVAILABLE };
       if (!res.ok) return { error: `The AI service answered ${res.status}; the built-in reader was used.` };
       const body = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
@@ -148,14 +155,21 @@ async function assistReadingUnsafe(input: AssistInput): Promise<AssistResult> {
   const examples = similarExamples(saved, normaliseEnquiry(said, ctx.readerRules ?? []), 3);
   const prompt = buildPrompt({ message, history: (input.history ?? []).slice(-8), plan, ctx, glossary, examples, today });
   const started = Date.now();
-  const res = await callGemini(prompt);
+  // a long enquiry: the stronger model; the normal one when Google does not know it
+  const long = await isLongEnquiry(message);
+  let model = long ? MODEL_LONG : MODEL;
+  let res = await callGemini(prompt, model, long);
+  if (long && res.missing && MODEL_LONG !== MODEL) {
+    model = MODEL;
+    res = await callGemini(prompt, MODEL, false);
+  }
   if (res.error || res.json === undefined) {
-    await log(supabase, { userId: cu.user.id, message: said, result: null, error: res.error, source: "ai", ms: Date.now() - started, model: MODEL });
+    await log(supabase, { userId: cu.user.id, message: said, result: null, error: res.error, source: "ai", ms: Date.now() - started, model });
     return { source: "reader", error: res.error ?? "No answer from the AI." };
   }
   // the evidence rule: a value the message does not say is dropped here, never guessed
   const { reading, dropped } = checkEvidence(res.json, said, ctx);
-  await log(supabase, { userId: cu.user.id, message: said, result: { answer: res.json, kept: reading, dropped }, source: "ai", ms: Date.now() - started, model: MODEL, dropped });
+  await log(supabase, { userId: cu.user.id, message: said, result: { answer: res.json, kept: reading, dropped }, source: "ai", ms: Date.now() - started, model, dropped });
   return { source: "ai", reading, dropped: dropped.length };
 }
 

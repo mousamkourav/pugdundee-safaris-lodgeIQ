@@ -14,7 +14,7 @@
 // Pure, so it is tested without a network.
 // =====================================================================
 
-import { EXTRA_WORDS, REQUESTS, aliasesOf, lodgeAliases } from "./parse-text";
+import { DATELESS_RE, EXTRA_WORDS, REQUESTS, aliasesOf, lodgeAliases } from "./parse-text";
 import { safariOnly } from "./cities";
 import type { BuilderContext } from "./types";
 
@@ -137,6 +137,9 @@ const placeCore = (name: string) => norm(name.replace(/\(.*?\)/g, " ")).replace(
 const namesAny = (names: string[], quote: string) => names.some((n) => n.length >= 3 && phraseIn(n, quote));
 
 // ---------------- the check ----------------
+
+// the words of a break from the itinerary ("another resort", "take a break", "not with us", "on their own")
+const BREAK_WORDS = /\b(?:break|another|other|different|not with us|own arrangements?|on their own|resume|away)\b/;
 
 export interface Dropped {
   field: string;
@@ -286,6 +289,30 @@ export function checkEvidence(raw: unknown, message: string, full: Ctx): { readi
     flights.push({ from, to, ...(time ? { time } : {}) });
   });
   if (flights.length) out.flights = flights;
+
+  // ---- the whole trip (3 Nov 2026): dates not fixed, where it ends, breaks, wishes for every stop
+  set("dateless", take("dateless", o.dateless, (q, v) => v === true && DATELESS_RE.test(q.toLowerCase())));
+  set("end_city", take("end_city", o.end_city, place));
+  const breaks: Record<string, unknown>[] = [];
+  list(o.breaks).forEach((bRaw, i) => {
+    const b = bRaw && typeof bRaw === "object" ? (bRaw as Record<string, unknown>) : {};
+    const q = b.quote;
+    const nights = take(`breaks[${i}].nights`, b.nights, num);
+    const why = typeof q !== "string" || !q.trim() ? "no quote" : !quoteFound(q, message) ? "quote not in the message" : !BREAK_WORDS.test(norm(q)) ? "quote does not say it" : null;
+    if (why) {
+      dropped.push({ field: `breaks[${i}]`, value: b.nights, quote: q, reason: why });
+      return;
+    }
+    if (nights === undefined) return;
+    breaks.push({ nights, ...(typeof b.at === "number" ? { at: b.at } : {}) });
+  });
+  if (breaks.length) out.breaks = breaks;
+  const tw = o.trip_wide && typeof o.trip_wide === "object" ? (o.trip_wide as Record<string, unknown>) : {};
+  const twNat = take("trip_wide.naturalists", tw.naturalists, (q, v) => v === -1 && /naturalist/.test(norm(q)));
+  const twExtras = list(tw.extras)
+    .map((x, k) => take(`trip_wide.extras[${k}]`, x, (q, v) => typeof v === "string" && (EXTRA_WORDS.some(([re, kw]) => kw === v && re.test(q.toLowerCase())) || (v === "special" && /\b(special|unique|signature)\b/.test(norm(q))) || (v === "nature walk" && /\bwalk/.test(norm(q))))))
+    .filter((x) => x !== undefined);
+  if (twNat !== undefined || twExtras.length) out.trip_wide = { ...(twNat !== undefined ? { naturalists: twNat } : {}), ...(twExtras.length ? { extras: twExtras } : {}) };
 
   return { reading: out, dropped };
 }

@@ -6,6 +6,8 @@
 // Pure function, so it is easy to test and runs instantly in the browser.
 // =====================================================================
 
+import { unreadParts, unreadText } from "./unread";
+import { DATELESS_RE } from "./parse-text";
 import { rupees } from "@/lib/sales/format";
 import { paxText } from "@/lib/sales/pricing/pax";
 import { countryName, findPhone } from "@/lib/sales/countries";
@@ -13,7 +15,7 @@ import { priceTrip } from "@/lib/sales/pricing/engine";
 import type { ISODate } from "@/lib/sales/pricing/types";
 import { ROOM_MATCH, aliasesOf, extractTrip, lodgeNamedIn, locationAliases, matchByName, roomWishIn, type Ask, type ParsedTrip, type RoomWish } from "./parse-text";
 import { mergeAiFirst, mergeMemory, sourceNote, type Filled } from "./reading";
-import { buildDays, defaultStop, defaultVehicle, emptyPlan, farLegs, lodgesInPark, masterHotelRate, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems, segments } from "./planner";
+import { airportReachesLodge, buildDays, defaultStop, defaultVehicle, emptyPlan, farLegs, lodgesInPark, masterHotelRate, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems, segments } from "./planner";
 import { addDays } from "@/lib/sales/pricing/dates";
 import type { BuilderContext, Plan, PlanStop } from "./types";
 import { cityHotelNamed, cityHotels, safariOnly, sameCity, stayKey, stayWhere } from "./cities";
@@ -117,9 +119,7 @@ const placesOf = (ctx: BuilderContext) => {
 };
 
 // ---------------------------------------------------------------------------
-// "dates not fixed", "dates are not fixed yet", "proceed without date", "no dates yet", "dates TBC" (3 Nov 2026)
-export const DATELESS_RE =
-  /\bdates?\s+(?:are\s+|is\s+)?(?:still\s+)?(?:not\s+(?:yet\s+)?(?:fixed|final(?:i[sz]ed)?|confirmed|decided|known|sure)|unknown|open|flexible|tbc|tbd|to be (?:confirmed|decided))\b|\b(?:no|without|w\/o)\s+(?:any\s+|fixed\s+|exact\s+|a\s+)?(?:travel\s+)?dates?\b|\bdateless\b|\bdate\s+(?:not\s+(?:fixed|decided|known)|tbc|tbd)\b/;
+export { DATELESS_RE } from "./parse-text";
 
 export function chatTurn(
   plan: Plan,
@@ -450,7 +450,7 @@ export function chatTurn(
     next.arrival_date = landing ? addDays(parsed.arrival_date, firstNights) : parsed.arrival_date;
     f.dateSet = true;
     chips.push(landing ? `arriving ${parsed.arrival_date} (first lodge ${next.arrival_date})` : `arriving ${parsed.arrival_date}`);
-  } else if (DATELESS_RE.test(low) && !f.dateSet) {
+  } else if ((parsed.dateless || DATELESS_RE.test(low)) && !f.dateSet) {
     next.dateless = true;
     f.dateSet = true;
     chips.push("dates not fixed: priced by season");
@@ -592,8 +592,13 @@ export function chatTurn(
       [...fl].reverse().find((x) => afterCity && sameCity(x.to, afterCity) && x !== inbound) ??
       fl.find((x) => afterCity && sameCity(x.from, afterCity) && x !== inbound) ??
       (fl.length > 1 ? fl[fl.length - 1] : undefined);
-    const inAirport = !keepIn && inbound && airportFor(inbound.to);
-    const outAirport = !keepOut && outbound && airportFor(outbound.from);
+    // the way in is a flight whose airport has a road to the first lodge, the way out one from the
+    // last lodge's (Nagpur > Guwahati between Pench and Iora Retreat is neither) (3 Nov 2026)
+    const lodgeLoc = (s: PlanStop | undefined) => (s ? full.locations.find((l) => l.property_id === s.property_id)?.id : undefined);
+    const firstLodgeIn = !beforeCity ? lodgeLoc(next.stops[0]) : undefined;
+    const lastLodgeOut = !afterCity ? lodgeLoc(next.stops[next.stops.length - 1]) : undefined;
+    const inAirport = !keepIn && inbound && (!firstLodgeIn || airportReachesLodge(full, inbound.to, firstLodgeIn)) && airportFor(inbound.to);
+    const outAirport = !keepOut && outbound && (!lastLodgeOut || airportReachesLodge(full, outbound.from, lastLodgeOut)) && airportFor(outbound.from);
     if (inAirport && next.arrival_location_id !== inAirport.id) {
       next.arrival_location_id = inAirport.id;
       f.arrivalAsked = true;
@@ -784,6 +789,9 @@ export function chatTurn(
   }
 
   const understood = chips.length > 0;
+  // the words that describe the trip, kept for the coverage check: a new route starts them again
+  const tripWords = parsed.parks.length || parsed.cityStays?.length || parsed.flights?.length;
+  if (tripWords && msg.trim().length >= 15) next.enquiry = (!plan.stops.length || parsed.replaceRoute ? msg : [plan.enquiry, msg].filter(Boolean).join("\n")).slice(-6000);
 
   // ---- rebuild the day plan when the route changed
   const routeChanged = routeKey(next) !== routeKey(plan);
@@ -822,6 +830,9 @@ export function chatTurn(
   f.hotelFor = step.hotelFor ?? null;
   f.askFor = step.askFor ?? null;
 
+  // nothing dropped silently: every place and "N nights" of the enquiry must be in the trip
+  const unread = next.days.length ? unreadText(unreadParts(next.enquiry, next, full, today)) : "";
+  if (unread && routeChanged) warnings.push(unread);
   let text = step.text;
   if (!understood) {
     text = /^(yes|ok|okay|looks good|go ahead|review|next|done|perfect|great)\b/i.test(low) && step.ready
