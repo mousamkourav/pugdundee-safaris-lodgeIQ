@@ -554,7 +554,16 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
             ? jeepsOn(a.date ?? null)
             : 1);
     // Per group with some guests included (boat cruise: 2 guests, then Rs 1,500 each).
-    const extraGuests = !tier && addon.pricing_unit === "per_group" && addon.included_guests != null && extraRate ? Math.max(0, countable - addon.included_guests) * qty : 0;
+    // Per vehicle with some guests included (safari breakfast, outside jeeps: Rs 1,000 for up to 2
+    // guests in each jeep, + Rs 500 per further guest; BAR sheets 2026-27): the guests over what the
+    // jeeps include.
+    const extraGuests = tier || addon.included_guests == null || !extraRate
+      ? 0
+      : addon.pricing_unit === "per_group"
+        ? Math.max(0, countable - addon.included_guests) * qty
+        : addon.pricing_unit === "per_vehicle"
+          ? Math.max(0, countable - addon.included_guests * qty)
+          : 0;
     // yearly hike: add-ons have one price list, so dates in the hike period get the % (dates not fixed: "next season")
     const addonHike = hike?.addons_pct && (basis ? basis.year === "next" : !!a.date && inRange(a.date, hike.from, hike.to)) ? hike.addons_pct : 0;
     if (addonHike) hikeUsed.addons = true;
