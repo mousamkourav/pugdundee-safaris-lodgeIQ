@@ -5,13 +5,15 @@
 
 ## What we're building
 LodgeIQ is the internal app of **Pugdundee Safaris** (wildlife lodges in Central India).
-One app, two modules:
+One app, three modules:
 - **Lodge Reporting**: monthly reports, occupancy, expenses, energy, vehicles, assets and
   service log, staff and payroll, bar, stock and purchases, compliance, notifications,
   trip reports. Lodges: Kings Lodge, Tree House Hideaway, Kanha Earth Lodge, Pench Tree
   Lodge, Denwa Backwater Escape, Ken River Lodge, Waghoba Eco Lodge (more later).
 - **Sales & Itinerary**: enquiry -> itinerary builder (chat assistant) -> pricing ->
   guest itinerary page + PDF -> status (draft, open, quoted, booked, lost, cancelled).
+- **SOP**: the standard operating procedures (read, search, PDF; edited and published by the
+  super admin; staff confirm "I have read"). See "SOP module" below.
 
 Live at https://pugdundeesafaris.org (Vercel; the vercel.app address redirects there).
 The owner is not a developer: explain in plain words, give PowerShell commands one per
@@ -213,6 +215,33 @@ the AI values the evidence rule dropped, "field: reason").
 phone numbers and guest names (incl. the name in the guest fields). Gemini's answer is
 mapped to master data (`aiToParsed`) and never trusted for prices. Timeouts stay under
 Vercel's limit (page `maxDuration` 60 s).
+
+## SOP module (third tab)
+Kept apart from Lodge and Sales: pages `app/(dashboard)/sop/*`, code `lib/sop/*`, tables `sop_*`,
+private bucket `sop-media`, SQL `supabase/sop_module.sql`. Editor: TipTap 3.32.0 (pinned).
+- Who: only `super_admin` edits, imports, publishes, restores, gives access and sees who has read
+  (`isSopEditor`; senior managers are NOT editors here). Everyone else sees the SOP tab only when
+  given access by person or by role (`sop_access`); either is enough. Checked in `lib/sop/server.ts`
+  (`requireSopViewer` / `requireSopEditor` on pages, `sopActor` / `sopEditor` in actions and routes)
+  and again in the database (RLS + `sop_*` functions). One call per page, `sop_my_status()`, gives
+  the tab and the "New SOP version - please read" banner; if it fails (SQL not run) nothing shows.
+  `middleware.ts` lets sales-only and task-creator accounts open `/sop` (the pages check access).
+- Draft = `sop_sections` (autosaved by the editor); staff read only published versions
+  (`sop_versions` + frozen `sop_version_sections`). Publish (`sop_publish`), import and restore
+  (`sop_replace_draft`), order, access: database functions that also write `sop_audit`.
+- Bodies are editor JSON, cleaned on the server (`sanitizeDoc`: known nodes, safe links, pictures
+  only `/sop/media/images/...`), rendered as React (`_ui/content.tsx`), never as raw HTML. Pictures
+  are served by `/sop/media/[...path]` after an access check (short-lived signed link).
+- Import from Word (`lib/sop/zip.ts`, `docx.ts`, `import.ts`) runs IN THE BROWSER (the owner's file
+  is 120 MB; a Vercel request takes 4.5 MB): slide footers ("2007", "2024", "2026", the web address)
+  and empty lines removed; a footer mixed into a line is taken out and the line flagged; text boxes
+  read once (never mc:Fallback); decorative pictures left out. Sections start at section codes
+  (A-1 ... F-7, any dash or spacing, also after "SOP - part") and at "Training:"; "B - 5 (a)" and
+  "Procedure:" stay headings. The preview lets the owner move breaks. Uploads go straight to the
+  bucket (signed upload links); the server reads the uploaded JSON, cleans it and saves the draft.
+  The owner's file goes in `rate-docs/2024_SOP__pptx_1.docx` (not committed); `import.test.ts` runs
+  on it when it is there.
+- PDF: `lib/sop/pdf.ts` (jsPDF, A5, cover, contents with links, page numbers), route `/sop/pdf`.
 
 ## Database rules
 - The original schema is `supabase/schema.sql`. Later changes are SQL files in `supabase/`.
