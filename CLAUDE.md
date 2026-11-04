@@ -242,6 +242,8 @@ private bucket `sop-media`, SQL `supabase/sop_module.sql`. Editor: TipTap 3.32.0
   The owner's file goes in `rate-docs/2024_SOP__pptx_1.docx` (not committed); `import.test.ts` runs
   on it when it is there.
 - PDF: `lib/sop/pdf.ts` (jsPDF, A5, cover, contents with links, page numbers), route `/sop/pdf`.
+- The Word file itself is NOT stored (owner, 4 Nov 2026: 122 MB; staff download the PDF). The
+  "Original Word file" link and `/sop/original` show only if `sop_documents.original_path` is set.
 
 ## Database rules
 - The original schema is `supabase/schema.sql`. Later changes are SQL files in `supabase/`.

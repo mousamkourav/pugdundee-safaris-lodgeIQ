@@ -2,8 +2,9 @@
 
 // Import from Word (super admin). The file is read IN THE BROWSER (it is 120 MB; the server takes
 // a few MB at most): unzip, read, clean, split into sections. The owner checks the preview and
-// may move section breaks; then the sections, the pictures and the original file are uploaded
-// straight to the private bucket and the server makes them the new draft in one step.
+// may move section breaks; then the sections and the pictures are uploaded straight to the
+// private bucket and the server makes them the new draft in one step. The Word file itself is
+// not stored (owner, 4 Nov 2026: 122 MB; staff download the PDF).
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ui } from "@/components/ui";
@@ -71,7 +72,7 @@ export function Importer({ hasDraft }: { hasDraft: boolean }) {
     try {
       setBusy("Preparing the upload...");
       const exts = keptImages.map(extOf);
-      const up = await createImportUploads({ imageExts: exts, original: { size: parsed.file.size } });
+      const up = await createImportUploads({ imageExts: exts });
       if ("error" in up) return setError(up.error);
       const storage = createClient().storage.from("sop-media");
 
@@ -94,27 +95,15 @@ export function Importer({ hasDraft }: { hasDraft: boolean }) {
       const j = await storage.uploadToSignedUrl(up.json.path, up.json.token, json, { contentType: "application/json" });
       if (j.error) return setError(`The sections could not be uploaded: ${j.error.message}`);
 
-      // the original Word file, for "Download original Word file" (may be over the storage limit)
-      let original: { path: string; name: string; size: number } | null = null;
-      let originalNote = "";
-      if (up.original) {
-        setBusy(`Uploading the original Word file (${mb(parsed.file.size)})...`);
-        const o = await storage.uploadToSignedUrl(up.original.path, up.original.token, parsed.file, {
-          contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        });
-        if (o.error) originalNote = ` The original Word file was not kept (${o.error.message}): raise the storage upload limit and import again to keep it.`;
-        else original = { path: up.original.path, name: parsed.file.name, size: parsed.file.size };
-      }
-
       setBusy("Saving the draft...");
       const s = parsed.cleaned.stats;
       const r = await commitImport({
         jsonPath: up.json.path,
-        original,
+        fileName: parsed.file.name,
         detail: { footersRemoved: s.footers, emptyRemoved: s.empty, linesToCheck: s.garbled, picturesKept: s.imagesKept, picturesDropped: s.imagesDropped },
       });
       if ("error" in r) return setError(r.error);
-      alert(`Imported ${r.sections} sections into the draft. Check them in Edit, then publish.${originalNote}`);
+      alert(`Imported ${r.sections} sections into the draft. Check them in Edit, then publish.`);
       router.push("/sop/edit");
     } catch (e) {
       setError(e instanceof Error ? e.message : "The import did not finish.");

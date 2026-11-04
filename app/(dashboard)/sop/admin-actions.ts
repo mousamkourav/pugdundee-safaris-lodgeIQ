@@ -184,7 +184,8 @@ export async function restoreVersion(number: number): Promise<{ ok: true } | Fai
 
 // ---------------------------------------------------------------- uploads (browser -> storage)
 // Files go straight from the browser to the private bucket with one-time upload links (a server
-// action takes 1 MB at most; the Word file is 120 MB). The server then reads what was uploaded.
+// action takes 1 MB at most). The server then reads what was uploaded. The Word file itself is
+// never stored (owner, 4 Nov 2026: it is 122 MB; staff download the PDF).
 
 const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp"]);
 type Upload = { path: string; token: string };
@@ -209,35 +210,31 @@ export async function createImageUpload(ext: string, size: number): Promise<({ o
   });
 }
 
-export async function createImportUploads(input: { imageExts: string[]; original: { size: number } | null }): Promise<
-  ({ ok: true; json: Upload; original: Upload | null; images: (Upload & { src: string })[] }) | Fail
-> {
+export async function createImportUploads(input: { imageExts: string[] }): Promise<({ ok: true; json: Upload; images: (Upload & { src: string })[] }) | Fail> {
   const g = await guard();
   if ("error" in g) return g;
   const exts = Array.isArray(input?.imageExts) ? input.imageExts.map((x) => String(x).toLowerCase()) : [];
   if (exts.length > 200 || exts.some((x) => !IMAGE_EXT.has(x))) return { error: "Unsupported pictures in the file." };
   return run("createImportUploads", async () => {
     const json = await signedUpload(`imports/${randomUUID()}.json`);
-    const original = input.original && input.original.size > 0 ? await signedUpload(`original/${randomUUID()}.docx`) : null;
     const images: (Upload & { src: string })[] = [];
     for (const x of exts) {
       const path = `images/${randomUUID()}.${x === "jpeg" ? "jpg" : x}`;
       images.push({ ...(await signedUpload(path)), src: `/sop/media/${path}` });
     }
-    return { ok: true as const, json, original, images };
+    return { ok: true as const, json, images };
   });
 }
 
 // The import, saved: the uploaded sections become the draft (in one transaction, with the audit).
 export async function commitImport(input: {
   jsonPath: string;
-  original: { path: string; name: string; size: number } | null;
+  fileName: string; // kept in the audit log only
   detail: Record<string, number | string>;
 }): Promise<{ ok: true; sections: number } | Fail> {
   const g = await guard();
   if ("error" in g) return g;
   if (!/^imports\/[0-9a-f-]{36}\.json$/.test(String(input?.jsonPath))) return { error: "Unknown upload." };
-  if (input.original && !/^original\/[0-9a-f-]{36}\.docx$/.test(String(input.original.path))) return { error: "Unknown upload." };
   return run("commitImport", async () => {
     const admin = createAdminClient();
     const file = await admin.storage.from(SOP_BUCKET).download(input.jsonPath);
@@ -260,21 +257,11 @@ export async function commitImport(input: {
     }
     const detail: Record<string, number | string> = {};
     for (const [k, v] of Object.entries(input.detail ?? {})) if (/^[a-zA-Z]{1,30}$/.test(k) && (typeof v === "number" || typeof v === "string")) detail[k] = typeof v === "string" ? v.slice(0, 200) : v;
-    if (input.original) detail.file = String(input.original.name).slice(0, 200);
+    if (input.fileName) detail.file = String(input.fileName).slice(0, 200);
 
     const supabase = await createClient();
     const { error } = await supabase.rpc("sop_replace_draft", { p_doc: g.documentId, p_sections: rows, p_action: "import", p_detail: detail });
     if (error) return dbError(error);
-
-    if (input.original) {
-      const prev = await supabase.from("sop_documents").select("original_path").eq("id", g.documentId).maybeSingle();
-      const old = (prev.data as { original_path?: string | null } | null)?.original_path;
-      await supabase
-        .from("sop_documents")
-        .update({ original_path: input.original.path, original_name: String(input.original.name).slice(0, 200), original_size: Math.round(Number(input.original.size)) || null })
-        .eq("id", g.documentId);
-      if (old && old !== input.original.path) await admin.storage.from(SOP_BUCKET).remove([old]);
-    }
     await admin.storage.from(SOP_BUCKET).remove([input.jsonPath]);
     touched();
     return { ok: true as const, sections: rows.length };

@@ -197,3 +197,15 @@ test("SQL: one idempotent block, RLS on every SOP table, every change checked fo
   for (const t of ["sop_versions", "sop_version_sections", "sop_access", "sop_audit"]) assert.ok(!new RegExp(`on public\\.${t} for (insert|update|delete|all)`).test(sql), t);
   assert.match(sql, /insert into storage\.buckets[\s\S]*'sop-media', 'sop-media', false/, "a private bucket");
 });
+
+// Owner, 4 Nov 2026: the Word file (122 MB) is not stored; staff download the PDF.
+test("the original Word file is never uploaded; its download shows only when one is stored", () => {
+  const importer = readFileSync(join(SOP_DIR, "import", "importer.tsx"), "utf8");
+  const actions = readFileSync(join(SOP_DIR, "admin-actions.ts"), "utf8");
+  assert.ok(!/original\//.test(actions) && !/original_path/.test(actions), "no upload link or record for the Word file");
+  assert.ok(!/uploadToSignedUrl\([^)]*parsed\.file/.test(importer), "the browser does not upload the Word file");
+  assert.ok(!/not kept/i.test(importer), "no 'original was not kept' warning");
+  const page = readFileSync(join(SOP_DIR, "page.tsx"), "utf8");
+  assert.match(page, /\{hasOriginal && \(\s*<a href="\/sop\/original"/, "the link only when a file is stored");
+  assert.match(page, /<a href="\/sop\/pdf"/);
+});
