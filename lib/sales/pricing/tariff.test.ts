@@ -97,3 +97,47 @@ test("weekend safari rates also on 23 Dec - 2 Jan", () => {
   const r = priceTrip({ ...trip, safaris: [wed], stays: trip.stays, transfers: [], addons: [] }, d);
   assert.equal(r.lines.find((l) => l.kind === "safari")!.unit_price, rate.weekend_rate);
 });
+
+// Management's rates sheet, 4 Nov 2026: Indian guests by season with their own calendar, weekend
+// rates on Friday and Saturday nights; foreigners' High to 10 Mar, Peak from 11 Mar.
+test("Indian seasons: own calendar, Friday and Saturday nights at the weekend rate; foreigners' calendar apart", () => {
+  const ind = (id: string, season: TariffRow["season"], dbl: number, sgl: number, wd: number, ws: number): TariffRow => ({
+    ...base, id, nationality: "indian", season, rate_double: dbl, rate_single: sgl, weekend_rate_double: wd, weekend_rate_single: ws, weekend_days: [5, 6], valid_to: "2027-09-30",
+  });
+  const rows: TariffRow[] = [
+    ind("IS", "shoulder", 16000, 13000, 17000, 14000), ind("IH", "high", 19500, 16500, 20500, 17500), ind("IP", "peak", 22000, 18500, 22000, 18500),
+    ...tariff.filter((t) => t.nationality === "foreign"),
+  ];
+  const cal = [
+    // all guests (foreign nationals use these)
+    { calendar: "pugdundee", season: "shoulder" as const, date_from: "2026-12-01", date_to: "2026-12-20" },
+    { calendar: "pugdundee", season: "high" as const, date_from: "2027-02-01", date_to: "2027-03-10" },
+    { calendar: "pugdundee", season: "peak" as const, date_from: "2027-03-11", date_to: "2027-04-30" },
+    { calendar: "pugdundee", season: "peak" as const, date_from: "2026-11-06", date_to: "2026-11-14" },
+    // Indian nationals
+    { calendar: "pugdundee", nationality: "indian" as const, season: "shoulder" as const, date_from: "2026-12-01", date_to: "2026-12-20" },
+    { calendar: "pugdundee", nationality: "indian" as const, season: "high" as const, date_from: "2027-02-01", date_to: "2027-05-15" },
+    { calendar: "pugdundee", nationality: "indian" as const, season: "peak" as const, date_from: "2027-03-19", date_to: "2027-03-22" },
+    { calendar: "pugdundee", nationality: "indian" as const, season: "peak" as const, date_from: "2026-11-06", date_to: "2026-11-14" },
+  ];
+  const d = { ...data, roomRates: compileTariff(rows, cal, [{ id: "COT", calendar: "pugdundee" }], rooms) };
+  const night = (nat: "indian" | "foreign", date: string) => {
+    const stay = { ...trip.stays[0], check_in: date, nights: 1, rooms: 1 };
+    return priceTrip({ ...trip, nationality: nat, stays: [stay], safaris: [], transfers: [], addons: [] }, d).lines.find((l) => l.kind === "room")!.unit_price;
+  };
+  // Indian: High 1 Feb - 15 May (no Peak in March but Holi)
+  assert.equal(night("indian", "2027-03-10"), 19500); // Wednesday
+  assert.equal(night("indian", "2027-03-12"), 20500); // Friday night: weekend
+  assert.equal(night("indian", "2027-03-13"), 20500); // Saturday night: weekend
+  assert.equal(night("indian", "2027-03-14"), 19500); // Sunday night: weekday
+  assert.equal(night("indian", "2027-03-20"), 22000); // Holi long weekend: Peak
+  assert.equal(night("indian", "2027-04-15"), 19500); // still High for Indians
+  assert.equal(night("indian", "2026-12-04"), 17000); // Shoulder, Friday
+  assert.equal(night("indian", "2026-12-03"), 16000); // Shoulder, Thursday
+  assert.equal(night("indian", "2026-11-08"), 22000); // Diwali
+  // foreign: High to 10 Mar, Peak from 11 Mar to 30 Apr; no weekend rates
+  assert.equal(night("foreign", "2027-03-10"), 22000);
+  assert.equal(night("foreign", "2027-03-11"), 23000);
+  assert.equal(night("foreign", "2027-03-12"), 23000);
+  assert.equal(night("foreign", "2027-04-15"), 23000);
+});

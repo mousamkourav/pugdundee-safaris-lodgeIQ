@@ -102,6 +102,9 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
   const view = await loadClientView((await params).token);
   if (!view) notFound();
   const { plan } = view;
+  // the rooms the quote is priced for (every stay; owner, 4 Nov 2026: shown on the page and the PDF)
+  const rooms = Math.max(1, plan.guest.rooms || 1);
+  const roomsText = `${rooms} room${rooms === 1 ? "" : "s"}`;
 
   // The first day at each lodge shows the lodge as a feature.
   const firstDayAt = new Map<string, number>();
@@ -119,7 +122,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
       const c = seg.stay;
       return {
         place: c.away ? "Own arrangements" : c.city || "Free day",
-        detail: c.away ? "Not included" : c.hotel || (c.blank ? "Hotel to be confirmed" : "City stay"),
+        detail: c.away ? "Not included" : c.hotel ? `${c.hotel} (${roomsText})` : c.blank ? "Hotel to be confirmed" : "City stay",
         nights: c.nights,
         flightIn: !!c.city && flights.some((f) => sameCity(f.to, c.city)),
       };
@@ -127,7 +130,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
     const room = view.stays[seg.index]?.room;
     return {
       place: shortPark(view.parkNames[seg.stop.park_id] ?? ""),
-      detail: [view.lodgeNames[seg.stop.property_id] ?? "", room].filter(Boolean).join(" \u00b7 "),
+      detail: [view.lodgeNames[seg.stop.property_id] ?? "", room ? `${room} (${roomsText})` : roomsText].filter(Boolean).join(" \u00b7 "),
       nights: seg.stop.nights,
       flightIn: seg.index === 0 && prev?.kind === "city" && !!prev.stay.city && flights.some((f) => sameCity(f.from, prev.stay.city)),
     };
@@ -219,6 +222,8 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
               {plan.days.length || view.nights + 1} days
               <span className="mx-2 text-white/50">|</span>
               {view.guests} guest{view.guests === 1 ? "" : "s"}
+              <span className="mx-2 text-white/50">|</span>
+              {roomsText}
             </p>
             <p className="mt-2 text-xs uppercase tracking-[0.18em] text-white/60">
               Quote {view.queryNo} &middot; prepared {long(view.quotedOn)}
@@ -376,6 +381,8 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                               <Line name="bed" className="h-4 w-4 text-olive-600" />
                               {st.room}
                               <span className="text-sand-400">&middot;</span>
+                              <span>{roomsText}</span>
+                              <span className="text-sand-400">&middot;</span>
                               <span className="text-sand-600">{st.meal}</span>
                             </p>
                           ) : null;
@@ -482,7 +489,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                       <>
                         <p className="font-display text-4xl font-semibold text-[var(--color-gold-200,#EBD9A0)]">{first.amount}</p>
                         <p className="mt-1 text-white/75">
-                          {first.label} &middot; {view.guests} guest{view.guests === 1 ? "" : "s"}
+                          {first.label} &middot; {view.guests} guest{view.guests === 1 ? "" : "s"} &middot; {roomsText}
                         </p>
                         {rest.length > 0 && (
                           <ul className="mt-3 space-y-0.5 text-white/85">

@@ -36,7 +36,7 @@ function sortRows(entityKey: string, rows: Row[], fields: FieldDef[]): Row[] {
   const label = (f: FieldDef | undefined, r: Row) => (f ? String(toCell(f, r[f.name]) ?? "") : "");
   const keyFields: Record<string, string[]> = {
     tariff: ["rate_category_id", "nationality", "valid_from", "season"],
-    "tariff-calendar": ["calendar", "date_from"],
+    "tariff-calendar": ["calendar", "nationality", "date_from"],
     "room-rates": ["room_category_id", "valid_from"],
     "safari-rates": ["park_id", "nationality", "zone", "session", "valid_from"],
     transfers: ["from_location_id", "to_location_id", "vehicle_type"],

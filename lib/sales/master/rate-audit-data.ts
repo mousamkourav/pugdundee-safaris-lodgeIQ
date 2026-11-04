@@ -95,13 +95,15 @@ export async function loadRateAudit(): Promise<{ rows: AuditRow[]; error: string
         rate_single: nn(r.rate_single),
         rate_double: n(r.rate_double),
         weekend_rate_double: nn(r.weekend_rate_double),
+        weekend_rate_single: nn(r.weekend_rate_single),
+        weekend_days: Array.isArray(r.weekend_days) ? (r.weekend_days as unknown[]).map(Number) : [],
         meal_plan: mealCode(r.meal_plan) || "AP",
         tax_pct: r.tax_pct === null || r.tax_pct === undefined ? 18 : n(r.tax_pct),
         rates_include_tax: r.rates_include_tax === true, // as the tariff loader reads it
         active: active(r),
       })),
       categories: rows(categories).filter(active).map((r) => ({ id: s(r.id), name: s(r.name), calendar: s(r.calendar) || "pugdundee" })),
-      calendar: rows(calendar).map((r) => ({ calendar: s(r.calendar) || "pugdundee", season: s(r.season), date_from: d(r.date_from), date_to: d(r.date_to), active: active(r) })),
+      calendar: rows(calendar).map((r) => ({ calendar: s(r.calendar) || "pugdundee", nationality: nat(r.nationality), season: s(r.season), date_from: d(r.date_from), date_to: d(r.date_to), active: active(r) })),
     }),
   };
 }

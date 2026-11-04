@@ -32,10 +32,44 @@ export function afterSql(addons: Row[], safaris: Row[]): { addons: Row[]; safari
   return { addons: a, safaris: s };
 }
 
-// The export of 2 Nov 2026 does not carry the tariff, season calendar or Ken River long-weekend
-// fields the way the audit reads them (the live audit shows those rows OK), so this test checks
-// the road transfers, safaris and experiences: the rows the documents and the SQL touch.
-const CHECKED = (r: { item: string }) => !/^(Cottage|Tree House|Forest Suite|Deluxe Room|Season calendar|Ken River Lodge: )/.test(r.item);
+// supabase/sales_management_rates_2026-11-04.sql (management's rates sheet), as it changes the rows
+const INDIAN_4NOV: [string, string, number, number, number, number][] = [
+  ["C_cottage", "shoulder", 16000, 13000, 17000, 14000], ["C_cottage", "high", 19500, 16500, 20500, 17500], ["C_cottage", "peak", 22000, 18500, 22000, 18500],
+  ["C_deluxe_room", "shoulder", 14000, 11000, 15000, 12000], ["C_deluxe_room", "high", 23500, 20000, 25000, 21000], ["C_deluxe_room", "peak", 18000, 15000, 18000, 15000],
+  ["C_forest_suite", "shoulder", 20500, 17000, 22000, 18000], ["C_forest_suite", "high", 23500, 20000, 25000, 21000], ["C_forest_suite", "peak", 26000, 22000, 26000, 22000],
+  ["C_tree_house", "shoulder", 18500, 15500, 20000, 16500], ["C_tree_house", "high", 22000, 19000, 23500, 20000], ["C_tree_house", "peak", 25000, 21000, 25000, 21000],
+];
+export const INDIAN_CALENDAR_4NOV: [string, string, string][] = [
+  ["shoulder", "2026-10-01", "2026-10-31"], ["peak", "2026-10-17", "2026-10-20"], ["high", "2026-11-01", "2026-11-30"], ["peak", "2026-11-06", "2026-11-14"],
+  ["shoulder", "2026-12-01", "2026-12-20"], ["peak", "2026-12-21", "2027-01-04"], ["shoulder", "2027-01-05", "2027-01-31"], ["high", "2027-02-01", "2027-05-15"],
+  ["peak", "2027-03-19", "2027-03-22"], ["shoulder", "2027-05-16", "2027-06-30"],
+];
+const TRANSFERS_4NOV: Record<string, number> = {
+  "f9bf85e6-07d0-4278-846e-4e216c2b681d": 7500, "c71cc745-46f4-4862-89dd-25cb98339222": 3000, "eedfceab-f14d-4673-9f41-39a05e2d57cc": 2500,
+  "b4acf44a-6a86-4b3b-abef-d565bbb86d2f": 7000, "65332951-5773-4880-a3a5-fb0d08535fa1": 8000,
+};
+export function afterSql4Nov(m: Record<string, Row[]>): { tariff: Row[]; calendar: Row[]; safaris: Row[]; transfers: Row[] } {
+  const base = m.tariff.find((t) => t.nationality === "indian")!;
+  const tariff = [
+    ...m.tariff.filter((t) => t.nationality !== "indian"),
+    ...INDIAN_4NOV.map(([cat, season, dbl, sgl, wd, ws], i) => ({ ...base, id: `in-${i}`, rate_category_id: cat, season, rate_double: dbl, rate_single: sgl, weekend_rate_double: wd, weekend_rate_single: ws, weekend_days: [5, 6], active: true })),
+  ];
+  const calendar = [
+    ...m.calendar.map((c) =>
+      c.calendar === "pugdundee" && c.date_from === "2027-02-01" ? { ...c, date_to: "2027-03-10" } : c.calendar === "pugdundee" && c.date_from === "2027-03-10" ? { ...c, date_from: "2027-03-11" } : c
+    ),
+    ...INDIAN_CALENDAR_4NOV.map(([season, date_from, date_to]) => ({ calendar: "pugdundee", nationality: "indian", season, date_from, date_to, active: true })),
+  ];
+  const safaris = m.safariRates.map((x) => (x.book_min_days === 4 && x.book_max_days === 59 ? { ...x, book_min_days: 1 } : x));
+  const transfers = m.transferRates.map((t) => (TRANSFERS_4NOV[String(t.id)] ? { ...t, rate: TRANSFERS_4NOV[String(t.id)] } : t));
+  return { tariff, calendar, safaris, transfers };
+}
+
+// The export of 2 Nov 2026 does not carry Ken River's long-weekend rows the way the audit reads
+// them (the live audit shows those rows OK): every other row is checked.
+const CHECKED = (r: { item: string }) => !/^Ken River Lodge: /.test(r.item);
+// the export names the calendars as the screen shows them
+const CAL: Record<string, string> = { "Pugdundee lodges": "pugdundee", "Ken River Lodge (long weekends)": "krl" };
 
 const data = (sql: boolean): AuData => {
   const m = R as unknown as Record<string, Row[]>;
@@ -43,24 +77,26 @@ const data = (sql: boolean): AuData => {
   const tiered = m.addons.map((x) =>
     x.name === "Boat safari, 2 hours" && x.property_id === "H_denwa_backwater_escape" ? { ...x, tiers: [{ max_guests: 2, rate: 14000 }, { max_guests: 4, rate: 16000 }, { max_guests: 6, rate: 19000 }] } : x
   );
-  const { addons, safaris } = sql ? afterSql(tiered, m.safariRates) : { addons: tiered, safaris: m.safariRates };
+  const m0 = { ...m, calendar: m.calendar.map((c) => ({ ...c, calendar: CAL[String(c.calendar)] ?? c.calendar, active: true })), tariff: m.tariff.map((t) => ({ ...t, active: true })) };
+  const { addons, safaris: s1 } = sql ? afterSql(tiered, m.safariRates) : { addons: tiered, safaris: m.safariRates };
+  const later = sql ? afterSql4Nov({ ...m0, safariRates: s1 }) : { tariff: m0.tariff, calendar: m0.calendar, safaris: s1, transfers: m.transferRates };
   return {
     properties: m.properties as never,
     locations: m.locations as never,
     rooms: m.rooms as never,
     roomRates: m.roomRates as never,
-    transfers: m.transferRates as never,
+    transfers: later.transfers as never,
     addons: addons as unknown as AuAddon[],
     parks: m.parks as never,
-    safaris: safaris as never,
-    tariff: m.tariff as never,
+    safaris: later.safaris as never,
+    tariff: later.tariff as never,
     // the export keeps a category's name in its id (C_tree_house = Tree House)
-    categories: m.categories.map((c) => ({ ...c, name: String(c.id).replace(/^C_/, "").replace(/_/g, " ").replace(/\b\w/g, (x) => x.toUpperCase()) })) as never,
-    calendar: m.calendar as never,
+    categories: m.categories.map((c) => ({ ...c, calendar: CAL[String(c.calendar)] ?? c.calendar, name: String(c.id).replace(/^C_/, "").replace(/_/g, " ").replace(/\b\w/g, (x) => x.toUpperCase()) })) as never,
+    calendar: later.calendar as never,
   };
 };
 
-test("real Master data: every Rate audit row is OK once the SQL of 3 Nov 2026 is run", () => {
+test("real Master data: every Rate audit row is OK once the SQL of 3 and 4 Nov 2026 is run", () => {
   const bad = auditRates(data(true)).filter((r) => CHECKED(r) && r.status !== "ok");
   assert.deepEqual(bad.map((r) => `${r.item}: ${r.status} (${r.expected} / ${r.found})`), []);
 });
@@ -75,6 +111,17 @@ test("real Master data before the SQL: only the rows the SQL corrects are flagge
     "Tadoba core, indian, booked 60-120 days ahead, evening",
     "Tadoba core, indian, booked 60-120 days ahead, morning",
     "General: Picnic lunch at Kanha Earth Lodge",
+    // 4 Nov 2026 (management's rates sheet): the Indian seasons and calendar, the 10 / 11 Mar
+    // change, Tadoba 1-59 days, Kanha - Pench Dzire 7,500, Waghoba - Nagpur 7,000 / 8,000
+    ...["Cottage", "Deluxe Room", "Forest Suite", "Tree House"].flatMap((c) => ["shoulder", "high", "peak"].map((x) => `${c}, Indian, ${x}`)),
+    ...INDIAN_CALENDAR_4NOV.map(([, f, t]) => `Season calendar (Indian guests): ${f} to ${t}`),
+    "Season calendar: 2027-02-01 to 2027-03-10",
+    "Season calendar: 2027-03-11 to 2027-04-30",
+    ...["foreign", "indian"].flatMap((n) => ["morning", "evening"].map((x) => `Tadoba core, ${n}, booked 1-59 days ahead, ${x}`)),
+    "Kanha Earth Lodge - Pench Tree Lodge, Dzire / Etios",
+    "Pench Tree Lodge - Kanha Earth Lodge, Dzire / Etios",
+    "Waghoba Eco Lodge - Nagpur Airport, Dzire / Etios",
+    "Waghoba Eco Lodge - Nagpur Airport, Innova / Crysta",
   ].sort());
 });
 

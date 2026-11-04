@@ -5,7 +5,7 @@
 //   - Selling-rate card 2025-26 (photo): 33 road transfers, Innova / Crysta and
 //     Dzire / Etios, + 5% GST, one rate both ways; the roads "via" a place are add-ons
 //   - Tariff 26-27 foreign nationals (xlsx): Cottage / Tree House / Forest Suite / Deluxe
-//     Room by Shoulder / High / Peak, AP + 18% GST; Indian guests pay the published tariff
+//     Room by Shoulder / High / Peak, AP + 18% GST; Indian guests by season too (management, 4 Nov 2026)
 //   - Safari and activity rates for lodges - foreigners (docx): MP parks and Tadoba
 //   - KRL B2B Inbound 2026-2027 (pdf): Ken River Lodge rooms and experiences, taxes included
 //   - Partner hotels (the owner's list): Roseate House, Agra, Jaipur, Iora, Mayfair, Radisson
@@ -69,7 +69,8 @@ export const CARD_TRANSFERS: CardTransfer[] = [
   { from: "Kanha", to: "Jabalpur", innova: 9000, dzire: 7500 },
   { from: "Kanha", to: "Jabalpur", innova: 10500, dzire: 9000, via: "Bedaghat" },
   { from: "Kanha", to: "Raipur Airport", innova: 10000, dzire: 8000 },
-  { from: "Kanha", to: "Pench", innova: 9000, dzire: 8000 },
+  // Dzire 7,500 (management's rates sheet, 4 Nov 2026; the card printed 8,000)
+  { from: "Kanha", to: "Pench", innova: 9000, dzire: 7500 },
   { from: "Kanha", to: "Bandhavgarh", innova: 11000, dzire: 9500 },
   { from: "Kanha", to: "Satpura", innova: 15500, dzire: 11500 },
   { from: "Bandhavgarh", to: "Jabalpur", innova: 9000, dzire: 7000 },
@@ -83,10 +84,11 @@ export const CARD_TRANSFERS: CardTransfer[] = [
   { from: "Pench", to: "Nagpur", innova: 9000, dzire: 7000 },
   { from: "Pench", to: "Satpura", innova: 11500, dzire: 9000 },
   { from: "Pench", to: "Jabalpur", innova: 9500, dzire: 7500 },
-  { from: "Pench", to: "Kanha", innova: 9000, dzire: 8000 },
+  { from: "Pench", to: "Kanha", innova: 9000, dzire: 7500 },
   { from: "Pench", to: "Bandhavgarh", innova: 15500, dzire: 11500 },
   { from: "Pench", to: "Tadoba", innova: 11000, dzire: 9000 },
-  { from: "Tadoba", to: "Nagpur", innova: 7500, dzire: 6500 },
+  // 8,000 / 7,000 (management's rates sheet, 4 Nov 2026; the card printed 7,500 / 6,500)
+  { from: "Tadoba", to: "Nagpur", innova: 8000, dzire: 7000 },
   { from: "Tadoba", to: "Satpura", innova: 16500, dzire: 13000 },
   { from: "Tadoba", to: "Pench", innova: 11000, dzire: 9000 },
   { from: "Tadoba", to: "Chandrapur station", innova: 5000, dzire: 4000 },
@@ -155,7 +157,8 @@ export const CARD_ROOMS: CardRoom[] = [
 ];
 
 // The Pugdundee tariff 2026-27 (AP, + 18% GST), valid 1 Oct 2026 - 30 Sep 2027.
-// Foreign guests by season; Indian guests the published tariff all year.
+// Foreign and Indian guests by season (management's rates sheet, 4 Nov 2026: Indian rates with
+// weekend rates on Friday and Saturday nights, and their own season calendar).
 export const TARIFF_FROM = "2026-10-01";
 export const TARIFF_TO = "2027-09-30";
 export interface CardTariff {
@@ -164,31 +167,50 @@ export interface CardTariff {
   season: "shoulder" | "high" | "peak" | "all";
   single: number;
   double: number;
+  weekend?: [number, number]; // single, double on weekend nights (Indian guests)
 }
-const tariff = (category: string, rows: [number, number][], published: [number, number]): CardTariff[] => [
+type Row4 = [number, number, number, number]; // single, double, weekend single, weekend double
+const tariff = (category: string, rows: [number, number][], indian: [Row4, Row4, Row4]): CardTariff[] => [
   ...(["shoulder", "high", "peak"] as const).map((season, i) => ({ category, nationality: "foreign" as const, season, single: rows[i][0], double: rows[i][1] })),
-  { category, nationality: "indian", season: "all", single: published[0], double: published[1] },
+  ...(["shoulder", "high", "peak"] as const).map((season, i) => ({ category, nationality: "indian" as const, season, single: indian[i][0], double: indian[i][1], weekend: [indian[i][2], indian[i][3]] as [number, number] })),
 ];
+// Indian: [shoulder, high, peak], each [single, double, weekend single, weekend double]
 export const CARD_TARIFF: CardTariff[] = [
-  ...tariff("Cottage", [[15000, 18000], [18500, 22000], [20000, 23000]], [27000, 30000]),
-  ...tariff("Tree House", [[17250, 21000], [21000, 25500], [22000, 26500]], [30000, 33000]),
-  ...tariff("Forest Suite", [[19000, 23500], [22000, 26000], [23000, 27500]], [33000, 37000]),
-  ...tariff("Deluxe Room", [[13000, 16000], [14000, 18000], [16000, 20000]], [21000, 24000]),
+  ...tariff("Cottage", [[15000, 18000], [18500, 22000], [20000, 23000]], [[13000, 16000, 14000, 17000], [16500, 19500, 17500, 20500], [18500, 22000, 18500, 22000]]),
+  ...tariff("Tree House", [[17250, 21000], [21000, 25500], [22000, 26500]], [[15500, 18500, 16500, 20000], [19000, 22000, 20000, 23500], [21000, 25000, 21000, 25000]]),
+  ...tariff("Forest Suite", [[19000, 23500], [22000, 26000], [23000, 27500]], [[17000, 20500, 18000, 22000], [20000, 23500, 21000, 25000], [22000, 26000, 22000, 26000]]),
+  // Deluxe Room, Indian High 23,500 is above its Peak 18,000: as written by management (owner, 4 Nov 2026)
+  ...tariff("Deluxe Room", [[13000, 16000], [14000, 18000], [16000, 20000]], [[11000, 14000, 12000, 15000], [20000, 23500, 21000, 25000], [15000, 18000, 15000, 18000]]),
 ];
+// Weekend nights of the Indian rates: Friday and Saturday (owner, 4 Nov 2026; 0 = Sunday)
+export const TARIFF_WEEKEND_NIGHTS = [5, 6];
 
 // The season calendar on the tariff, for 2026-27 (long weekends are added as Peak in Master data).
-// "10 Mar" is both the last High day and the first Peak day; Peak wins over a season on the
-// same date, so Master data is right with either row.
+// Foreign guests (and every guest where no Indian calendar is set). High to 10 Mar, Peak from
+// 11 Mar (management's rates sheet, 4 Nov 2026).
 export const CARD_CALENDAR: { season: "shoulder" | "high" | "peak"; from: string; to: string }[] = [
   { season: "shoulder", from: "2026-10-01", to: "2026-10-31" },
   { season: "high", from: "2026-11-01", to: "2026-11-30" },
   { season: "shoulder", from: "2026-12-01", to: "2026-12-20" },
   { season: "peak", from: "2026-12-21", to: "2027-01-04" },
   { season: "shoulder", from: "2027-01-05", to: "2027-01-31" },
-  // the sheet has 10 Mar in both; Peak wins (Peak from 10 Mar)
-  { season: "high", from: "2027-02-01", to: "2027-03-09" },
-  { season: "peak", from: "2027-03-10", to: "2027-04-30" },
+  { season: "high", from: "2027-02-01", to: "2027-03-10" },
+  { season: "peak", from: "2027-03-11", to: "2027-04-30" },
   { season: "high", from: "2027-05-01", to: "2027-05-15" },
+  { season: "shoulder", from: "2027-05-16", to: "2027-06-30" },
+];
+// Indian guests' own calendar (management, 4 Nov 2026): High from 1 Feb to 15 May, with only
+// Holi (19 - 22 Mar) as Peak in it. The long weekends (Dussehra, Diwali, Christmas) as for foreigners.
+export const CARD_CALENDAR_INDIAN: { season: "shoulder" | "high" | "peak"; from: string; to: string }[] = [
+  { season: "shoulder", from: "2026-10-01", to: "2026-10-31" },
+  { season: "peak", from: "2026-10-17", to: "2026-10-20" },
+  { season: "high", from: "2026-11-01", to: "2026-11-30" },
+  { season: "peak", from: "2026-11-06", to: "2026-11-14" },
+  { season: "shoulder", from: "2026-12-01", to: "2026-12-20" },
+  { season: "peak", from: "2026-12-21", to: "2027-01-04" },
+  { season: "shoulder", from: "2027-01-05", to: "2027-01-31" },
+  { season: "high", from: "2027-02-01", to: "2027-05-15" },
+  { season: "peak", from: "2027-03-19", to: "2027-03-22" },
   { season: "shoulder", from: "2027-05-16", to: "2027-06-30" },
 ];
 
@@ -238,7 +260,7 @@ export const CARD_SAFARIS: CardSafari[] = [
   ...mp(FOREIGN, "foreign", "Kanha", 17500, 18500, 15000, 2500),
   ...mp(FOREIGN, "foreign", "Bandhavgarh", 17500, 18500, 15000, 2500),
   ...mp(FOREIGN, "foreign", "Pench", 17500, 18500, 15000, 2500),
-  { source: FOREIGN, park: "Tadoba", zone: "core", nationality: "foreign", on: "2026-12-15", weekday: 11500, weekend: 12500, naturalist: 2500, tax_pct: 5, book: [4, 59] },
+  { source: FOREIGN, park: "Tadoba", zone: "core", nationality: "foreign", on: "2026-12-15", weekday: 11500, weekend: 12500, naturalist: 2500, tax_pct: 5, book: [1, 59] },
   { source: FOREIGN, park: "Tadoba", zone: "core", nationality: "foreign", on: "2026-12-15", weekday: 14500, weekend: 19000, naturalist: 2500, tax_pct: 5, book: [60, 120] },
   { source: FOREIGN, park: "Tadoba", zone: "buffer", nationality: "foreign", on: "2026-12-15", weekday: 13500, weekend: 14500, naturalist: 2500, tax_pct: 5 },
   // Indian guests (per jeep, + 5% GST; the owner's earlier rate document, 31 Oct 2026)
@@ -246,7 +268,7 @@ export const CARD_SAFARIS: CardSafari[] = [
   ...mp(INDIAN, "indian", "Kanha", 14500, 15000, 13500),
   ...mp(INDIAN, "indian", "Bandhavgarh", 14500, 15000, 13500),
   ...mp(INDIAN, "indian", "Satpura", 13500, 14000, 12500),
-  { source: INDIAN, park: "Tadoba", zone: "core", nationality: "indian", on: "2026-12-15", weekday: 11000, weekend: 12000, tax_pct: 5, book: [4, 59] },
+  { source: INDIAN, park: "Tadoba", zone: "core", nationality: "indian", on: "2026-12-15", weekday: 11000, weekend: 12000, tax_pct: 5, book: [1, 59] },
   { source: INDIAN, park: "Tadoba", zone: "core", nationality: "indian", on: "2026-12-15", weekday: 14000, weekend: 18500, tax_pct: 5, book: [60, 120] },
   { source: INDIAN, park: "Tadoba", zone: "buffer", nationality: "indian", on: "2026-12-15", weekday: 13000, weekend: 14000, tax_pct: 5 },
   // Ken River Lodge: entry, guide and naturalist included, taxes included, all guests

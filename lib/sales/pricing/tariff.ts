@@ -1,6 +1,8 @@
 // The Pugdundee tariff, turned into per-room rates the pricing engine reads.
 //   rate category (Cottage, Tree House...) x nationality x season, valid for a year
-//   + one season calendar (Shoulder / High / Peak date ranges; long weekends are Peak)
+//   + one season calendar (Shoulder / High / Peak date ranges; long weekends are Peak). A
+//     calendar can have its own dates for one nationality (Indian guests, 4 Nov 2026): those
+//     guests' rates follow them; everyone else (and a nationality with none) the rows for all.
 // Every room type pointing to a category gets that category's rates. A lodge-specific
 // room rate (Master data > Lodge exceptions) still wins over the tariff.
 
@@ -29,6 +31,7 @@ export interface TariffRow {
 }
 export interface CalendarRange {
   calendar: string;
+  nationality?: "all" | "indian" | "foreign"; // absent = all guests
   season: "shoulder" | "high" | "peak";
   date_from: ISODate;
   date_to: ISODate;
@@ -54,6 +57,14 @@ function childBands(t: TariffRow, dbl: number): ChildRate[] {
   ];
 }
 
+// The calendar's dates for these guests: their own (Indian guests) if the calendar has any, else
+// the rows for all guests.
+export function calendarFor(calendar: CalendarRange[], name: string, nationality: TariffRow["nationality"]): CalendarRange[] {
+  const of = calendar.filter((c) => c.calendar === name);
+  const own = nationality === "all" ? [] : of.filter((c) => c.nationality === nationality);
+  return own.length ? own : of.filter((c) => !c.nationality || c.nationality === "all");
+}
+
 export function compileTariff(
   tariff: TariffRow[],
   calendar: CalendarRange[],
@@ -70,8 +81,8 @@ export function compileTariff(
     const ranges =
       t.season === "all"
         ? [{ from: t.valid_from, to: t.valid_to }]
-        : calendar
-            .filter((c) => c.calendar === cat.calendar && c.season === t.season && c.date_to >= t.valid_from && c.date_from <= t.valid_to)
+        : calendarFor(calendar, cat.calendar, t.nationality)
+            .filter((c) => c.season === t.season && c.date_to >= t.valid_from && c.date_from <= t.valid_to)
             .map((c) => ({ from: later(c.date_from, t.valid_from), to: earlier(c.date_to, t.valid_to) }));
     for (const room of targets) {
       ranges.forEach((rg, k) =>

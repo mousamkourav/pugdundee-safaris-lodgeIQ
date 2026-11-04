@@ -7,12 +7,14 @@
 import {
   CARD_ADDONS,
   CARD_CALENDAR,
+  CARD_CALENDAR_INDIAN,
   CARD_KRL_ROOMS,
   CARD_LODGES,
   CARD_PLACES,
   CARD_ROOMS,
   CARD_SAFARIS,
   CARD_TARIFF,
+  TARIFF_WEEKEND_NIGHTS,
   CARD_TRANSFER_GST,
   CARD_TRANSFERS,
   CARD_VIA,
@@ -44,10 +46,10 @@ export interface AuSafari {
 }
 export interface AuTariff {
   rate_category_id: string; nationality: string; season: string; valid_from: string; valid_to: string;
-  rate_single: number | null; rate_double: number; weekend_rate_double?: number | null; meal_plan: string; tax_pct: number; rates_include_tax: boolean; active: boolean;
+  rate_single: number | null; rate_double: number; weekend_rate_double?: number | null; weekend_rate_single?: number | null; weekend_days?: number[]; meal_plan: string; tax_pct: number; rates_include_tax: boolean; active: boolean;
 }
 export interface AuCategory { id: string; name: string; calendar?: string }
-export interface AuCalendar { calendar: string; season: string; date_from: string; date_to: string; active: boolean }
+export interface AuCalendar { calendar: string; nationality?: string; season: string; date_from: string; date_to: string; active: boolean }
 export interface AuData {
   properties: AuProperty[];
   locations: AuLocation[];
@@ -197,9 +199,10 @@ function auditTariff(d: AuData): AuditRow[] {
   const rows: AuditRow[] = [];
   const tariff = d.tariff ?? [];
   for (const c of CARD_TARIFF) {
-    const who = c.nationality === "indian" ? "Indian (published)" : `foreign, ${c.season}`;
+    const who = c.nationality === "indian" && c.season === "all" ? "Indian (published)" : `${c.nationality === "indian" ? "Indian" : "foreign"}, ${c.season}`;
     const item = `${c.category}, ${who}`;
-    const expected = `${rs(c.double)} (single ${rs(c.single)}) + 18%`;
+    const wkText = (dbl: number | null | undefined, sgl: number | null | undefined) => `, weekend ${rs(dbl)} (single ${rs(sgl)})`;
+    const expected = `${rs(c.double)} (single ${rs(c.single)})${c.weekend ? wkText(c.weekend[1], c.weekend[0]) + " on Fri, Sat nights" : ""} + 18%`;
     const cat = (d.categories ?? []).find((x) => squash(x.name) === squash(c.category)) ?? (d.categories ?? []).find((x) => starts(x.name, c.category));
     if (!cat) {
       rows.push({ source, item, expected, found: "no tariff category", status: "not found" });
@@ -211,25 +214,32 @@ function auditTariff(d: AuData): AuditRow[] {
       continue;
     }
     const t = mine.find((x) => x.rate_double === c.double) ?? mine[0];
-    const found = `${rs(t.rate_double)} (single ${rs(t.rate_single)})${t.rates_include_tax ? " incl. GST" : ` + ${t.tax_pct}%`}, ${t.valid_from} to ${t.valid_to}`;
+    const days = [...(t.weekend_days ?? [])].sort().join(",");
+    const dayText = days ? ` on ${(t.weekend_days ?? []).map((x) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][x] ?? x).join(", ")} nights` : " (no weekend nights set)";
+    const found = `${rs(t.rate_double)} (single ${rs(t.rate_single)})${c.weekend ? wkText(t.weekend_rate_double, t.weekend_rate_single) + dayText : ""}${t.rates_include_tax ? " incl. GST" : ` + ${t.tax_pct}%`}, ${t.valid_from} to ${t.valid_to}`;
+    const weekendOk = !c.weekend || (t.weekend_rate_single === c.weekend[0] && t.weekend_rate_double === c.weekend[1] && (c.weekend[1] === c.double || days === [...TARIFF_WEEKEND_NIGHTS].sort().join(",")));
     let status: AuditStatus = "ok";
-    if (t.rate_double !== c.double || t.rate_single !== c.single) status = "different";
+    if (t.rate_double !== c.double || t.rate_single !== c.single || !weekendOk) status = "different";
     else if (t.valid_from > TARIFF_FROM || t.valid_to < TARIFF_TO) status = "dates";
     else if (t.rates_include_tax || t.tax_pct !== 18) status = "gst";
     else if (t.meal_plan !== "AP") status = "different";
     rows.push({ source, item, expected, found, status });
   }
-  // the season calendar: each range with its season (long weekends are extra Peak rows)
-  const cal = (d.calendar ?? []).filter((x) => x.active && (x.calendar || "pugdundee") === "pugdundee");
-  for (const r of CARD_CALENDAR) {
-    const item = `Season calendar: ${r.from} to ${r.to}`;
+  // the season calendars: each range with its season (long weekends are extra Peak rows);
+  // foreign guests use the rows for all guests, Indian guests their own
+  const calOf = (nat: "all" | "indian") => (d.calendar ?? []).filter((x) => x.active && (x.calendar || "pugdundee") === "pugdundee" && (x.nationality || "all") === nat);
+  for (const [nat, card] of [["all", CARD_CALENDAR], ["indian", CARD_CALENDAR_INDIAN]] as const) {
+  const cal = calOf(nat);
+  for (const r of card) {
+    const item = `Season calendar${nat === "indian" ? " (Indian guests)" : ""}: ${r.from} to ${r.to}`;
     const exact = cal.find((x) => x.date_from === r.from && x.date_to === r.to && x.season === r.season);
     if (exact) {
       rows.push({ source, item, expected: r.season, found: r.season, status: "ok" });
       continue;
     }
-    const overlap = cal.filter((x) => x.date_from <= r.to && x.date_to >= r.from && x.season !== "peak");
+    const overlap = cal.filter((x) => x.date_from <= r.to && x.date_to >= r.from && (x.season !== "peak" || r.season === "peak"));
     rows.push({ source, item, expected: r.season, found: overlap.length ? overlap.map((x) => `${x.season} ${x.date_from} to ${x.date_to}`).join(", ") : "-", status: overlap.length ? "dates" : "missing" });
+  }
   }
   return rows;
 }

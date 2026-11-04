@@ -122,7 +122,7 @@ export async function loadPricingData(client?: SupabaseClient): Promise<{ data: 
             rates_include_tax: r.rates_include_tax === true,
           })
         ),
-        calendar.error ? [] : rows(calendar).map((r): CalendarRange => ({ calendar: str(r.calendar) || "pugdundee", season: str(r.season) as CalendarRange["season"], date_from: date(r.date_from)!, date_to: date(r.date_to)! })),
+        calendar.error ? [] : rows(calendar).map((r): CalendarRange => ({ calendar: str(r.calendar) || "pugdundee", nationality: (["indian", "foreign"].includes(str(r.nationality)) ? str(r.nationality) : "all") as CalendarRange["nationality"], season: str(r.season) as CalendarRange["season"], date_from: date(r.date_from)!, date_to: date(r.date_to)! })),
         categories.error ? [] : rows(categories).map((r): RateCategory => ({ id: str(r.id), calendar: str(r.calendar) || "pugdundee" })),
         rows(rooms).map((r) => ({ id: str(r.id), rate_category_id: strOrNull(r.rate_category_id) }))
       ),

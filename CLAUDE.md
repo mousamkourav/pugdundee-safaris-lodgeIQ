@@ -12,8 +12,8 @@ One app, three modules:
   Lodge, Denwa Backwater Escape, Ken River Lodge, Waghoba Eco Lodge (more later).
 - **Sales & Itinerary**: enquiry -> itinerary builder (chat assistant) -> pricing ->
   guest itinerary page + PDF -> status (draft, open, quoted, booked, lost, cancelled).
-- **SOP**: the standard operating procedures (read, search, PDF; edited in place by the
-  super admin, live at once; staff confirm "I have read"). See "SOP module" below.
+- **SOP**: the standard operating procedures (read, search, PDF; edited and published by the
+  super admin; staff confirm "I have read"). See "SOP module" below.
 
 Live at https://pugdundeesafaris.org (Vercel; the vercel.app address redirects there).
 The owner is not a developer: explain in plain words, give PowerShell commands one per
@@ -71,8 +71,11 @@ Middleware (`middleware.ts`) only routes; it is not the security boundary.
   with validity), `sales_rate_categories`, `sales_tariff_calendar` (Peak incl. long weekends
   wins over the season). Each `sales_room_categories` row points to a category.
   `sales_room_rates` = lodge exceptions and partner/city hotel rates (priority 10).
-- Indian guests: published flat rates; foreign guests: seasonal rates; Ken River: B2B,
-  taxes included.
+- Indian and foreign guests: seasonal rates (Shoulder / High / Peak). Indian rates (management,
+  4 Nov 2026) have weekend rates on Friday and Saturday nights (`sales_tariff.weekend_days` {5,6})
+  and their own season dates: `sales_tariff_calendar.nationality` = 'indian' rows; a nationality
+  with no rows of its own uses the 'all' rows (`calendarFor` in tariff.ts). Ken River: B2B,
+  taxes included. The guest page and PDF show the number of rooms (`plan.guest.rooms`).
 - `sales_safari_rates` (park, zone, session, nationality, Tadoba booking window; weekend
   rates also on the festive dates in settings), `sales_transfer_rates` (one row per road,
   both directions, vehicle types, drive hours), `sales_addons`, `sales_offers` (incl.
@@ -224,37 +227,11 @@ private bucket `sop-media`, SQL `supabase/sop_module.sql`. Editor: TipTap 3.32.0
   given access by person or by role (`sop_access`); either is enough. Checked in `lib/sop/server.ts`
   (`requireSopViewer` / `requireSopEditor` on pages, `sopActor` / `sopEditor` in actions and routes)
   and again in the database (RLS + `sop_*` functions). One call per page, `sop_my_status()`, gives
-  the tab and the "please read" banner; if it fails (SQL not run) nothing shows.
+  the tab and the "New SOP version - please read" banner; if it fails (SQL not run) nothing shows.
   `middleware.ts` lets sales-only and task-creator accounts open `/sop` (the pages check access).
-- A simple CMS (owner, 4 Nov 2026). Two pages: `/sop` for everyone with access (contents,
-  sections, search, PDF); the super admin also gets Edit (in place, `?edit=1`, `_ui/edit-mode.tsx`),
-  Import SOP (`?import=1`) and Export SOP (PDF) there. `/sop/access` "Access & reading" (super admin):
-  who can view, who has read (Excel), version history with restore and the audit log (folded).
-  Old addresses (/sop/edit, import, versions, reads, audit) only redirect.
-- Every change goes LIVE at once: save, add, move, delete, import, restore change `sop_sections`
-  (the working copy) and then `sop_publish` makes the next version (`goLive` in admin-actions;
-  staff read only `sop_versions` + frozen `sop_version_sections`). "Ask staff to read this
-  update" (tick on Save / import) sets `sop_versions.ask_read`; the banner and Who has read follow
-  the latest version with `ask_read` (`sop_ask_read` asks for the current one). An imported SOP
-  never published becomes version 1 the first time anyone with access opens it
-  (`sop_publish_first`, once). The internal `sop__publish` cannot be called by any user.
-- Import and restore are ONE database step each (`sop_import`, `sop_restore`: sections replaced
-  AND live, or nothing changes). The import's sections go browser -> bucket (signed upload), so
-  the server action body is tiny; the database call for the owner's 62 sections is about 500 KB.
-- SQL version: `sop_my_status` returns `sql_version` (2); `SOP_SQL_VERSION` in `lib/sop/access.ts`
-  must match. When the database is older, the super admin sees a notice and every change is
-  refused before anything is touched ("run sop_module.sql again"). Raise both when the SQL changes.
-  Errors are explained in plain words (`lib/sop/errors.ts`, `explainDbError`), never a bare
-  "Could not save" (owner, 4 Nov 2026: the live import failed because the SQL was not re-run).
-- Server actions take PLAIN data only: TipTap's `editor.getJSON()` holds ProseMirror attrs objects
-  with no prototype, which a server action receives as opaque "temporary client references"
-  (reading `attrs.start` threw "Cannot access start on the server..."; owner, 4 Nov 2026). Always
-  send `toPlainJson(editor.getJSON())` (`lib/sop/plain.ts`); `plain.test.ts` runs the real React
-  encode/decode round trip. `lib/client-boundary.test.ts` fails if server code (lib, "use server",
-  pages, layouts, routes) reads a value from a "use client" module (only components may cross).
-- `lib/sop/sql.test.ts` runs `supabase/sop_module.sql` in PGlite (dev dependency, pinned 0.3.14)
-  under RLS: auto-publish, save goes live, banner only when asked, staff cannot edit, Access &
-  reading data super admin only.
+- Draft = `sop_sections` (autosaved by the editor); staff read only published versions
+  (`sop_versions` + frozen `sop_version_sections`). Publish (`sop_publish`), import and restore
+  (`sop_replace_draft`), order, access: database functions that also write `sop_audit`.
 - Bodies are editor JSON, cleaned on the server (`sanitizeDoc`: known nodes, safe links, pictures
   only `/sop/media/images/...`), rendered as React (`_ui/content.tsx`), never as raw HTML. Pictures
   are served by `/sop/media/[...path]` after an access check (short-lived signed link).

@@ -98,7 +98,10 @@ const full: AuData = {
   tariff: [
     { rate_category_id: "CAT_C", nationality: "foreign", season: "shoulder", valid_from: "2026-10-01", valid_to: "2027-09-30", rate_single: 15000, rate_double: 18000, meal_plan: "AP", tax_pct: 18, rates_include_tax: false, active: true },
     { rate_category_id: "CAT_C", nationality: "foreign", season: "high", valid_from: "2026-10-01", valid_to: "2027-09-30", rate_single: 18500, rate_double: 21000, meal_plan: "AP", tax_pct: 18, rates_include_tax: false, active: true },
-    { rate_category_id: "CAT_C", nationality: "indian", season: "all", valid_from: "2026-10-01", valid_to: "2027-03-31", rate_single: 27000, rate_double: 30000, meal_plan: "AP", tax_pct: 18, rates_include_tax: false, active: true },
+    // Indian, by season (management, 4 Nov 2026): weekend rates on Friday and Saturday nights
+    { rate_category_id: "CAT_C", nationality: "indian", season: "shoulder", valid_from: "2026-10-01", valid_to: "2027-03-31", rate_single: 13000, rate_double: 16000, weekend_rate_single: 14000, weekend_rate_double: 17000, weekend_days: [5, 6], meal_plan: "AP", tax_pct: 18, rates_include_tax: false, active: true },
+    { rate_category_id: "CAT_C", nationality: "indian", season: "high", valid_from: "2026-10-01", valid_to: "2027-09-30", rate_single: 16500, rate_double: 19500, weekend_rate_single: 17500, weekend_rate_double: 20500, weekend_days: [0, 6], meal_plan: "AP", tax_pct: 18, rates_include_tax: false, active: true },
+    { rate_category_id: "CAT_C", nationality: "indian", season: "peak", valid_from: "2026-10-01", valid_to: "2027-09-30", rate_single: 18500, rate_double: 22000, weekend_rate_single: 18500, weekend_rate_double: 22000, meal_plan: "AP", tax_pct: 18, rates_include_tax: false, active: true },
     { rate_category_id: "CAT_HUT", nationality: "all", season: "all", valid_from: "2026-10-01", valid_to: "2027-09-30", rate_single: null, rate_double: 16000, weekend_rate_double: 16000, meal_plan: "AP", tax_pct: 0, rates_include_tax: true, active: true },
   ],
   calendar: [
@@ -107,7 +110,7 @@ const full: AuData = {
   ],
   parks: [{ id: "TAD", name: "Tadoba-Andhari Tiger Reserve" }, { id: "PAN", name: "Panna National Park" }],
   safaris: (["morning", "afternoon"] as const).flatMap((session) => [
-    { park_id: "TAD", zone: "core", session, vehicle_type: "exclusive_jeep", nationality: "foreign", valid_from: "2026-10-01", valid_to: "2027-09-30", weekday_rate: 11500, weekend_rate: 12500, naturalist_fee: 2500, tax_pct: 5, active: true, book_min_days: 4, book_max_days: 59 },
+    { park_id: "TAD", zone: "core", session, vehicle_type: "exclusive_jeep", nationality: "foreign", valid_from: "2026-10-01", valid_to: "2027-09-30", weekday_rate: 11500, weekend_rate: 12500, naturalist_fee: 2500, tax_pct: 5, active: true, book_min_days: 1, book_max_days: 59 },
     { park_id: "TAD", zone: "core", session, vehicle_type: "exclusive_jeep", nationality: "foreign", valid_from: "2026-10-01", valid_to: "2027-09-30", weekday_rate: 14500, weekend_rate: 14500, naturalist_fee: 2500, tax_pct: 5, active: true, book_min_days: 60, book_max_days: 120 },
     { park_id: "TAD", zone: "buffer", session, vehicle_type: "exclusive_jeep", nationality: "indian", valid_from: "2026-10-01", valid_to: "2027-09-30", weekday_rate: 13000, weekend_rate: 14000, naturalist_fee: 0, tax_pct: 5, active: true },
     { park_id: "PAN", zone: "core", session, vehicle_type: "exclusive_jeep", nationality: "all", valid_from: "2026-10-01", valid_to: "2027-09-30", weekday_rate: 15000, weekend_rate: 16000, naturalist_fee: 0, tax_pct: 5, active: true },
@@ -116,16 +119,22 @@ const full: AuData = {
 const all = auditRates(full);
 const find = (source: string, item: string) => all.find((r) => r.source === source && r.item === item);
 
-test("tariff: foreign seasons and the Indian published rate; amount, dates and missing rows", () => {
+test("tariff: foreign and Indian seasons; amount, weekend nights, dates and missing rows", () => {
   assert.equal(find("Tariff 2026-27", "Cottage, foreign, shoulder")?.status, "ok");
   assert.equal(find("Tariff 2026-27", "Cottage, foreign, high")?.status, "different"); // 21,000 saved, 22,000 on the tariff
   assert.equal(find("Tariff 2026-27", "Cottage, foreign, peak")?.status, "missing");
-  assert.equal(find("Tariff 2026-27", "Cottage, Indian (published)")?.status, "dates"); // ends 31 Mar, not 30 Sep 2027
+  assert.equal(find("Tariff 2026-27", "Cottage, Indian, shoulder")?.status, "dates"); // ends 31 Mar, not 30 Sep 2027
+  const high = find("Tariff 2026-27", "Cottage, Indian, high");
+  assert.equal(high?.status, "different"); // weekend on Sat, Sun nights, not Fri, Sat
+  assert.match(high!.found, /weekend Rs 20,500 \(single Rs 17,500\) on Sun, Sat nights/);
+  assert.equal(find("Tariff 2026-27", "Cottage, Indian, peak")?.status, "ok"); // same rate every night: no weekend nights needed
   assert.equal(find("Tariff 2026-27", "Tree House, foreign, shoulder")?.status, "missing"); // "Treehouse" is the same category
   assert.equal(find("Tariff 2026-27", "Forest Suite, foreign, shoulder")?.status, "not found");
 });
 
 test("season calendar: a range as on the tariff, a range with other dates, a missing one", () => {
+  // Indian guests have their own calendar: none in this data, so each of its ranges is missing
+  assert.equal(find("Tariff 2026-27", "Season calendar (Indian guests): 2027-02-01 to 2027-05-15")?.status, "missing");
   assert.equal(find("Tariff 2026-27", "Season calendar: 2026-10-01 to 2026-10-31")?.status, "ok");
   const nov = find("Tariff 2026-27", "Season calendar: 2026-11-01 to 2026-11-30");
   assert.equal(nov?.status, "dates");
@@ -134,12 +143,12 @@ test("season calendar: a range as on the tariff, a range with other dates, a mis
 });
 
 test("safaris: Tadoba by booking window, Panna taxes included, missing parks", () => {
-  assert.equal(find("Safaris and activities - foreigners", "Tadoba core, foreign, booked 4-59 days ahead, morning")?.status, "ok");
+  assert.equal(find("Safaris and activities - foreigners", "Tadoba core, foreign, booked 1-59 days ahead, morning")?.status, "ok");
   assert.equal(find("Safaris and activities - foreigners", "Tadoba core, foreign, booked 60-120 days ahead, evening")?.status, "different"); // weekend 14,500 vs 19,000
   assert.equal(find("Safaris and activities - foreigners", "Tadoba buffer, foreign, morning")?.status, "missing");
   // Indian guests: no naturalist fee on that document, so it is not checked
   assert.equal(find("Safari rates - Indian guests", "Tadoba buffer, indian, evening")?.status, "ok");
-  assert.equal(find("Safari rates - Indian guests", "Tadoba core, indian, booked 4-59 days ahead, morning")?.status, "missing");
+  assert.equal(find("Safari rates - Indian guests", "Tadoba core, indian, booked 1-59 days ahead, morning")?.status, "missing");
   assert.equal(find("Ken River Lodge B2B", "Panna core, morning")?.status, "gst"); // 5% added, the B2B rate includes taxes
   assert.equal(find("Safaris and activities - foreigners", "Kanha core, foreign")?.status, "not found");
   // the MP rates are checked for the whole 2026-27 season (a December date)
