@@ -44,8 +44,8 @@ test("status from the database: read defensively; an error or odd answer = no ac
   assert.deepEqual(readStatus(null), NO_SOP);
   assert.deepEqual(readStatus("yes"), NO_SOP);
   assert.deepEqual(readStatus({ can_view: "true" }).canView, false);
-  const s = readStatus({ can_view: true, is_editor: false, document_id: "d", version: 3, version_id: "v3", read: false });
-  assert.deepEqual(s, { canView: true, isEditor: false, documentId: "d", version: 3, versionId: "v3", read: false });
+  const s = readStatus({ can_view: true, is_editor: false, document_id: "d", version: 5, version_id: "v5", read_version: 3, read_version_id: "v3", read: false });
+  assert.deepEqual(s, { canView: true, isEditor: false, documentId: "d", version: 5, versionId: "v5", readVersion: 3, readVersionId: "v3", read: false });
 });
 
 // ---------------------------------------------------------------- the tab
@@ -72,21 +72,24 @@ test("the SOP pages are their own module; Sales and Lodge pages are unchanged", 
   assert.equal(moduleForPath("/dashboard", "sales_member"), "sales");
   assert.equal(moduleForPath("/sopx", "lodge_manager"), "reporting");
   assert.equal(moduleForPath("/dashboard", "lodge_manager"), "reporting");
-  const admin = NAV.filter((g) => g.module === "sop").flatMap((g) => g.items).filter((i) => i.href !== "/sop");
-  assert.ok(admin.length >= 6);
-  for (const i of admin) assert.deepEqual(i.roles, ["super_admin"], i.href);
+  // the sidebar: only "SOP" (everyone with access) and "Access & reading" (super admin)
+  const items = NAV.filter((g) => g.module === "sop").flatMap((g) => g.items);
+  assert.deepEqual(items.map((i) => [i.label, i.href, i.roles ?? null]), [
+    ["SOP", "/sop", null],
+    ["Access & reading", "/sop/access", ["super_admin"]],
+  ]);
 });
 
 // ---------------------------------------------------------------- "I have read"
 
-test("banner 'New SOP version - please read': staff with access, until they have read it; never the super admin", () => {
-  const s = { canView: true, isEditor: false, documentId: "d", version: 2, versionId: "v2", read: false };
+test("banner 'please read': only for an update the super admin asked staff to read, until read; never the super admin", () => {
+  const s = { canView: true, isEditor: false, documentId: "d", version: 7, versionId: "v7", readVersion: 4, readVersionId: "v4", read: false };
   assert.equal(showReadBanner(s), true);
   assert.equal(showReadBanner({ ...s, read: true }), false, "read: gone");
-  assert.equal(showReadBanner({ ...s, version: 3, versionId: "v3", read: false }), true, "a new version: asked again");
-  assert.equal(showReadBanner({ ...s, version: null, versionId: null }), false, "nothing published");
+  assert.equal(showReadBanner({ ...s, readVersion: null, readVersionId: null }), false, "saves without the tick: no banner");
+  assert.equal(showReadBanner({ ...s, readVersion: 8, readVersionId: "v8", read: false }), true, "a new update to read: asked again");
   assert.equal(showReadBanner({ ...s, canView: false }), false, "no access");
-  assert.equal(showReadBanner({ ...s, isEditor: true }), false, "the super admin publishes it");
+  assert.equal(showReadBanner({ ...s, isEditor: true }), false, "the super admin is not asked");
 });
 
 test("who has read: everyone with access (by person or role), active, not the super admin; not read first; role and lodge", () => {
@@ -122,15 +125,45 @@ function files(dir: string): string[] {
 }
 const rel = (f: string) => f.slice(SOP_DIR.length + 1).replace(/\\/g, "/");
 
-test("every SOP page checks access on the server: reading = requireSopViewer, admin pages = requireSopEditor", () => {
+test("two SOP pages: /sop for everyone with access, /sop/access for the super admin only; old addresses only redirect", () => {
   const pages = files(SOP_DIR).filter((f) => /[\\/]page\.tsx$/.test(f));
-  assert.ok(pages.length >= 8, `found ${pages.length}`);
-  for (const f of pages) {
-    const src = readFileSync(f, "utf8");
-    const r = rel(f);
-    if (r === "page.tsx") assert.match(src, /await requireSopViewer\(\)/, r);
-    else assert.match(src, /await requireSopEditor\(\)/, `${r}: an admin page`);
-  }
+  const real = pages.filter((f) => !/^import \{ redirect \} from "next\/navigation";[\s\S]*export default function Page\(\) \{\s*redirect\("[^"]+"\);\s*\}\s*$/.test(readFileSync(f, "utf8")));
+  assert.deepEqual(real.map(rel).sort(), ["access/page.tsx", "page.tsx"]);
+  assert.match(readFileSync(join(SOP_DIR, "page.tsx"), "utf8"), /await requireSopViewer\(\)/);
+  assert.match(readFileSync(join(SOP_DIR, "access", "page.tsx"), "utf8"), /await requireSopEditor\(\)/, "Access & reading: super admin only");
+  const redirects = Object.fromEntries(pages.filter((f) => !real.includes(f)).map((f) => [rel(f), /redirect\("([^"]+)"\)/.exec(readFileSync(f, "utf8"))![1]]));
+  assert.deepEqual(redirects, {
+    "audit/page.tsx": "/sop/access#audit",
+    "edit/page.tsx": "/sop?edit=1",
+    "import/page.tsx": "/sop?import=1",
+    "reads/page.tsx": "/sop/access#reading",
+    "versions/[n]/page.tsx": "/sop/access#versions",
+    "versions/page.tsx": "/sop/access#versions",
+  });
+});
+
+test("staff cannot edit: the edit and import views of /sop are for the super admin only (database answer, not the address)", () => {
+  const page = readFileSync(join(SOP_DIR, "page.tsx"), "utf8");
+  assert.match(page, /const isEditor = status\.isEditor;/);
+  assert.match(page, /const mode = isEditor && sp\.import \? "import" : isEditor && sp\.edit \? "edit" : "read";/);
+  assert.match(page, /if \(mode === "import" \|\| \(isEditor && !version\)\)/);
+  // the Edit and Import buttons only for the super admin; staff see Download PDF
+  assert.match(page, /\{isEditor && \(\s*<>\s*<Link href=\{`\/sop\?edit=1/);
+  assert.match(page, /\{isEditor \? "Export SOP \(PDF\)" : "Download PDF"\}/);
+});
+
+test("a save goes live: every change in admin-actions ends in goLive (sop_publish), with the read tick passed on", () => {
+  const src = readFileSync(join(SOP_DIR, "admin-actions.ts"), "utf8");
+  assert.match(src, /async function goLive\(documentId: string, note: string, ask: boolean\)[\s\S]*?rpc\("sop_publish", \{ p_doc: documentId, p_note: note\.slice\(0, 500\), p_ask_read: ask \}\)/);
+  const fnBody = (name: string) => {
+    const at = src.indexOf(`export async function ${name}(`);
+    const end = src.indexOf("\nexport ", at + 10);
+    return src.slice(at, end > 0 ? end : undefined);
+  };
+  assert.match(fnBody("saveSection"), /return goLive\(g\.documentId, `Edited: \$\{title\}`, !!input\.ask\);/);
+  assert.match(fnBody("commitImport"), /goLive\(g\.documentId, `Imported from Word[^\n]*, !!input\.ask\);/);
+  for (const fn of ["addSection", "moveSection", "deleteSection", "restoreVersion"]) assert.match(fnBody(fn), /goLive\(g\.documentId, `[^`]+`, false\)/, `${fn}: live, no banner`);
+  assert.ok(!/publishSop|Save as draft/.test(src), "no separate publish step");
 });
 
 test("every SOP server action and route checks the caller first; admin ones need the super admin", () => {
@@ -156,7 +189,7 @@ test("every SOP server action and route checks the caller first; admin ones need
     const src = readFileSync(f, "utf8");
     const r = rel(f);
     assert.match(src, /await getCurrentUser\(\)/, r);
-    if (r.startsWith("reads/")) assert.match(src, /await sopEditor\(\)/, `${r}: super admin only`);
+    if (r.startsWith("access/")) assert.match(src, /await sopEditor\(\)/, `${r}: super admin only`);
     else assert.match(src, /await sopActor\(\)/, r);
   }
 });
@@ -182,7 +215,7 @@ test("SQL: one idempotent block, RLS on every SOP table, every change checked fo
   assert.ok(!/create policy (?!sop_)/.test(sql));
   for (const m of sql.matchAll(/create policy (\w+)/g)) assert.match(sql, new RegExp(`drop policy if exists ${m[1]} `), `${m[1]}: idempotent`);
   // changing functions refuse anyone but the super admin
-  for (const fn of ["sop_replace_draft", "sop_publish", "sop_set_order", "sop_grant", "sop_revoke"]) {
+  for (const fn of ["sop_replace_draft", "sop_publish", "sop_ask_read", "sop_set_order", "sop_grant", "sop_revoke"]) {
     const body = sql.slice(sql.indexOf(`function public.${fn}(`));
     assert.match(body.slice(0, 400), /if not public\.sop_is_editor\(\) then raise exception/, fn);
   }
@@ -200,7 +233,7 @@ test("SQL: one idempotent block, RLS on every SOP table, every change checked fo
 
 // Owner, 4 Nov 2026: the Word file (122 MB) is not stored; staff download the PDF.
 test("the original Word file is never uploaded; its download shows only when one is stored", () => {
-  const importer = readFileSync(join(SOP_DIR, "import", "importer.tsx"), "utf8");
+  const importer = readFileSync(join(SOP_DIR, "_ui", "importer.tsx"), "utf8");
   const actions = readFileSync(join(SOP_DIR, "admin-actions.ts"), "utf8");
   assert.ok(!/original\//.test(actions) && !/original_path/.test(actions), "no upload link or record for the Word file");
   assert.ok(!/uploadToSignedUrl\([^)]*parsed\.file/.test(importer), "the browser does not upload the Word file");

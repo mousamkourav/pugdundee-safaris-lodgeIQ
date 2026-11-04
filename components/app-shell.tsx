@@ -264,7 +264,7 @@ export function AppShell({
           {sopUnread != null && currentModule !== "sop" && (
             <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-gold-200 bg-gold-50 px-4 py-3 text-sm text-gold-800 print:hidden">
               <Icon name="fileText" className="h-5 w-5 shrink-0" />
-              <span className="font-semibold">New SOP version {sopUnread} - please read.</span>
+              <span className="font-semibold">The SOP has been updated - please read it.</span>
               <Link href="/sop" className="ml-auto font-semibold text-olive-700 underline underline-offset-2 hover:text-olive-800">
                 Open the SOP
               </Link>

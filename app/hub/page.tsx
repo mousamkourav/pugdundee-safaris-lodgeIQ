@@ -56,7 +56,7 @@ export default async function HubPage() {
             body: "Standard operating procedures for every lodge: read, search, download.",
             icon: "fileText",
             band: "bg-gold-700",
-            stat: sop.version ? `Version ${sop.version}` : "Not published yet",
+            stat: sop.version ? `Version ${sop.version}` : "",
           },
         ]
       : []),

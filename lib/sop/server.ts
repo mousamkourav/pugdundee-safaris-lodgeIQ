@@ -64,14 +64,37 @@ export interface VersionRow {
   note: string;
   published_at: string;
   published_by: string | null;
+  ask_read: boolean;
 }
 
 export async function loadVersion(documentId: string, number?: number): Promise<VersionRow | null> {
   const supabase = await createClient();
-  let q = supabase.from("sop_versions").select("id, number, note, published_at, published_by").eq("document_id", documentId);
+  let q = supabase.from("sop_versions").select("id, number, note, published_at, published_by, ask_read").eq("document_id", documentId);
   q = number != null ? q.eq("number", number) : q.order("number", { ascending: false }).limit(1);
   const { data } = await q.maybeSingle();
   return (data as VersionRow | null) ?? null;
+}
+
+// The live version; an imported SOP that was never published becomes version 1 the first time
+// anyone who may read it opens the SOP (once; the database does nothing when a version exists).
+export async function loadLiveVersion(documentId: string): Promise<VersionRow | null> {
+  const live = await loadVersion(documentId);
+  if (live) return live;
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.rpc("sop_publish_first", { p_doc: documentId });
+    if (error) return null;
+  } catch {
+    return null;
+  }
+  return loadVersion(documentId);
+}
+
+// The sections the super admin edits (id and title, in order).
+export async function loadWorkingList(documentId: string): Promise<{ id: string; title: string }[]> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("sop_sections").select("id, title").eq("document_id", documentId).order("position");
+  return (data ?? []) as { id: string; title: string }[];
 }
 
 // The contents list of a version (no bodies).

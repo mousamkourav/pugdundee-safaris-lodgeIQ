@@ -15,7 +15,7 @@ export default async function DashboardLayout({
   const sop = await sopStatus();
 
   return (
-    <AppShell role={role} name={name} sopAccess={sop.canView} sopUnread={showReadBanner(sop) ? sop.version : null}>
+    <AppShell role={role} name={name} sopAccess={sop.canView} sopUnread={showReadBanner(sop) ? sop.readVersion : null}>
       {children}
     </AppShell>
   );

@@ -93,22 +93,14 @@ export const NAV: NavGroup[] = [
   },
 
   // ---------------- SOP ----------------
-  // Shown only to people with SOP access (the layout decides; see modulesFor).
+  // Shown only to people with SOP access (the layout decides; see modulesFor). The super admin
+  // edits, imports and exports on the SOP page itself.
   {
     title: "SOP",
     module: "sop",
-    items: [{ label: "Read the SOP", href: "/sop", icon: "fileText", exact: true }],
-  },
-  {
-    title: "SOP admin",
-    module: "sop",
     items: [
-      { label: "Edit draft", href: "/sop/edit", icon: "edit", roles: SOP_EDITOR },
-      { label: "Import from Word", href: "/sop/import", icon: "inbox", roles: SOP_EDITOR },
-      { label: "Versions", href: "/sop/versions", icon: "clock", roles: SOP_EDITOR },
-      { label: "Who has read", href: "/sop/reads", icon: "checkCircle", roles: SOP_EDITOR },
-      { label: "Access", href: "/sop/access", icon: "shield", roles: SOP_EDITOR },
-      { label: "Audit log", href: "/sop/audit", icon: "list", roles: SOP_EDITOR },
+      { label: "SOP", href: "/sop", icon: "fileText", exact: true },
+      { label: "Access & reading", href: "/sop/access", icon: "shield", roles: SOP_EDITOR },
     ],
   },
 ];

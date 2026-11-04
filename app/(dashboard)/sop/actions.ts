@@ -14,7 +14,7 @@ export async function acknowledgeSop(versionId: string): Promise<Result> {
   if (!cu?.user) return { error: "Please sign in again." };
   const a = await sopActor();
   if ("error" in a) return a;
-  if (!isUuid(versionId) || versionId !== a.status.versionId) return { error: "A newer version has been published. Please open the SOP again." };
+  if (!isUuid(versionId) || versionId !== a.status.readVersionId) return { error: "There is a newer update to read. Please open the SOP again." };
   try {
     const supabase = await createClient();
     const { error } = await supabase.from("sop_reads").upsert({ version_id: versionId, user_id: a.userId }, { onConflict: "version_id,user_id", ignoreDuplicates: true });

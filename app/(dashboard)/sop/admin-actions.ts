@@ -1,7 +1,10 @@
 "use server";
 
-// SOP changes: super admin only. Every action checks the caller first (sopEditor), and the
-// database checks again (RLS on sop_sections, and sop_* functions that refuse anyone else).
+// SOP changes: super admin only. Like a simple CMS, every change goes LIVE at once: the change is
+// made to the working copy (sop_sections) and published as the next version (sop_publish), with
+// a note saying what changed. "Ask staff to read this update" marks that version for the banner.
+// Every action checks the caller first (guard), and the database checks again (RLS and sop_*
+// functions that refuse anyone but the super admin).
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth";
@@ -11,6 +14,7 @@ import { sopEditor, loadVersion, loadVersionFull, SOP_BUCKET } from "@/lib/sop/s
 import { docHtml, docText, isUuid, sanitizeDoc, toDraftRows } from "@/lib/sop/content";
 
 type Fail = { error: string };
+type Live = { ok: true; version: number };
 
 async function run<T>(label: string, fn: () => Promise<T | Fail>): Promise<T | Fail> {
   try {
@@ -31,16 +35,22 @@ async function guard() {
 }
 
 const cleanTitle = (t: unknown) => String(t ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
-const dbError = (e: { message?: string } | null) => (e?.message?.match(/Only the super admin|Write what changed|The draft is empty|No sections|Choose a person/)?.[0] ? { error: e.message! } : { error: "Could not save. Please try again." });
+const KNOWN = /Only the super admin|Write what changed|The SOP is empty|No sections|Choose a person|Nothing is published/;
+const dbError = (e: { message?: string } | null): Fail => (e?.message && KNOWN.test(e.message) ? { error: e.message } : { error: "Could not save. Please try again." });
 
-function touched() {
-  revalidatePath("/sop", "layout");
+// The working copy goes live as the next version.
+async function goLive(documentId: string, note: string, ask: boolean): Promise<Live | Fail> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("sop_publish", { p_doc: documentId, p_note: note.slice(0, 500), p_ask_read: ask });
+  if (error) return dbError(error);
+  revalidatePath("/", "layout"); // the SOP page, and the banner on every page
+  return { ok: true, version: Number(data) };
 }
 
-async function order(documentId: string): Promise<string[]> {
+async function order(documentId: string): Promise<{ id: string; title: string }[]> {
   const supabase = await createClient();
-  const { data } = await supabase.from("sop_sections").select("id").eq("document_id", documentId).order("position");
-  return ((data ?? []) as { id: string }[]).map((r) => r.id);
+  const { data } = await supabase.from("sop_sections").select("id, title").eq("document_id", documentId).order("position");
+  return (data ?? []) as { id: string; title: string }[];
 }
 async function setOrder(documentId: string, ids: string[]) {
   const supabase = await createClient();
@@ -48,47 +58,44 @@ async function setOrder(documentId: string, ids: string[]) {
   return error;
 }
 
-// ---------------------------------------------------------------- sections of the draft
+// ---------------------------------------------------------------- sections (each change goes live)
 
-// Autosave of one section (the editor calls it a moment after typing stops).
-export async function saveSection(input: { id: string; title?: string; body?: unknown }): Promise<{ ok: true; savedAt: string } | Fail> {
+// Save one section (title and text) and make it live. ask = "Ask staff to read this update".
+export async function saveSection(input: { id: string; title: string; body: unknown; ask?: boolean }): Promise<Live | Fail> {
   const g = await guard();
   if ("error" in g) return g;
   if (!isUuid(input?.id)) return { error: "Unknown section." };
+  const title = cleanTitle(input.title);
+  if (!title) return { error: "A section needs a title." };
+  let body;
+  try {
+    body = sanitizeDoc(input.body);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "This section could not be saved." };
+  }
   return run("saveSection", async () => {
-    const patch: Record<string, unknown> = { updated_at: new Date().toISOString(), updated_by: g.userId };
-    if (input.title !== undefined) {
-      const title = cleanTitle(input.title);
-      if (!title) return { error: "A section needs a title." };
-      patch.title = title;
-    }
-    if (input.body !== undefined) {
-      let body;
-      try {
-        body = sanitizeDoc(input.body);
-      } catch (e) {
-        return { error: e instanceof Error ? e.message : "This section could not be saved." };
-      }
-      patch.body_json = body;
-      patch.body_html = docHtml(body);
-      patch.body_text = docText(body);
-    }
     const supabase = await createClient();
-    const { data, error } = await supabase.from("sop_sections").update(patch).eq("id", input.id).eq("document_id", g.documentId).select("id");
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+      .from("sop_sections")
+      .update({ title, body_json: body, body_html: docHtml(body), body_text: docText(body), updated_at: now, updated_by: g.userId })
+      .eq("id", input.id)
+      .eq("document_id", g.documentId)
+      .select("id");
     if (error) return dbError(error);
     if (!data?.length) return { error: "This section no longer exists (it may have been deleted or replaced by an import)." };
-    await supabase.from("sop_documents").update({ draft_updated_at: patch.updated_at, draft_updated_by: g.userId }).eq("id", g.documentId);
-    return { ok: true as const, savedAt: String(patch.updated_at) };
+    await supabase.from("sop_documents").update({ draft_updated_at: now, draft_updated_by: g.userId }).eq("id", g.documentId);
+    return goLive(g.documentId, `Edited: ${title}`, !!input.ask);
   });
 }
 
-export async function addSection(input: { title: string; afterId?: string | null }): Promise<{ ok: true; id: string } | Fail> {
+export async function addSection(input: { title: string; afterId?: string | null }): Promise<(Live & { id: string }) | Fail> {
   const g = await guard();
   if ("error" in g) return g;
   const title = cleanTitle(input?.title);
   if (!title) return { error: "Give the section a title." };
   return run("addSection", async () => {
-    const ids = await order(g.documentId);
+    const ids = (await order(g.documentId)).map((s) => s.id);
     const supabase = await createClient();
     const body = { type: "doc", content: [{ type: "paragraph" }] };
     const { data, error } = await supabase
@@ -103,70 +110,50 @@ export async function addSection(input: { title: string; afterId?: string | null
       const e = await setOrder(g.documentId, [...ids.slice(0, at + 1), id, ...ids.slice(at + 1)]);
       if (e) return dbError(e);
     }
-    touched();
-    return { ok: true as const, id };
+    const live = await goLive(g.documentId, `Added: ${title}`, false);
+    return "error" in live ? live : { ...live, id };
   });
 }
 
-export async function renameSection(id: string, title: string) {
-  const g = await guard();
-  if ("error" in g) return g;
-  return saveSection({ id, title });
-}
-
-export async function moveSection(id: string, direction: "up" | "down"): Promise<{ ok: true } | Fail> {
+export async function moveSection(id: string, direction: "up" | "down"): Promise<Live | Fail> {
   const g = await guard();
   if ("error" in g) return g;
   if (!isUuid(id)) return { error: "Unknown section." };
   return run("moveSection", async () => {
-    const ids = await order(g.documentId);
+    const list = await order(g.documentId);
+    const ids = list.map((s) => s.id);
     const i = ids.indexOf(id);
     const j = direction === "up" ? i - 1 : i + 1;
-    if (i < 0 || j < 0 || j >= ids.length) return { ok: true as const };
+    if (i < 0 || j < 0 || j >= ids.length) return { error: "This section cannot move further." };
     [ids[i], ids[j]] = [ids[j], ids[i]];
     const e = await setOrder(g.documentId, ids);
     if (e) return dbError(e);
-    touched();
-    return { ok: true as const };
+    return goLive(g.documentId, `Moved ${direction}: ${list[i].title}`, false);
   });
 }
 
-export async function deleteSection(id: string): Promise<{ ok: true } | Fail> {
+export async function deleteSection(id: string): Promise<Live | Fail> {
   const g = await guard();
   if ("error" in g) return g;
   if (!isUuid(id)) return { error: "Unknown section." };
   return run("deleteSection", async () => {
-    const ids = await order(g.documentId);
-    if (ids.length <= 1) return { error: "The SOP needs at least one section." };
+    const list = await order(g.documentId);
+    const gone = list.find((s) => s.id === id);
+    if (!gone) return { error: "This section no longer exists." };
+    if (list.length <= 1) return { error: "The SOP needs at least one section." };
     const supabase = await createClient();
     const { error } = await supabase.from("sop_sections").delete().eq("id", id).eq("document_id", g.documentId);
     if (error) return dbError(error);
-    const e = await setOrder(g.documentId, ids.filter((x) => x !== id));
+    const e = await setOrder(g.documentId, list.filter((s) => s.id !== id).map((s) => s.id));
     if (e) return dbError(e);
-    touched();
-    return { ok: true as const };
+    return goLive(g.documentId, `Deleted: ${gone.title}`, false);
   });
 }
 
-// ---------------------------------------------------------------- publish, restore
+// ---------------------------------------------------------------- versions, reading
 
-export async function publishSop(note: string): Promise<{ ok: true; version: number } | Fail> {
-  const g = await guard();
-  if ("error" in g) return g;
-  const text = String(note ?? "").trim();
-  if (!text) return { error: "Write in a few words what changed." };
-  if (text.length > 500) return { error: "Keep the note under 500 characters." };
-  return run("publishSop", async () => {
-    const supabase = await createClient();
-    const { data, error } = await supabase.rpc("sop_publish", { p_doc: g.documentId, p_note: text });
-    if (error) return dbError(error);
-    revalidatePath("/", "layout"); // the banner, on every page
-    return { ok: true as const, version: Number(data) };
-  });
-}
-
-// An old version becomes the draft again (published versions are never changed).
-export async function restoreVersion(number: number): Promise<{ ok: true } | Fail> {
+// An old version becomes live again, as a new version (old versions are never changed).
+export async function restoreVersion(number: number): Promise<Live | Fail> {
   const g = await guard();
   if ("error" in g) return g;
   if (!Number.isInteger(number) || number < 1) return { error: "Unknown version." };
@@ -177,8 +164,20 @@ export async function restoreVersion(number: number): Promise<{ ok: true } | Fai
     const supabase = await createClient();
     const { error } = await supabase.rpc("sop_replace_draft", { p_doc: g.documentId, p_sections: rows, p_action: "restore", p_detail: { from_version: number } });
     if (error) return dbError(error);
-    touched();
-    return { ok: true as const };
+    return goLive(g.documentId, `Restored version ${number}`, false);
+  });
+}
+
+// Show the "please read" banner to staff for the current version.
+export async function askStaffToRead(): Promise<Live | Fail> {
+  const g = await guard();
+  if ("error" in g) return g;
+  return run("askStaffToRead", async () => {
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc("sop_ask_read", { p_doc: g.documentId });
+    if (error) return dbError(error);
+    revalidatePath("/", "layout");
+    return { ok: true as const, version: Number(data) };
   });
 }
 
@@ -226,12 +225,9 @@ export async function createImportUploads(input: { imageExts: string[] }): Promi
   });
 }
 
-// The import, saved: the uploaded sections become the draft (in one transaction, with the audit).
-export async function commitImport(input: {
-  jsonPath: string;
-  fileName: string; // kept in the audit log only
-  detail: Record<string, number | string>;
-}): Promise<{ ok: true; sections: number } | Fail> {
+// The import: the uploaded sections replace the SOP and go live (one version), in place of all
+// sections before. Old versions stay in the history.
+export async function commitImport(input: { jsonPath: string; fileName: string; detail: Record<string, number | string>; ask?: boolean }): Promise<(Live & { sections: number }) | Fail> {
   const g = await guard();
   if ("error" in g) return g;
   if (!/^imports\/[0-9a-f-]{36}\.json$/.test(String(input?.jsonPath))) return { error: "Unknown upload." };
@@ -257,14 +253,15 @@ export async function commitImport(input: {
     }
     const detail: Record<string, number | string> = {};
     for (const [k, v] of Object.entries(input.detail ?? {})) if (/^[a-zA-Z]{1,30}$/.test(k) && (typeof v === "number" || typeof v === "string")) detail[k] = typeof v === "string" ? v.slice(0, 200) : v;
-    if (input.fileName) detail.file = String(input.fileName).slice(0, 200);
+    const fileName = String(input.fileName ?? "").slice(0, 200);
+    if (fileName) detail.file = fileName;
 
     const supabase = await createClient();
     const { error } = await supabase.rpc("sop_replace_draft", { p_doc: g.documentId, p_sections: rows, p_action: "import", p_detail: detail });
     if (error) return dbError(error);
     await admin.storage.from(SOP_BUCKET).remove([input.jsonPath]);
-    touched();
-    return { ok: true as const, sections: rows.length };
+    const live = await goLive(g.documentId, `Imported from Word${fileName ? ` (${fileName})` : ""}`, !!input.ask);
+    return "error" in live ? live : { ...live, sections: rows.length };
   });
 }
 

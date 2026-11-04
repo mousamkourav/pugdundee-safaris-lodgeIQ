@@ -12,8 +12,8 @@ One app, three modules:
   Lodge, Denwa Backwater Escape, Ken River Lodge, Waghoba Eco Lodge (more later).
 - **Sales & Itinerary**: enquiry -> itinerary builder (chat assistant) -> pricing ->
   guest itinerary page + PDF -> status (draft, open, quoted, booked, lost, cancelled).
-- **SOP**: the standard operating procedures (read, search, PDF; edited and published by the
-  super admin; staff confirm "I have read"). See "SOP module" below.
+- **SOP**: the standard operating procedures (read, search, PDF; edited in place by the
+  super admin, live at once; staff confirm "I have read"). See "SOP module" below.
 
 Live at https://pugdundeesafaris.org (Vercel; the vercel.app address redirects there).
 The owner is not a developer: explain in plain words, give PowerShell commands one per
@@ -224,11 +224,23 @@ private bucket `sop-media`, SQL `supabase/sop_module.sql`. Editor: TipTap 3.32.0
   given access by person or by role (`sop_access`); either is enough. Checked in `lib/sop/server.ts`
   (`requireSopViewer` / `requireSopEditor` on pages, `sopActor` / `sopEditor` in actions and routes)
   and again in the database (RLS + `sop_*` functions). One call per page, `sop_my_status()`, gives
-  the tab and the "New SOP version - please read" banner; if it fails (SQL not run) nothing shows.
+  the tab and the "please read" banner; if it fails (SQL not run) nothing shows.
   `middleware.ts` lets sales-only and task-creator accounts open `/sop` (the pages check access).
-- Draft = `sop_sections` (autosaved by the editor); staff read only published versions
-  (`sop_versions` + frozen `sop_version_sections`). Publish (`sop_publish`), import and restore
-  (`sop_replace_draft`), order, access: database functions that also write `sop_audit`.
+- A simple CMS (owner, 4 Nov 2026). Two pages: `/sop` for everyone with access (contents,
+  sections, search, PDF); the super admin also gets Edit (in place, `?edit=1`, `_ui/edit-mode.tsx`),
+  Import SOP (`?import=1`) and Export SOP (PDF) there. `/sop/access` "Access & reading" (super admin):
+  who can view, who has read (Excel), version history with restore and the audit log (folded).
+  Old addresses (/sop/edit, import, versions, reads, audit) only redirect.
+- Every change goes LIVE at once: save, add, move, delete, import, restore change `sop_sections`
+  (the working copy) and then `sop_publish` makes the next version (`goLive` in admin-actions;
+  staff read only `sop_versions` + frozen `sop_version_sections`). "Ask staff to read this
+  update" (tick on Save / import) sets `sop_versions.ask_read`; the banner and Who has read follow
+  the latest version with `ask_read` (`sop_ask_read` asks for the current one). An imported SOP
+  never published becomes version 1 the first time anyone with access opens it
+  (`sop_publish_first`, once). The internal `sop__publish` cannot be called by any user.
+- `lib/sop/sql.test.ts` runs `supabase/sop_module.sql` in PGlite (dev dependency, pinned 0.3.14)
+  under RLS: auto-publish, save goes live, banner only when asked, staff cannot edit, Access &
+  reading data super admin only.
 - Bodies are editor JSON, cleaned on the server (`sanitizeDoc`: known nodes, safe links, pictures
   only `/sop/media/images/...`), rendered as React (`_ui/content.tsx`), never as raw HTML. Pictures
   are served by `/sop/media/[...path]` after an access check (short-lived signed link).

@@ -26,30 +26,37 @@ export interface SopStatus {
   canView: boolean;
   isEditor: boolean;
   documentId: string | null;
-  version: number | null; // the current published version
+  version: number | null; // the current (live) version
   versionId: string | null;
-  read: boolean; // this user has said "I have read" the current version
+  // Every save makes a version; staff are asked to read only those the super admin ticked
+  // "Ask staff to read this update" for. The latest of those, and whether this user read it.
+  readVersion: number | null;
+  readVersionId: string | null;
+  read: boolean;
 }
-export const NO_SOP: SopStatus = { canView: false, isEditor: false, documentId: null, version: null, versionId: null, read: false };
+export const NO_SOP: SopStatus = { canView: false, isEditor: false, documentId: null, version: null, versionId: null, readVersion: null, readVersionId: null, read: false };
 
 // The status as the database returns it (json), read defensively: anything odd = no access.
 export function readStatus(raw: unknown): SopStatus {
   if (!raw || typeof raw !== "object") return NO_SOP;
   const r = raw as Record<string, unknown>;
-  const version = Number.isInteger(r.version) ? (r.version as number) : null;
+  const int = (v: unknown) => (Number.isInteger(v) ? (v as number) : null);
+  const str = (v: unknown) => (typeof v === "string" ? v : null);
   return {
     canView: r.can_view === true,
     isEditor: r.is_editor === true,
-    documentId: typeof r.document_id === "string" ? r.document_id : null,
-    version,
-    versionId: typeof r.version_id === "string" ? r.version_id : null,
+    documentId: str(r.document_id),
+    version: int(r.version),
+    versionId: str(r.version_id),
+    readVersion: int(r.read_version),
+    readVersionId: str(r.read_version_id),
     read: r.read === true,
   };
 }
 
-// "New SOP version - please read": staff with access, a version published, not yet read.
-// The super admin publishes it and is not asked.
-export const showReadBanner = (s: SopStatus) => s.canView && !s.isEditor && s.version != null && !s.read;
+// "New SOP version - please read": staff with access, when the super admin asked them to read a
+// version and they have not said "I have read" it yet. The super admin is not asked.
+export const showReadBanner = (s: SopStatus) => s.canView && !s.isEditor && s.readVersion != null && !!s.readVersionId && !s.read;
 
 // ---------------------------------------------------------------- who has read a version
 

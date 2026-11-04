@@ -3,7 +3,8 @@
 // Import from Word (super admin). The file is read IN THE BROWSER (it is 120 MB; the server takes
 // a few MB at most): unzip, read, clean, split into sections. The owner checks the preview and
 // may move section breaks; then the sections and the pictures are uploaded straight to the
-// private bucket and the server makes them the new draft in one step. The Word file itself is
+// private bucket and the server makes them the SOP, live at once (old versions stay in the
+// history). The Word file itself is
 // not stored (owner, 4 Nov 2026: 122 MB; staff download the PDF).
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -26,7 +27,7 @@ const MIME: Record<string, string> = { png: "image/png", jpg: "image/jpeg", gif:
 
 type Parsed = { file: File; cleaned: Cleaned; cands: Candidate[]; media: Map<string, Uint8Array>; urls: Map<string, string> };
 
-export function Importer({ hasDraft }: { hasDraft: boolean }) {
+export function Importer({ hasContent }: { hasContent: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +35,7 @@ export function Importer({ hasDraft }: { hasDraft: boolean }) {
   const [splits, setSplits] = useState<Record<number, boolean>>({});
   const [open, setOpen] = useState<number | null>(null);
   const [showBreaks, setShowBreaks] = useState(false);
+  const [ask, setAsk] = useState(true);
 
   const sections = useMemo(() => (parsed ? buildSections(parsed.cleaned, splits, (t) => parsed.urls.get(t) ?? null) : []), [parsed, splits]);
   const keptImages = useMemo(() => (parsed ? [...new Set(parsed.cleaned.blocks.filter((b): b is Extract<Block, { kind: "image" }> => b.kind === "image").map((b) => b.target))] : []), [parsed]);
@@ -67,7 +69,7 @@ export function Importer({ hasDraft }: { hasDraft: boolean }) {
 
   const save = async () => {
     if (!parsed) return;
-    if (hasDraft && !confirm("This replaces the whole current draft with the imported sections. Published versions are not changed. Continue?")) return;
+    if (hasContent && !confirm("This replaces the whole SOP with the imported sections, live at once. Old versions stay in the history (Access & reading). Continue?")) return;
     setError(null);
     try {
       setBusy("Preparing the upload...");
@@ -95,16 +97,18 @@ export function Importer({ hasDraft }: { hasDraft: boolean }) {
       const j = await storage.uploadToSignedUrl(up.json.path, up.json.token, json, { contentType: "application/json" });
       if (j.error) return setError(`The sections could not be uploaded: ${j.error.message}`);
 
-      setBusy("Saving the draft...");
+      setBusy("Making it live...");
       const s = parsed.cleaned.stats;
       const r = await commitImport({
         jsonPath: up.json.path,
         fileName: parsed.file.name,
+        ask,
         detail: { footersRemoved: s.footers, emptyRemoved: s.empty, linesToCheck: s.garbled, picturesKept: s.imagesKept, picturesDropped: s.imagesDropped },
       });
       if ("error" in r) return setError(r.error);
-      alert(`Imported ${r.sections} sections into the draft. Check them in Edit, then publish.`);
-      router.push("/sop/edit");
+      alert(`Imported ${r.sections} sections. The SOP is live (version ${r.version}).`);
+      router.push("/sop");
+      router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "The import did not finish.");
     } finally {
@@ -131,7 +135,7 @@ export function Importer({ hasDraft }: { hasDraft: boolean }) {
             className="block w-full text-sm text-sand-700 file:mr-3 file:rounded-lg file:border-0 file:bg-olive-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
           />
         </label>
-        <p className="mt-2 text-xs text-sand-500">Nothing is saved until you press &quot;Save as draft&quot; below. Staff keep reading the published version until you publish.</p>
+        <p className="mt-2 text-xs text-sand-500">Nothing changes until you press &quot;Import and make live&quot; below.</p>
       </div>
 
       {busy && (
@@ -155,8 +159,12 @@ export function Importer({ hasDraft }: { hasDraft: boolean }) {
             </ul>
             <div className="mt-4 flex flex-wrap gap-2">
               <button className={ui.btnPrimary} disabled={!!busy || !sections.length} onClick={() => void save()}>
-                Save as draft
+                Import and make live
               </button>
+              <label className="flex min-h-11 items-center gap-2 text-sm text-sand-700">
+                <input type="checkbox" checked={ask} onChange={(e) => setAsk(e.target.checked)} className="h-4 w-4" />
+                Ask staff to read it
+              </label>
               <button className={ui.btnSecondary} onClick={() => setShowBreaks((x) => !x)}>
                 {showBreaks ? "Hide" : "Change"} section breaks
               </button>

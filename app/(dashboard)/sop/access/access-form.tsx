@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ui } from "@/components/ui";
-import { grantAccess, revokeAccess } from "../admin-actions";
+import { grantAccess, revokeAccess, askStaffToRead, restoreVersion } from "../admin-actions";
 
 export function GrantForm({ people, roles }: { people: { id: string; label: string }[]; roles: { value: string; label: string }[] }) {
   const router = useRouter();
@@ -90,6 +90,56 @@ export function RemoveButton({ id, what }: { id: string; what: string }) {
       }}
     >
       Remove
+    </button>
+  );
+}
+
+// "Ask staff to read the current version": the banner, without changing the SOP.
+export function AskReadButton({ version }: { version: number }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <div>
+      <button
+        type="button"
+        className={ui.btnPrimary}
+        disabled={pending}
+        onClick={() => {
+          if (!confirm(`Ask everyone with access to read the SOP as it is now (version ${version})? They see a banner until they say "I have read it".`)) return;
+          start(async () => {
+            const r = await askStaffToRead();
+            if ("error" in r) setErr(r.error);
+            else router.refresh();
+          });
+        }}
+      >
+        {pending ? "Asking..." : "Ask staff to read the current SOP"}
+      </button>
+      {err && <p className={`${ui.alertError} mt-2`}>{err}</p>}
+    </div>
+  );
+}
+
+// An old version, live again (as a new version).
+export function RestoreButton({ number }: { number: number }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  return (
+    <button
+      type="button"
+      className={`${ui.btnSecondary} ${ui.btnSm}`}
+      disabled={pending}
+      onClick={() => {
+        if (!confirm(`Make version ${number} the live SOP again? It is saved as a new version; nothing is lost.`)) return;
+        start(async () => {
+          const r = await restoreVersion(number);
+          if ("error" in r) alert(r.error);
+          else router.push("/sop");
+        });
+      }}
+    >
+      {pending ? "Restoring..." : "Restore"}
     </button>
   );
 }

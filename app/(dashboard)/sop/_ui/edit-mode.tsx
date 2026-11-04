@@ -1,8 +1,9 @@
 "use client";
 
-// The SOP draft editor (super admin): one section at a time, rich text (TipTap), autosaved a
-// moment after typing stops. Staff keep reading the last PUBLISHED version until Publish.
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+// Editing the SOP in place (super admin), like a simple CMS: pick a section, change it, Save.
+// Save goes live at once (a new version is kept in the background). Sections are added, moved
+// and deleted here too; each of those goes live at once as well.
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
@@ -13,48 +14,27 @@ import { Icon } from "@/components/icons";
 import { ui } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
 import type { Doc } from "@/lib/sop/types";
-import { PROSE } from "../_ui/content";
+import { PROSE } from "./content";
 import { saveSection, addSection, moveSection, deleteSection, createImageUpload } from "../admin-actions";
 
 type Item = { id: string; title: string };
 
 const EDITOR_CSS =
-  ".sop-editor .ProseMirror{min-height:55vh;outline:none}.sop-editor .ProseMirror table{table-layout:fixed}.sop-editor .ProseMirror .selectedCell{background:var(--color-sand-100)}.sop-editor .ProseMirror img.ProseMirror-selectednode{outline:2px solid var(--color-gold-500)}";
+  ".sop-editor .ProseMirror{min-height:45vh;outline:none}.sop-editor .ProseMirror table{table-layout:fixed}.sop-editor .ProseMirror .selectedCell{background:var(--color-sand-100)}.sop-editor .ProseMirror img.ProseMirror-selectednode{outline:2px solid var(--color-gold-500)}";
 
-export function SopEditor({ sections, current }: { sections: Item[]; current: { id: string; title: string; body: Doc } }) {
+const editHref = (id: string) => `/sop?edit=1&s=${encodeURIComponent(id)}`;
+
+export function SopEditMode({ sections, current }: { sections: Item[]; current: { id: string; title: string; body: Doc } }) {
   const router = useRouter();
   const [title, setTitle] = useState(current.title);
-  const [state, setState] = useState<"saved" | "dirty" | "saving" | "error">("saved");
-  const [message, setMessage] = useState<string | null>(null);
-  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [ask, setAsk] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, start] = useTransition();
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const editorRef = useRef<Editor | null>(null);
-  const dirty = useRef(false);
-
-  const save = useCallback(async () => {
-    const ed = editorRef.current;
-    if (!ed || !dirty.current) return;
-    dirty.current = false;
-    setState("saving");
-    const r = await saveSection({ id: current.id, body: ed.getJSON() });
-    if ("error" in r) {
-      dirty.current = true;
-      setState("error");
-      setMessage(r.error);
-    } else {
-      setState(dirty.current ? "dirty" : "saved");
-      setMessage(null);
-      setSavedAt(r.savedAt);
-    }
-  }, [current.id]);
-
-  const schedule = useCallback(() => {
-    dirty.current = true;
-    setState("dirty");
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => void save(), 1500);
-  }, [save]);
+  const dirtyRef = useRef(false);
+  useEffect(() => {
+    dirtyRef.current = dirty || title.trim() !== current.title;
+  }, [dirty, title, current.title]);
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -65,112 +45,139 @@ export function SopEditor({ sections, current }: { sections: Item[]; current: { 
     ],
     content: current.body,
     editorProps: { attributes: { class: PROSE, "aria-label": "Section text" } },
-    onUpdate: () => schedule(),
+    onUpdate: () => setDirty(true),
   });
-  useEffect(() => {
-    editorRef.current = editor;
-  }, [editor]);
 
-  // leaving the section: save what is left; warn when closing the tab with unsaved text
+  // closing the tab with unsaved changes: the browser asks first
   useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => {
-      if (dirty.current) e.preventDefault();
+      if (dirtyRef.current) e.preventDefault();
     };
     window.addEventListener("beforeunload", warn);
-    return () => {
-      window.removeEventListener("beforeunload", warn);
-      if (timer.current) clearTimeout(timer.current);
-      void save();
-    };
-  }, [save]);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, []);
+  // leaving for another section or the read view: ask when there are unsaved changes
+  const leave = (e: React.MouseEvent) => {
+    if (dirtyRef.current && !confirm("You have unsaved changes in this section. Leave without saving?")) e.preventDefault();
+  };
 
-  const saveTitle = () => {
-    const t = title.trim();
-    if (!t || t === current.title) return;
+  const save = () =>
     start(async () => {
-      const r = await saveSection({ id: current.id, title: t });
-      if ("error" in r) setMessage(r.error);
+      if (!editor) return;
+      const r = await saveSection({ id: current.id, title, body: editor.getJSON(), ask });
+      if ("error" in r) return setMsg({ ok: false, text: r.error });
+      setDirty(false);
+      dirtyRef.current = false;
+      setMsg({ ok: true, text: `Saved. It is live now (version ${r.version})${ask ? "; staff are asked to read it" : ""}.` });
+      setAsk(false);
+      router.refresh();
+    });
+
+  const act = (fn: () => Promise<{ ok: true; id?: string } | { error: string }>, after?: (id?: string) => void) => {
+    if (dirtyRef.current && !confirm("This section has unsaved changes; they will be lost. Continue?")) return;
+    start(async () => {
+      const r = await fn();
+      if ("error" in r) return setMsg({ ok: false, text: r.error });
+      setMsg(null);
+      if (after) after(r.id);
       else router.refresh();
     });
   };
 
-  const act = (fn: () => Promise<{ ok: true; id?: string } | { error: string }>, after?: (id?: string) => void) =>
-    start(async () => {
-      await save();
-      const r = await fn();
-      if ("error" in r) setMessage(r.error);
-      else {
-        setMessage(null);
-        if (after) after(r.id);
-        else router.refresh();
-      }
-    });
-
   const at = sections.findIndex((s) => s.id === current.id);
 
+  const manager = (
+    <div className="space-y-3">
+      <ol className="space-y-0.5">
+        {sections.map((s, i) => {
+          const active = s.id === current.id;
+          return (
+            <li key={s.id} className={`flex items-center gap-1 rounded-lg ${active ? "bg-olive-600" : "hover:bg-sand-100"}`}>
+              <Link href={editHref(s.id)} onClick={leave} className={`min-w-0 flex-1 px-2 py-1.5 text-sm leading-snug ${active ? "font-semibold text-white" : "text-sand-700"}`}>
+                {s.title}
+              </Link>
+              {active && (
+                <span className="flex shrink-0 gap-0.5 pr-1">
+                  <button type="button" disabled={pending || i === 0} onClick={() => act(() => moveSection(s.id, "up"))} className="min-h-9 min-w-9 rounded text-white disabled:opacity-40" aria-label="Move section up" title="Move up">
+                    &uarr;
+                  </button>
+                  <button type="button" disabled={pending || i === sections.length - 1} onClick={() => act(() => moveSection(s.id, "down"))} className="min-h-9 min-w-9 rounded text-white disabled:opacity-40" aria-label="Move section down" title="Move down">
+                    &darr;
+                  </button>
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      <AddSection disabled={pending} onAdd={(t) => act(() => addSection({ title: t, afterId: current.id }), (id) => router.push(editHref(id!)))} />
+    </div>
+  );
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+    <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-6">
       <style>{EDITOR_CSS}</style>
-      {/* sections of the draft */}
-      <div className="space-y-3">
-        <div className={`${ui.card} max-h-[60vh] overflow-y-auto p-2 lg:max-h-[calc(100vh-220px)]`}>
-          <p className="px-2 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-sand-500">Sections ({sections.length})</p>
-          <ol className="space-y-0.5">
-            {sections.map((s) => (
-              <li key={s.id}>
-                <Link
-                  href={`/sop/edit?s=${s.id}`}
-                  className={`block rounded-lg px-2 py-1.5 text-sm leading-snug ${s.id === current.id ? "bg-olive-600 font-semibold text-white" : "text-sand-700 hover:bg-sand-100"}`}
-                >
-                  {s.title}
-                </Link>
-              </li>
-            ))}
-          </ol>
-        </div>
-        <AddSection disabled={pending} onAdd={(t) => act(() => addSection({ title: t, afterId: current.id }), (id) => router.push(`/sop/edit?s=${id}`))} />
+      {/* sections: a side list on wide screens, folded on phones */}
+      <details className={`${ui.card} p-3 lg:hidden`}>
+        <summary className="cursor-pointer text-sm font-semibold text-olive-800">
+          Sections ({sections.length}): {current.title}
+        </summary>
+        <div className="mt-3">{manager}</div>
+      </details>
+      <div className={`${ui.card} hidden max-h-[calc(100vh-200px)] overflow-y-auto p-2 lg:sticky lg:top-20 lg:block`}>
+        <p className="px-2 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-sand-500">Sections ({sections.length})</p>
+        {manager}
       </div>
 
-      {/* the section */}
       <div className={`${ui.card} min-w-0 p-4 sm:p-6`}>
         <div className="flex flex-wrap items-end gap-2">
-          <label className="min-w-0 flex-1">
+          <label className="min-w-0 flex-1 basis-60">
             <span className={ui.label}>Section title</span>
-            <input className={ui.input} value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} onBlur={saveTitle} onKeyDown={(e) => e.key === "Enter" && saveTitle()} />
+            <input className={ui.input} value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} />
           </label>
-          <button type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} disabled={pending || at <= 0} onClick={() => act(() => moveSection(current.id, "up"))} aria-label="Move section up" title="Move up">
-            Up
-          </button>
-          <button type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} disabled={pending || at >= sections.length - 1} onClick={() => act(() => moveSection(current.id, "down"))} aria-label="Move section down" title="Move down">
-            Down
-          </button>
           <button
             type="button"
             className={`${ui.btnDangerOutline} ${ui.btnSm}`}
             disabled={pending || sections.length <= 1}
             onClick={() => {
-              if (!confirm(`Delete the section "${current.title}" from the draft? Published versions keep it.`)) return;
+              if (!confirm(`Delete the section "${current.title}"? Staff stop seeing it at once (old versions keep it).`)) return;
               const next = sections[at + 1] ?? sections[at - 1];
-              act(() => deleteSection(current.id), () => router.push(`/sop/edit${next ? `?s=${next.id}` : ""}`));
+              dirtyRef.current = false;
+              act(() => deleteSection(current.id), () => router.push(next ? editHref(next.id) : "/sop"));
             }}
           >
             <Icon name="trash" className="h-4 w-4" />
-            Delete
+            Delete section
           </button>
         </div>
 
         <div className="sticky top-16 z-10 -mx-1 mt-4 flex flex-wrap gap-1 border-y border-sand-200 bg-white/95 px-1 py-2 backdrop-blur">
-          {editor && <Toolbar editor={editor} onError={setMessage} />}
+          {editor && <Toolbar editor={editor} onError={(t) => setMsg(t ? { ok: false, text: t } : null)} />}
         </div>
 
         <div className="sop-editor mt-4">
           <EditorContent editor={editor} />
         </div>
 
-        <p className="mt-4 text-xs text-sand-500" aria-live="polite">
-          {state === "saving" ? "Saving..." : state === "dirty" ? "Changes not saved yet..." : state === "error" ? "Not saved." : savedAt ? `Draft saved at ${new Date(savedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}.` : "Draft. Staff see the last published version until you publish."}
-        </p>
-        {message && <p className={`${ui.alertError} mt-2`}>{message}</p>}
+        <div className="sticky bottom-0 -mx-4 mt-6 flex flex-wrap items-center gap-3 border-t border-sand-200 bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+          <label className="flex min-h-11 items-center gap-2 text-sm text-sand-700">
+            <input type="checkbox" checked={ask} onChange={(e) => setAsk(e.target.checked)} className="h-4 w-4" />
+            Ask staff to read this update
+          </label>
+          <span className="ml-auto flex gap-2">
+            <Link href={`/sop?s=${encodeURIComponent(current.id)}`} onClick={leave} className={ui.btnSecondary}>
+              Done
+            </Link>
+            <button type="button" className={ui.btnPrimary} disabled={pending || !editor || !title.trim()} onClick={save}>
+              {pending ? "Saving..." : "Save"}
+            </button>
+          </span>
+          {msg && (
+            <p className={`${msg.ok ? ui.alertSuccess : ui.alertError} w-full`} aria-live="polite">
+              {msg.text}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -180,14 +187,14 @@ function AddSection({ onAdd, disabled }: { onAdd: (title: string) => void; disab
   const [t, setT] = useState("");
   return (
     <form
-      className="flex gap-2"
+      className="flex gap-2 px-1"
       onSubmit={(e) => {
         e.preventDefault();
         if (t.trim()) onAdd(t.trim());
         setT("");
       }}
     >
-      <input className={ui.inputSm} placeholder="New section title" value={t} onChange={(e) => setT(e.target.value)} maxLength={200} />
+      <input className={ui.inputSm} placeholder="New section title" value={t} onChange={(e) => setT(e.target.value)} maxLength={200} aria-label="New section title" />
       <button className={`${ui.btnPrimary} ${ui.btnSm}`} disabled={disabled || !t.trim()}>
         <Icon name="plus" className="h-4 w-4" />
         Add
