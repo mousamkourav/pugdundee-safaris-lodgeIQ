@@ -2,18 +2,20 @@
 -- SOP module (the third tab, "SOP"): tables, access rules, functions, storage.
 --
 -- What it does (only NEW things; nothing that exists is changed):
---   * tables  sop_documents (one SOP now, ready for more), sop_sections (the DRAFT the super
---     admin edits), sop_versions + sop_version_sections (each published version, frozen),
---     sop_access (who may read: a person or a whole role), sop_reads ("I have read version N"),
---     sop_audit (imports, publishes, restores, access changes);
+--   * tables  sop_documents (one SOP now, ready for more), sop_sections (the working copy the
+--     super admin edits; every save goes live at once as a new version), sop_versions +
+--     sop_version_sections (each published version, frozen; ask_read = staff were asked to read
+--     it), sop_access (who may read: a person or a whole role), sop_reads ("I have read version
+--     N"), sop_audit (imports, publishes, restores, access changes, read requests);
 --   * row level security on every one of them: the super admin does everything; others read
 --     the PUBLISHED versions only, and only when given access (by person or by role); a person
 --     can only record their own "I have read";
 --   * functions the app calls: sop_is_editor, sop_can_view, sop_my_status, sop_replace_draft
---     (import / restore), sop_publish, sop_set_order, sop_grant, sop_revoke. Each changing one
---     checks for the super admin and writes the audit line in the same transaction;
---   * the PRIVATE storage bucket "sop-media" (pictures, the original Word file). The app reads
---     it on the server after checking access; nobody gets a public link.
+--     (import / restore), sop_publish, sop_publish_first (version 1 of an imported SOP, once,
+--     whoever opens the SOP first), sop_ask_read, sop_set_order, sop_grant, sop_revoke. Each
+--     changing one checks who is calling and writes the audit line in the same transaction;
+--   * the PRIVATE storage bucket "sop-media" (pictures). The app reads it on the server after
+--     checking access; nobody gets a public link.
 --
 -- Safe to run more than once. Run it whole in the Supabase SQL Editor.
 -- Expected result (the check at the end): see the last statement.
@@ -53,8 +55,11 @@ begin
     note          text not null check (char_length(note) between 1 and 500),
     published_by  uuid references public.profiles(id) on delete set null,
     published_at  timestamptz not null default now(),
+    ask_read      boolean not null default false,
     unique (document_id, number)
   );
+  -- (for a database where the table was made before ask_read existed)
+  alter table public.sop_versions add column if not exists ask_read boolean not null default false;
 
   create table if not exists public.sop_version_sections (
     version_id uuid not null references public.sop_versions(id) on delete cascade,
@@ -89,11 +94,14 @@ begin
   create table if not exists public.sop_audit (
     id          bigint generated always as identity primary key,
     document_id uuid references public.sop_documents(id) on delete set null,
-    action      text not null check (action in ('import','publish','restore','access_grant','access_revoke')),
+    action      text not null,
     detail      jsonb not null default '{}',
     actor       uuid references public.profiles(id) on delete set null,
     at          timestamptz not null default now()
   );
+  alter table public.sop_audit drop constraint if exists sop_audit_action_check;
+  alter table public.sop_audit add constraint sop_audit_action_check
+    check (action in ('import','publish','restore','access_grant','access_revoke','ask_read'));
   create index if not exists sop_audit_at on public.sop_audit(at desc);
 
   -- the one SOP document
@@ -119,12 +127,14 @@ begin
     );
   $f$;
 
-  -- what every page needs, in one call: access, the current version, read or not
+  -- what every page needs, in one call: access, the current version, and the latest version
+  -- staff were ASKED to read (the banner) and whether this person has read it
   create or replace function public.sop_my_status()
   returns jsonb language plpgsql stable security definer set search_path = public as $f$
   declare
     d uuid;
     v record;
+    a record;
     ok boolean;
   begin
     select id into d from public.sop_documents order by created_at limit 1;
@@ -133,13 +143,16 @@ begin
       return jsonb_build_object('can_view', false, 'is_editor', false);
     end if;
     select id, number into v from public.sop_versions where document_id = d order by number desc limit 1;
+    select id, number into a from public.sop_versions where document_id = d and ask_read order by number desc limit 1;
     return jsonb_build_object(
       'can_view', true,
       'is_editor', public.sop_is_editor(),
       'document_id', d,
       'version', v.number,
       'version_id', v.id,
-      'read', v.id is not null and exists (select 1 from public.sop_reads r where r.version_id = v.id and r.user_id = auth.uid())
+      'read_version', a.number,
+      'read_version_id', a.id,
+      'read', a.id is not null and exists (select 1 from public.sop_reads r where r.version_id = a.id and r.user_id = auth.uid())
     );
   end
   $f$;
@@ -167,24 +180,71 @@ begin
   end
   $f$;
 
-  -- publish the draft as the next version (a frozen copy of every section)
-  create or replace function public.sop_publish(p_doc uuid, p_note text)
+  -- the working copy goes live as the next version (a frozen copy of every section).
+  -- Internal: callable only through sop_publish / sop_publish_first (execute revoked below).
+  create or replace function public.sop__publish(p_doc uuid, p_note text, p_ask_read boolean)
   returns int language plpgsql security definer set search_path = public as $f$
   declare n int; vid uuid; c int;
   begin
-    if not public.sop_is_editor() then raise exception 'Only the super admin can publish the SOP.'; end if;
     if coalesce(btrim(p_note), '') = '' then raise exception 'Write what changed.'; end if;
     perform 1 from public.sop_documents where id = p_doc for update;
     if not found then raise exception 'No such SOP.'; end if;
     select count(*) into c from public.sop_sections where document_id = p_doc;
-    if c = 0 then raise exception 'The draft is empty.'; end if;
+    if c = 0 then raise exception 'The SOP is empty.'; end if;
     select coalesce(max(number), 0) + 1 into n from public.sop_versions where document_id = p_doc;
-    insert into public.sop_versions (document_id, number, note, published_by)
-    values (p_doc, n, left(btrim(p_note), 500), auth.uid()) returning id into vid;
+    insert into public.sop_versions (document_id, number, note, published_by, ask_read)
+    values (p_doc, n, left(btrim(p_note), 500), auth.uid(), coalesce(p_ask_read, false)) returning id into vid;
     insert into public.sop_version_sections (version_id, section_id, position, title, body_json, body_text)
     select vid, s.id, s.position, s.title, s.body_json, s.body_text from public.sop_sections s where s.document_id = p_doc;
     insert into public.sop_audit (document_id, action, detail, actor)
-    values (p_doc, 'publish', jsonb_build_object('version', n, 'note', left(btrim(p_note), 500), 'sections', c), auth.uid());
+    values (p_doc, 'publish', jsonb_build_object('version', n, 'note', left(btrim(p_note), 500), 'sections', c, 'ask_read', coalesce(p_ask_read, false)), auth.uid());
+    return n;
+  end
+  $f$;
+  revoke all on function public.sop__publish(uuid, text, boolean) from public;
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    execute 'revoke all on function public.sop__publish(uuid, text, boolean) from anon';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'revoke all on function public.sop__publish(uuid, text, boolean) from authenticated';
+  end if;
+
+  -- every change of the super admin goes live through this (save, add, move, delete, import,
+  -- restore); p_ask_read = staff get the "please read" banner for it
+  drop function if exists public.sop_publish(uuid, text);
+  create or replace function public.sop_publish(p_doc uuid, p_note text, p_ask_read boolean default false)
+  returns int language plpgsql security definer set search_path = public as $f$
+  begin
+    if not public.sop_is_editor() then raise exception 'Only the super admin can publish the SOP.'; end if;
+    return public.sop__publish(p_doc, p_note, p_ask_read);
+  end
+  $f$;
+
+  -- once: an imported SOP that was never published becomes version 1 when anyone who may read
+  -- it opens the SOP (so nobody sees "not published yet"). Does nothing once a version exists.
+  create or replace function public.sop_publish_first(p_doc uuid)
+  returns int language plpgsql security definer set search_path = public as $f$
+  begin
+    if not public.sop_can_view(p_doc) then raise exception 'You do not have access to the SOP.'; end if;
+    perform 1 from public.sop_documents where id = p_doc for update; -- two people at once: one version 1
+    if exists (select 1 from public.sop_versions where document_id = p_doc) then return null; end if;
+    if not exists (select 1 from public.sop_sections where document_id = p_doc) then return null; end if;
+    return public.sop__publish(p_doc, 'Version 1 (the imported SOP, published automatically)', false);
+  end
+  $f$;
+
+  -- ask staff to read the current version (the banner), without changing anything else
+  create or replace function public.sop_ask_read(p_doc uuid)
+  returns int language plpgsql security definer set search_path = public as $f$
+  declare n int;
+  begin
+    if not public.sop_is_editor() then raise exception 'Only the super admin can ask staff to read.'; end if;
+    update public.sop_versions set ask_read = true
+    where id = (select id from public.sop_versions where document_id = p_doc order by number desc limit 1)
+    returning number into n;
+    if n is null then raise exception 'Nothing is published yet.'; end if;
+    insert into public.sop_audit (document_id, action, detail, actor)
+    values (p_doc, 'ask_read', jsonb_build_object('version', n), auth.uid());
     return n;
   end
   $f$;
@@ -283,7 +343,7 @@ end
 $sop$;
 
 -- ---------------------------------------------------------------------- check
--- Expected: tables 7 | rls on 7 | functions 8 | documents 1 | bucket sop-media private
+-- Expected: tables 7 | rls on 7 | functions 11 | documents 1 | bucket sop-media private
 select 'tables' as what, count(*)::text as result
   from information_schema.tables where table_schema = 'public' and table_name like 'sop\_%'
 union all
@@ -292,7 +352,7 @@ select 'rls on', count(*)::text
 union all
 select 'functions', count(*)::text
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-  where n.nspname = 'public' and p.proname in ('sop_is_editor','sop_can_view','sop_my_status','sop_replace_draft','sop_publish','sop_set_order','sop_grant','sop_revoke')
+  where n.nspname = 'public' and p.proname in ('sop_is_editor','sop_can_view','sop_my_status','sop_replace_draft','sop_publish','sop__publish','sop_publish_first','sop_ask_read','sop_set_order','sop_grant','sop_revoke')
 union all
 select 'documents', count(*)::text from public.sop_documents
 union all

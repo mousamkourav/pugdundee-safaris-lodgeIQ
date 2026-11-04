@@ -29,6 +29,7 @@
     "resend": "^6.19.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.3.14",
     "@eslint/eslintrc": "^3.3.7",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.10.7",
