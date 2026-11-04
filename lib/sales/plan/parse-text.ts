@@ -1177,7 +1177,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   // ---- the route: places one after the other that no road joins are joined by a flight,
   // written or not ("than kaziranga", "come back to delhi", "go to bhopal than satpura").
   // The airports for each lodge come from the text, else from the roads in Master data.
-  if (order.length && (staysAt.length || flights.length || order.length > 1)) {
+  if (order.length && (staysAt.length || flights.length || order.length > 1 || out.arrival_place || out.departure_place)) {
     const entries: RouteEntry[] = [
       // a touring package ("Delhi - Agra - Jaipur") is left from its last city
       ...staysAt.filter((s) => !s.away).map((s) => ({ kind: "city" as const, city: s.city.split(/\s+-\s+/).pop() ?? s.city, pos: s.at })),
@@ -1188,6 +1188,13 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
         return { kind: "lodge" as const, park: p.name, propertyId, pos: at };
       }),
     ].sort((a, b) => a.pos - b.pos);
+    // where they come from / go back to, when no night is spent there ("then fly back to delhi",
+    // "arriving delhi, then kaziranga"): an end of the route like a city night, so a place no road
+    // joins to the first / last lodge gets its flight (Kaziranga > Delhi: Guwahati - Delhi; Manav,
+    // 4 Nov 2026). A place on the lodge's side (Nagpur for Pench) changes nothing.
+    const placeCity = (x: string) => x.replace(/\s*\(.*?\)\s*/g, " ").replace(/\b(international|domestic|airport|railway station|station|junction)\b/gi, "").replace(/\s+/g, " ").trim();
+    if (out.departure_place && entries[entries.length - 1]?.kind === "lodge") entries.push({ kind: "city", city: placeCity(out.departure_place), pos: low.length + 1 });
+    if (out.arrival_place && entries[0]?.kind === "lodge") entries.unshift({ kind: "city", city: placeCity(out.arrival_place), pos: -1 });
     const route = resolveRoute({ ctx, entries, cityMentions: cityHits, flights: flights.map((f) => ({ ...f, pos: flightPos.get(f) ?? 0 })) });
     if (route.flights.length) out.flights = route.flights;
     const firstIsLodge = entries[0]?.kind === "lodge";

@@ -73,7 +73,8 @@ export interface DetailRow {
 // The order on one day, as the guests travel: a morning safari, leaving the lodge or hotel,
 // the flight, the transfer from the airport, the night's room, the safaris, then extras.
 function dayRank(l: PriceLine): number {
-  if (l.kind === "safari") return / morning /.test(` ${l.description} `) ? -1 : l.group === "naturalist" ? 5 : 4;
+  // a safari, then its naturalist right after it (Manav, 4 Nov 2026: the naturalist was listed first)
+  if (l.kind === "safari") return (/ morning /.test(` ${l.description} `) ? -1 : 4) + (l.group === "naturalist" ? 0.5 : 0);
   if (l.kind === "transfer") return l.leg === "out" ? 0 : 2;
   if (l.kind === "addon" && l.group === "flight") return 1;
   if (l.kind === "room" || (l.kind === "addon" && l.group === "hotel")) return 3;

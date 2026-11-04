@@ -330,12 +330,25 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
   const priceNaturalist = (s: TripInput["safaris"][number], rate: ReturnType<typeof pickSafariRate>, billTo: string | null, where: string) => {
     const vehicles = s.vehicles ?? Math.max(1, Math.ceil(guests / Math.max(1, rate?.max_pax ?? 6)));
     const label = `Accompanying naturalist, ${where}`;
+    const naturalists = (data.addons ?? []).filter((a) => a.active !== false && /naturalist/i.test(a.name));
+    const isFullDay = (a: { name: string }) => /full[\s-]?day/i.test(a.name);
+    // a full-day safari: the full-day naturalist from Master data ("Accompanying naturalist, full-day
+    // safari", Rs 7,500 a jeep; Manav, 4 Nov 2026), not one session's fee
+    if (s.session === "full_day") {
+      const full = naturalists.filter(isFullDay);
+      const fd = full.find((a) => a.property_id === billTo) ?? full.find((a) => !a.property_id && (!a.offered_at?.length || (!!billTo && a.offered_at.includes(billTo)))) ?? null;
+      if (fd) {
+        const { amount, tax } = withTax(fd.rate * vehicles, fd.tax_pct, false);
+        lines.push({ kind: "safari", group: "naturalist", date: s.date, description: label, quantity: vehicles, unit_price: fd.rate, amount, tax, tax_pct: fd.tax_pct, property_id: billTo, ref_id: fd.id });
+        return;
+      }
+    }
     if (rate && rate.naturalist_fee > 0) {
       const { amount, tax } = withTax(rate.naturalist_fee * vehicles, rate.tax_pct, false);
       lines.push({ kind: "safari", group: "naturalist", date: s.date, description: label, quantity: vehicles, unit_price: rate.naturalist_fee, amount, tax, tax_pct: rate.tax_pct, property_id: billTo, ref_id: s.park_id });
       return;
     }
-    const nat = (data.addons ?? []).filter((a) => a.active !== false && /naturalist/i.test(a.name));
+    const nat = naturalists.filter((a) => !isFullDay(a));
     const addon = nat.find((a) => a.property_id === billTo) ?? nat.find((a) => !a.property_id) ?? null;
     if (addon) {
       const { amount, tax } = withTax(addon.rate * vehicles, addon.tax_pct, false);

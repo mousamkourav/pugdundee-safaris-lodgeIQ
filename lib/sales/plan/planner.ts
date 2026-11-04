@@ -907,6 +907,7 @@ function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
         kind: i === 0 || viaCity?.flown ? "arrival" : "transfer",
         property_id: stop.property_id,
         park_id: stop.park_id,
+        ...(i > 0 && !viaCity ? { morning_park_id: legs[i - 1].stop.park_id } : {}),
         safaris: morning,
         transfer: fromLoc && toLoc && !far ? { from_location_id: fromLoc, to_location_id: toLoc } : null,
         title: "",
@@ -1086,6 +1087,18 @@ function safariPhrase(s: DaySafari[]) {
   return `${sessions} (${zones.join(" and ")} zone)`;
 }
 
+// The park of a safari on day i. The morning of a day moving between lodges is still at the lodge
+// they leave (Naveen / Manav, 4 Nov 2026: a Bandhavgarh morning safari before the drive to Kanha was
+// priced and written as Kanha); everything else is at the day's park.
+export function safariParkOf(plan: Pick<Plan, "days">, i: number, session: DaySafari["session"]): string | null {
+  const d = plan.days[i];
+  if (!d) return null;
+  if (session !== "morning" || d.kind !== "transfer") return d.park_id;
+  if (d.morning_park_id) return d.morning_park_id;
+  const prev = plan.days[i - 1];
+  return prev && prev.kind !== "city" && prev.park_id ? prev.park_id : d.park_id;
+}
+
 // One safari on a travel day, as a sentence: "Early morning jeep safari in Bandhavgarh (core zone), with a naturalist."
 function travelDaySafari(x: DaySafari, park: string) {
   const when = x.session === "morning" ? "Early morning jeep safari" : x.session === "afternoon" ? "Evening jeep safari" : "Full-day jeep safari";
@@ -1096,6 +1109,8 @@ export function describe(ctx: BuilderContext, day: PlanDay, vehicle: string | nu
   if (day.kind === "city") return day; // written when the city day is made
   const lodge = ctx.properties.find((p) => p.id === day.property_id)?.name ?? "";
   const park = ctx.pricing.parks.find((p) => p.id === day.park_id)?.name ?? "";
+  // the morning safari of a moving day is in the park they leave
+  const morningPark = day.kind === "transfer" && day.morning_park_id ? ctx.pricing.parks.find((p) => p.id === day.morning_park_id)?.name ?? park : park;
   const from = day.transfer ? ctx.locations.find((l) => l.id === day.transfer!.from_location_id)?.name ?? "" : "";
   const to = day.transfer ? ctx.locations.find((l) => l.id === day.transfer!.to_location_id)?.name ?? "" : "";
   const h = day.transfer ? driveHours(ctx, day.transfer.from_location_id, day.transfer.to_location_id, vehicle) : null;
@@ -1140,11 +1155,12 @@ export function describe(ctx: BuilderContext, day: PlanDay, vehicle: string | nu
   const late = day.safaris.filter((x) => x.session === "afternoon");
   if (early.length) {
     // a morning safari on the day of check-out: safari, then breakfast and check-out, then the drive
-    const safariText = early.map((x) => travelDaySafari(x, park)).join(" ");
+    const safariText = early.map((x) => travelDaySafari(x, x.session === "morning" ? morningPark : park)).join(" ");
     const rest = travel.replace(/^\s*after breakfast,\s*/i, "");
+    // breakfast is in the park on a morning safari (packed breakfast), not at the lodge (Manav, 4 Nov 2026)
     travel =
       rest !== travel
-        ? `${safariText} Back at the lodge for breakfast and check-out, then ${rest.charAt(0).toLowerCase()}${rest.slice(1)}`
+        ? `${safariText} Back at the lodge to check out, then ${rest.charAt(0).toLowerCase()}${rest.slice(1)}`
         : `${safariText} ${travel}`;
   }
   if (late.length) {
@@ -1182,8 +1198,11 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
   const carPackages: { package_id: string; date: string; vehicles?: number }[] = [];
   const packageIds = new Set(plan.days.flatMap((d) => (d.items ?? []).flatMap((it) => (it.car_package_id ? [it.car_package_id] : []))));
   const flightPax = plan.guest.adults + plan.guest.children.length;
-  for (const d of plan.days) {
-    if (d.park_id) for (const s of d.safaris) safaris.push({ date: d.date, park_id: d.park_id, zone: s.zone, session: s.session, naturalist: !!s.naturalist, ...(s.jeeps ? { vehicles: s.jeeps } : {}) });
+  plan.days.forEach((d, di) => {
+    for (const s of d.safaris) {
+      const park = safariParkOf(plan, di, s.session);
+      if (park) safaris.push({ date: d.date, park_id: park, zone: s.zone, session: s.session, naturalist: !!s.naturalist, ...(s.jeeps ? { vehicles: s.jeeps } : {}) });
+    }
     // own vehicle: no transfers. Otherwise vehicles as set for that road, else for every transfer,
     // else enough for the group; 0 on a road = not needed (the guests make their own way)
     const vehiclesFor = (from: string, to: string) => plan.route_vehicles?.[routeOf(from, to)] ?? plan.transfer_vehicles ?? undefined;
@@ -1210,7 +1229,7 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
         else if (it.type === "activity" || it.type === "meal" || it.type === "transfer") custom.push({ date: d.date, title: it.title, amount: null, group: "extra" });
       }
     }
-  }
+  });
   return {
     adults: plan.guest.adults,
     children: plan.guest.children,

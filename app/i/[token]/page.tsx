@@ -8,6 +8,7 @@ import { PhotoCarousel } from "@/components/sales/photo-carousel";
 import { Icon } from "@/components/icons";
 import { shortPark } from "@/lib/sales/plan/draft";
 import { routeOf, segments } from "@/lib/sales/plan/planner";
+import { routePath } from "@/lib/sales/plan/route-line";
 import { sameCity } from "@/lib/sales/plan/cities";
 import { fmtDay } from "@/lib/sales/format";
 
@@ -140,33 +141,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
   // At a glance: 17 D / 16 N, the safaris, and the places in travel order
   // (Delhi - Jabalpur - Kanha - Bandhavgarh - Khajuraho - Delhi).
   const dayCount = plan.days.length || view.nights + 1;
-  const cityOf = (place: string | undefined) => (place ?? "").replace(/\s*(international\s+)?(airport|railway station|station|junction)\b.*$/i, "").replace(/\s*\(.*\)\s*$/, "").trim();
-  const path: string[] = [];
-  const add = (x: string | undefined) => {
-    const v = (x ?? "").trim();
-    if (v && path[path.length - 1]?.toLowerCase() !== v.toLowerCase()) path.push(v);
-  };
-  const firstDay = plan.days.find((d) => d.kind !== "city");
-  segs.forEach((seg, k) => {
-    const prev = segs[k - 1];
-    if (seg.kind === "city") {
-      const inFlight = prev?.kind === "lodge" ? flights.find((f) => sameCity(f.to, seg.stay.city) && !segs.some((x) => x.kind === "city" && sameCity(x.stay.city, f.from))) : undefined;
-      if (inFlight) add(inFlight.from);
-      add(seg.stay.city || undefined);
-      return;
-    }
-    if (k === 0 || prev?.kind === "city") {
-      // reached by air (Delhi to Jabalpur) or from the arrival airport: that town first
-      const flown = prev?.kind === "city" ? flights.find((f) => sameCity(f.from, prev.stay.city)) : undefined;
-      if (flown) add(flown.to);
-      else if (k === 0 && firstDay?.transfer) add(cityOf(view.placeNames[firstDay.transfer.from_location_id]));
-    }
-    add(shortPark(view.parkNames[seg.stop.park_id] ?? ""));
-  });
-  if (segs[segs.length - 1]?.kind === "lodge") {
-    const lastDay = plan.days[plan.days.length - 1];
-    if (lastDay?.transfer) add(cityOf(view.placeNames[lastDay.transfer.to_location_id]));
-  }
+  const path = routePath(plan, view.placeNames, view.parkNames);
   const facts = [
     { n: `${dayCount}D / ${Math.max(0, dayCount - 1)}N`, label: "days / nights", wide: false },
     { n: String(safaris), label: safaris === 1 ? "safari" : "safaris", wide: false },

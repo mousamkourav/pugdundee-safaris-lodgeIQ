@@ -114,6 +114,9 @@ export interface PlanDay {
   kind: DayKind;
   property_id: string | null; // where the guest sleeps that night (null on departure day)
   park_id: string | null;
+  // a day moving between lodges: the park of its morning safari, the one they leave (Bandhavgarh
+  // in the morning, then the drive to Kanha); absent = the day before's park (see safariParkOf)
+  morning_park_id?: string | null;
   safaris: DaySafari[];
   transfer: { from_location_id: string; to_location_id: string } | null;
   city_transfers?: CityTransfer[]; // transfers in a city stay (airport to hotel, hotel to airport)

@@ -61,6 +61,7 @@ export function sanitizePlan(input: unknown): Plan | null {
       kind,
       property_id: strOrNull(d.property_id),
       park_id: strOrNull(d.park_id),
+      ...(strOrNull(d.morning_park_id) ? { morning_park_id: strOrNull(d.morning_park_id) } : {}),
       safaris,
       transfer: t.from_location_id && t.to_location_id ? { from_location_id: str(t.from_location_id, 100), to_location_id: str(t.to_location_id, 100) } : null,
       ...(Array.isArray(d.city_transfers) && d.city_transfers.length

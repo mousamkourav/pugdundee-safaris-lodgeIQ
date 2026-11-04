@@ -4,8 +4,10 @@ import { useState } from "react";
 import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { rupees, fmtDate, fmtDay } from "@/lib/sales/format";
-import { closedAt, describe, masterHotelRate, routeOf, roomsFor, segments, stayAt } from "@/lib/sales/plan/planner";
+import { closedAt, describe, masterHotelRate, routeOf, roomsFor, safariParkOf, segments, stayAt } from "@/lib/sales/plan/planner";
 import { cityParkIds, sameCity } from "@/lib/sales/plan/cities";
+import { addonBasePrice, withItem } from "@/lib/sales/plan/day-items";
+import { shortPark } from "@/lib/sales/plan/draft";
 import { detailedBreakdown } from "@/lib/sales/pricing/breakdown";
 import { FLIGHT_BAGGAGE } from "@/lib/sales/plan/draft";
 import type { PriceResult } from "@/lib/sales/pricing/types";
@@ -192,11 +194,11 @@ export function PlanStep({
   // that day's lodge's own price, the foreign rate for foreign guests, the yearly hike.
   const hike = ctx.pricing.settings.hike ?? null;
   const unitPrice = (a: (typeof ctx.pricing.addons)[number], dayIndex: number) => {
-    const foreign = plan.guest.nationality === "foreign";
-    const base = foreign && a.rate_foreign != null ? a.rate_foreign : a.rate;
+    // the price the costing charges this group (boat safari: by group size)
+    const { rate: base, groupOf } = addonBasePrice(a, plan.guest);
     const date = plan.days[dayIndex]?.date;
     const pct = hike?.addons_pct && (plan.rate_basis ? plan.rate_basis.year === "next" : !!date && date >= hike.from && date <= hike.to) ? hike.addons_pct : 0;
-    return { rate: Math.round(base * (1 + pct / 100)), hike: pct, tax: Number(a.tax_pct) || 0 };
+    return { rate: Math.round(base * (1 + pct / 100)), hike: pct, tax: Number(a.tax_pct) || 0, tierGuests: groupOf };
   };
   // The costing line for an add-on on a day (by the add-on itself, not its name).
   const addonLine = (date: string, addonId: string) => result?.lines.find((l) => l.date === date && l.kind === "addon" && l.ref_id === addonId);
@@ -214,7 +216,9 @@ export function PlanStep({
     let kind = day.kind;
     if (kind === "safari" || kind === "leisure") kind = safaris.length ? "safari" : "leisure";
     const autoText = describe(ctx, day, plan.vehicle_type).text;
-    const next: PlanDay = { ...day, safaris, kind };
+    // a moving day keeps the park of its morning safari (older quotes: the day before's park)
+    const morningPark = day.kind === "transfer" ? safariParkOf(plan, i, "morning") : null;
+    const next: PlanDay = { ...day, safaris, kind, ...(morningPark && morningPark !== day.park_id ? { morning_park_id: morningPark } : {}) };
     setDay(i, () => (day.text === autoText ? describe(ctx, next, plan.vehicle_type) : next));
   }
 
@@ -248,7 +252,8 @@ export function PlanStep({
   }
 
   function addItem(dayIndex: number, item: Omit<PlanItem, "id">) {
-    setDay(dayIndex, (d) => ({ ...d, items: [...(d.items ?? []), { ...item, id: newId() }] }));
+    // a flight for a leg already planned that day takes its place (withItem)
+    setDay(dayIndex, (d) => withItem(d, { ...item, id: newId() }));
   }
   function moveItem(id: string, from: number, to: number) {
     if (from === to) return;
@@ -602,8 +607,10 @@ export function PlanStep({
                     return (
                       <li className="space-y-1 px-3 py-1.5" style={{ order: DAY_STEP.safari }}>
                         {ROWS.map(({ session, label }) => {
-                          const closedCore = closed(d.park_id!, "core", session, d.date);
-                          const closedBuffer = closed(d.park_id!, "buffer", session, d.date);
+                          // a moving day's morning safari is in the park they leave
+                          const safariPark = safariParkOf(plan, i, session) ?? d.park_id!;
+                          const closedCore = closed(safariPark, "core", session, d.date);
+                          const closedBuffer = closed(safariPark, "buffer", session, d.date);
                           const safari = d.safaris.find((x) => x.session === session);
                           const value = safari?.zone ?? "";
                           const onClosed = (value === "core" && closedCore) || (value === "buffer" && closedBuffer);
@@ -611,7 +618,10 @@ export function PlanStep({
                           return (
                             <div key={session} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-sand-600">
                               <Icon name={session === "morning" ? "clock" : session === "afternoon" ? "route" : "calendar"} className="h-3.5 w-3.5 shrink-0 text-sand-400" />
-                              <span className="w-28 shrink-0 font-medium text-olive-800">{label}</span>
+                              <span className="w-28 shrink-0 font-medium text-olive-800">
+                                {label}
+                                {safariPark !== d.park_id && <span className="block text-[10px] font-normal text-sand-500">in {shortPark(ctx.pricing.parks.find((p) => p.id === safariPark)?.name ?? "")}</span>}
+                              </span>
                               {coveredByFullDay ? (
                                 <span className="text-sand-400">Included in the full-day safari</span>
                               ) : closedCore && closedBuffer && !value ? (
@@ -827,7 +837,7 @@ export function PlanStep({
                             <span className="min-w-0 flex-1">
                               <span className="block truncate text-sm font-medium text-olive-800">{g.name}</span>
                               <span className="block truncate text-[11px] text-sand-500">
-                                {rupees(u.rate)} {UNIT_TEXT[g.unit] ?? g.unit.replace("_", " ")} {u.tax ? `+ ${u.tax}% GST` : "(no GST)"}
+                                {rupees(u.rate)} {u.tierGuests ? `per group of ${u.tierGuests}` : UNIT_TEXT[g.unit] ?? g.unit.replace("_", " ")} {u.tax ? `+ ${u.tax}% GST` : "(no GST)"}
                                 {u.hike ? ` (incl. ${u.hike}% hike)` : ""}
                               </span>
                             </span>

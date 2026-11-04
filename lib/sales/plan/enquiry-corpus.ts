@@ -103,4 +103,7 @@ export const ENQUIRY_CORPUS: string[] = [
   "Core zones of Satpura National Park remain closed for the full day on Tuesdays but buffer safaris remain operational.",
   "Core zones of Tadoba National Park remain closed for the full day on Wednesdays but buffer safaris remain operational.",
   "Hi team, pls quote for 2 adults from UK, 1 room, dates not fixed yet. Arrive Delhi 1 night at roseate with delhi sightseeing, local guide and entrances, next day fly to jabalpur, kings lodge 3 nights with village walk and cycling, then they will go with another resort for 2 days and take break from our itinieary than they will resume with us after 2 days then pench 2 nights with culinary workshop and buffer walk, then fly nagpur to delhi and drive direct to agra 2 nights at itc mughal with agra sightseeing and local guide, then drive to jaipur 2 nights at itc rajputana with jaipur sightseeing and accompanying guide, drive back to delhi for homebound flight. all safaris with naturalist",
+  // Manav, 4 Nov 2026: Kaziranga, "fly back to delhi" with no night in Delhi after it
+  "2 adults from UK arriving delhi on 10 jan 2027, 1 night at roseate, then kaziranga 3 nights at iora with 4 safaris, then fly back to delhi",
+  "2 adults arriving delhi on 10 jan 2027 then kaziranga 3 nights at iora, back to delhi",
 ];
