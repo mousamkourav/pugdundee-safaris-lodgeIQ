@@ -8,7 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { canViewSop, isSopEditor, readStatus, showReadBanner, audience, readReport, NO_SOP, type AccessRow, type Person } from "./access";
+import { canViewSop, isSopEditor, readStatus, showReadBanner, sqlOutdated, SOP_SQL_VERSION, audience, readReport, NO_SOP, type AccessRow, type Person } from "./access";
 import { modulesFor, moduleForPath, MODULES, NAV } from "@/components/nav";
 import type { Role } from "@/lib/auth";
 
@@ -44,8 +44,12 @@ test("status from the database: read defensively; an error or odd answer = no ac
   assert.deepEqual(readStatus(null), NO_SOP);
   assert.deepEqual(readStatus("yes"), NO_SOP);
   assert.deepEqual(readStatus({ can_view: "true" }).canView, false);
-  const s = readStatus({ can_view: true, is_editor: false, document_id: "d", version: 5, version_id: "v5", read_version: 3, read_version_id: "v3", read: false });
-  assert.deepEqual(s, { canView: true, isEditor: false, documentId: "d", version: 5, versionId: "v5", readVersion: 3, readVersionId: "v3", read: false });
+  const s = readStatus({ can_view: true, is_editor: false, document_id: "d", version: 5, version_id: "v5", read_version: 3, read_version_id: "v3", read: false, sql_version: 2 });
+  assert.deepEqual(s, { canView: true, isEditor: false, documentId: "d", version: 5, versionId: "v5", readVersion: 3, readVersionId: "v3", read: false, sqlVersion: 2 });
+  // an older database (no sql_version): version 0, so the app knows the SQL must be run again
+  assert.equal(readStatus({ can_view: true, is_editor: true }).sqlVersion, 0);
+  assert.equal(sqlOutdated(readStatus({ can_view: true, is_editor: true })), true);
+  assert.equal(sqlOutdated(readStatus({ can_view: true, is_editor: true, sql_version: SOP_SQL_VERSION })), false);
 });
 
 // ---------------------------------------------------------------- the tab
@@ -83,7 +87,7 @@ test("the SOP pages are their own module; Sales and Lodge pages are unchanged", 
 // ---------------------------------------------------------------- "I have read"
 
 test("banner 'please read': only for an update the super admin asked staff to read, until read; never the super admin", () => {
-  const s = { canView: true, isEditor: false, documentId: "d", version: 7, versionId: "v7", readVersion: 4, readVersionId: "v4", read: false };
+  const s = { canView: true, isEditor: false, documentId: "d", version: 7, versionId: "v7", readVersion: 4, readVersionId: "v4", read: false, sqlVersion: 2 };
   assert.equal(showReadBanner(s), true);
   assert.equal(showReadBanner({ ...s, read: true }), false, "read: gone");
   assert.equal(showReadBanner({ ...s, readVersion: null, readVersionId: null }), false, "saves without the tick: no banner");
@@ -161,8 +165,11 @@ test("a save goes live: every change in admin-actions ends in goLive (sop_publis
     return src.slice(at, end > 0 ? end : undefined);
   };
   assert.match(fnBody("saveSection"), /return goLive\(g\.documentId, `Edited: \$\{title\}`, !!input\.ask\);/);
-  assert.match(fnBody("commitImport"), /goLive\(g\.documentId, `Imported from Word[^\n]*, !!input\.ask\);/);
-  for (const fn of ["addSection", "moveSection", "deleteSection", "restoreVersion"]) assert.match(fnBody(fn), /goLive\(g\.documentId, `[^`]+`, false\)/, `${fn}: live, no banner`);
+  // import and restore: replaced AND live in ONE database step (sop_import / sop_restore)
+  assert.match(fnBody("commitImport"), /rpc\("sop_import", \{[\s\S]*?p_ask_read: !!input\.ask,/);
+  assert.match(fnBody("restoreVersion"), /rpc\("sop_restore", \{ p_doc: g\.documentId, p_sections: rows, p_from: number \}\)/);
+  assert.ok(!/sop_replace_draft/.test(src), "never a replace without going live");
+  for (const fn of ["addSection", "moveSection", "deleteSection"]) assert.match(fnBody(fn), /goLive\(g\.documentId, `[^`]+`, false\)/, `${fn}: live, no banner`);
   assert.ok(!/publishSop|Save as draft/.test(src), "no separate publish step");
 });
 

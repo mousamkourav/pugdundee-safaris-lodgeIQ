@@ -33,8 +33,17 @@ export interface SopStatus {
   readVersion: number | null;
   readVersionId: string | null;
   read: boolean;
+  // which version of supabase/sop_module.sql the database has (0 = older than versioning)
+  sqlVersion: number;
 }
-export const NO_SOP: SopStatus = { canView: false, isEditor: false, documentId: null, version: null, versionId: null, readVersion: null, readVersionId: null, read: false };
+
+// The version of supabase/sop_module.sql this code needs ('sql_version' in sop_my_status).
+// Raise both together when the SQL changes in a way the app depends on.
+export const SOP_SQL_VERSION = 2;
+// The database needs the latest SQL: the super admin is told, and changes are refused before
+// anything is touched (owner, 4 Nov 2026: an import failed half-way on an older database).
+export const sqlOutdated = (s: SopStatus) => s.canView && s.sqlVersion < SOP_SQL_VERSION;
+export const NO_SOP: SopStatus = { canView: false, isEditor: false, documentId: null, version: null, versionId: null, readVersion: null, readVersionId: null, read: false, sqlVersion: 0 };
 
 // The status as the database returns it (json), read defensively: anything odd = no access.
 export function readStatus(raw: unknown): SopStatus {
@@ -51,6 +60,7 @@ export function readStatus(raw: unknown): SopStatus {
     readVersion: int(r.read_version),
     readVersionId: str(r.read_version_id),
     read: r.read === true,
+    sqlVersion: int(r.sql_version) ?? 0,
   };
 }
 

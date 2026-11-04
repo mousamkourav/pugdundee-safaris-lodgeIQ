@@ -10,10 +10,13 @@
 --   * row level security on every one of them: the super admin does everything; others read
 --     the PUBLISHED versions only, and only when given access (by person or by role); a person
 --     can only record their own "I have read";
---   * functions the app calls: sop_is_editor, sop_can_view, sop_my_status, sop_replace_draft
---     (import / restore), sop_publish, sop_publish_first (version 1 of an imported SOP, once,
---     whoever opens the SOP first), sop_ask_read, sop_set_order, sop_grant, sop_revoke. Each
---     changing one checks who is calling and writes the audit line in the same transaction;
+--   * functions the app calls: sop_is_editor, sop_can_view, sop_my_status, sop_replace_draft,
+--     sop_publish, sop_import and sop_restore (replace every section AND go live, all or nothing),
+--     sop_publish_first (version 1 of an imported SOP, once, whoever opens the SOP first),
+--     sop_ask_read, sop_set_order, sop_grant, sop_revoke. Each changing one checks who is calling
+--     and writes the audit line in the same transaction;
+--   * sop_my_status also says which version of this file the database has (sql_version): the app
+--     refuses changes, with a clear message, until this file has been run again after an update;
 --   * the PRIVATE storage bucket "sop-media" (pictures). The app reads it on the server after
 --     checking access; nobody gets a public link.
 --
@@ -152,7 +155,9 @@ begin
       'version_id', v.id,
       'read_version', a.number,
       'read_version_id', a.id,
-      'read', a.id is not null and exists (select 1 from public.sop_reads r where r.version_id = a.id and r.user_id = auth.uid())
+      'read', a.id is not null and exists (select 1 from public.sop_reads r where r.version_id = a.id and r.user_id = auth.uid()),
+      -- the version of THIS file (lib/sop/access.ts SOP_SQL_VERSION): raise both together
+      'sql_version', 2
     );
   end
   $f$;
@@ -230,6 +235,27 @@ begin
     if exists (select 1 from public.sop_versions where document_id = p_doc) then return null; end if;
     if not exists (select 1 from public.sop_sections where document_id = p_doc) then return null; end if;
     return public.sop__publish(p_doc, 'Version 1 (the imported SOP, published automatically)', false);
+  end
+  $f$;
+
+  -- import from Word: every section replaced AND live as the next version, in one transaction
+  -- (if anything fails, nothing changes)
+  create or replace function public.sop_import(p_doc uuid, p_sections jsonb, p_detail jsonb, p_note text, p_ask_read boolean default false)
+  returns int language plpgsql security definer set search_path = public as $f$
+  begin
+    if not public.sop_is_editor() then raise exception 'Only the super admin can change the SOP.'; end if;
+    perform public.sop_replace_draft(p_doc, p_sections, 'import', p_detail);
+    return public.sop__publish(p_doc, p_note, p_ask_read);
+  end
+  $f$;
+
+  -- restore an old version: its sections replace the SOP AND go live as the next version, at once
+  create or replace function public.sop_restore(p_doc uuid, p_sections jsonb, p_from int)
+  returns int language plpgsql security definer set search_path = public as $f$
+  begin
+    if not public.sop_is_editor() then raise exception 'Only the super admin can change the SOP.'; end if;
+    perform public.sop_replace_draft(p_doc, p_sections, 'restore', jsonb_build_object('from_version', p_from));
+    return public.sop__publish(p_doc, 'Restored version ' || p_from, false);
   end
   $f$;
 
@@ -343,7 +369,7 @@ end
 $sop$;
 
 -- ---------------------------------------------------------------------- check
--- Expected: tables 7 | rls on 7 | functions 11 | documents 1 | bucket sop-media private
+-- Expected: tables 7 | rls on 7 | functions 13 | documents 1 | bucket sop-media private | sql version 2
 select 'tables' as what, count(*)::text as result
   from information_schema.tables where table_schema = 'public' and table_name like 'sop\_%'
 union all
@@ -352,8 +378,10 @@ select 'rls on', count(*)::text
 union all
 select 'functions', count(*)::text
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-  where n.nspname = 'public' and p.proname in ('sop_is_editor','sop_can_view','sop_my_status','sop_replace_draft','sop_publish','sop__publish','sop_publish_first','sop_ask_read','sop_set_order','sop_grant','sop_revoke')
+  where n.nspname = 'public' and p.proname in ('sop_is_editor','sop_can_view','sop_my_status','sop_replace_draft','sop_publish','sop__publish','sop_publish_first','sop_import','sop_restore','sop_ask_read','sop_set_order','sop_grant','sop_revoke')
 union all
 select 'documents', count(*)::text from public.sop_documents
 union all
-select 'bucket sop-media', coalesce((select case when public then 'PUBLIC (wrong)' else 'private' end from storage.buckets where id = 'sop-media'), 'missing');
+select 'bucket sop-media', coalesce((select case when public then 'PUBLIC (wrong)' else 'private' end from storage.buckets where id = 'sop-media'), 'missing')
+union all
+select 'sql version', coalesce((regexp_match(pg_get_functiondef('public.sop_my_status()'::regprocedure), '''sql_version'', ([0-9]+)'))[1], 'old');

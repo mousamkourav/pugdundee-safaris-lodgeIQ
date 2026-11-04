@@ -238,6 +238,14 @@ private bucket `sop-media`, SQL `supabase/sop_module.sql`. Editor: TipTap 3.32.0
   the latest version with `ask_read` (`sop_ask_read` asks for the current one). An imported SOP
   never published becomes version 1 the first time anyone with access opens it
   (`sop_publish_first`, once). The internal `sop__publish` cannot be called by any user.
+- Import and restore are ONE database step each (`sop_import`, `sop_restore`: sections replaced
+  AND live, or nothing changes). The import's sections go browser -> bucket (signed upload), so
+  the server action body is tiny; the database call for the owner's 62 sections is about 500 KB.
+- SQL version: `sop_my_status` returns `sql_version` (2); `SOP_SQL_VERSION` in `lib/sop/access.ts`
+  must match. When the database is older, the super admin sees a notice and every change is
+  refused before anything is touched ("run sop_module.sql again"). Raise both when the SQL changes.
+  Errors are explained in plain words (`lib/sop/errors.ts`, `explainDbError`), never a bare
+  "Could not save" (owner, 4 Nov 2026: the live import failed because the SQL was not re-run).
 - `lib/sop/sql.test.ts` runs `supabase/sop_module.sql` in PGlite (dev dependency, pinned 0.3.14)
   under RLS: auto-publish, save goes live, banner only when asked, staff cannot edit, Access &
   reading data super admin only.

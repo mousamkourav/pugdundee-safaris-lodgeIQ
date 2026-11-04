@@ -5,7 +5,8 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { requireUser, getCurrentUser, homePathFor } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { isSopEditor, readStatus, NO_SOP, type SopStatus } from "./access";
+import { isSopEditor, readStatus, sqlOutdated, NO_SOP, type SopStatus } from "./access";
+import { RUN_SQL } from "./errors";
 import type { Doc, SectionText } from "./types";
 
 export const SOP_BUCKET = "sop-media";
@@ -53,6 +54,8 @@ export async function sopEditor(): Promise<Denied | { userId: string; documentId
   const a = await sopActor();
   if ("error" in a) return a;
   if (!isSopEditor(a.role) || !a.status.isEditor) return { error: "Only the super admin can change the SOP." };
+  // an older database (SQL not run again after an update): refuse BEFORE anything changes
+  if (sqlOutdated(a.status)) return { error: `The database has an older version of the SOP functions. ${RUN_SQL} Nothing was changed.` };
   return { userId: a.userId, documentId: a.documentId };
 }
 

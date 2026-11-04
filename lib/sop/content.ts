@@ -281,3 +281,12 @@ export function toDraftRows(sections: { id?: unknown; title?: unknown; body?: un
     return { ...(id ? { id } : {}), title, body_json: body, body_html: docHtml(body), body_text: docText(body) };
   });
 }
+
+// The rows of an import: cleaned like any section, always NEW sections (no ids kept).
+export function importRows(sections: { title?: unknown; body?: unknown }[]): Omit<DraftRow, "id">[] {
+  return toDraftRows(sections).map((r) => {
+    const rest = { ...r };
+    delete rest.id;
+    return rest;
+  });
+}

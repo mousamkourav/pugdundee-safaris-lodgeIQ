@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireSopViewer, loadLiveVersion, loadToc, loadVersionSection, loadVersionTexts, loadWorkingList, fmtDay } from "@/lib/sop/server";
-import { showReadBanner } from "@/lib/sop/access";
+import { showReadBanner, sqlOutdated } from "@/lib/sop/access";
+import { RUN_SQL } from "@/lib/sop/errors";
 import { searchSections } from "@/lib/sop/content";
 import { createClient } from "@/lib/supabase/server";
 import { Icon } from "@/components/icons";
@@ -28,11 +29,18 @@ export default async function SopPage({ searchParams }: { searchParams: Promise<
   const { data: docRow } = await supabase.from("sop_documents").select("title, original_name").eq("id", documentId).maybeSingle();
   const title = (docRow as { title?: string } | null)?.title ?? "Standard Operating Procedures";
   const hasOriginal = !!(docRow as { original_name?: string | null } | null)?.original_name;
+  // the database has an older sop_module.sql: say so before the super admin tries a change
+  const outdated = isEditor && sqlOutdated(status) ? (
+    <p className={ui.alertWarning} role="alert">
+      The database has an older version of the SOP functions, so saving, importing and restoring are switched off. {RUN_SQL}
+    </p>
+  ) : null;
 
   // ---- import (super admin)
   if (mode === "import" || (isEditor && !version)) {
     return (
       <div className="mx-auto max-w-4xl space-y-4">
+        {outdated}
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl">Import the SOP from Word</h1>
@@ -69,6 +77,7 @@ export default async function SopPage({ searchParams }: { searchParams: Promise<
     const current = row as { id: string; title: string; body_json: Doc } | null;
     return (
       <div className="space-y-4">
+        {outdated}
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl">Editing: {title}</h1>
@@ -93,6 +102,7 @@ export default async function SopPage({ searchParams }: { searchParams: Promise<
 
   const top = (
     <>
+      {outdated}
       <div className="sop-noprint flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl">{title}</h1>

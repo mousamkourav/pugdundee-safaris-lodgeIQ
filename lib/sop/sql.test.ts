@@ -13,9 +13,16 @@
 // - what Access & reading shows (access list, everyone's reads, audit) is for the super admin only.
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { inflateRawSync } from "node:zlib";
 import { PGlite } from "@electric-sql/pglite";
+import { readDocx } from "./zip";
+import { parseDocument } from "./docx";
+import { cleanBlocks, buildSections } from "./import";
+import { importRows } from "./content";
+import { explainDbError } from "./errors";
+import { SOP_SQL_VERSION } from "./access";
 
 const SQL = readFileSync(join(__dirname, "..", "..", "supabase", "sop_module.sql"), "utf8");
 const U = {
@@ -74,9 +81,10 @@ before(async () => {
   await as("owner", "select sop_grant($1, null, 'sales_member')", [doc]);
 });
 
-test("the SQL's own check: 7 tables with RLS, 11 functions, 1 SOP, private bucket", async () => {
+test("the SQL's own check: 7 tables with RLS, 13 functions, 1 SOP, private bucket, SQL version 2", async () => {
   const r = await db.query<{ what: string; result: string }>(SQL.slice(SQL.lastIndexOf("select 'tables'")));
-  assert.deepEqual(Object.fromEntries(r.rows.map((x) => [x.what, x.result])), { tables: "7", "rls on": "7", functions: "11", documents: "1", "bucket sop-media": "private" });
+  assert.deepEqual(Object.fromEntries(r.rows.map((x) => [x.what, x.result])), { tables: "7", "rls on": "7", functions: "13", documents: "1", "bucket sop-media": "private", "sql version": "2" });
+  assert.equal((await status("owner") as Status & { sql_version?: number }).sql_version, SOP_SQL_VERSION, "the SQL and the app agree on the version");
 });
 
 test("auto-publish: an imported SOP never published becomes version 1 when anyone with access opens it, once", async () => {
@@ -150,6 +158,8 @@ test("staff cannot edit: no change to the SOP, no publish, import, restore, reor
       "select sop_set_order($1, array[]::uuid[])",
       "select sop_ask_read($1)",
       "select sop_grant($1, null, 'lodge_accounts')",
+      "select sop_import($1, '[{\"title\":\"x\",\"body_json\":{}}]'::jsonb, '{}'::jsonb, 'x', true)",
+      "select sop_restore($1, '[{\"title\":\"x\",\"body_json\":{}}]'::jsonb, 1)",
     ])
       assert.match((await as(who, call, [doc])).error ?? "", /Only the super admin/, `${who}: ${call}`);
     assert.ok((await as(who, "insert into sop_versions (document_id, number, note) values ($1, 99, 'x')", [doc])).error, `${who}: write a version`);
@@ -179,11 +189,61 @@ test("Access & reading data is for the super admin only: access list, everyone's
 test("restore makes an old version live again as a new version; access removed takes effect at once", async () => {
   const v1 = (await db.query<{ id: string }>("select id from sop_versions where number = 1")).rows[0].id;
   const rows = (await db.query<{ id: string; title: string; body_json: unknown; body_text: string }>("select section_id id, title, body_json, body_text from sop_version_sections where version_id = $1 order by position", [v1])).rows;
-  assert.equal((await as<{ n: number }>("owner", "select sop_replace_draft($1, $2::jsonb, 'restore', '{\"from_version\":1}'::jsonb) n", [doc, JSON.stringify(rows)])).rows?.[0].n, 2);
-  assert.equal((await as<{ n: number }>("owner", "select sop_publish($1, 'Restored version 1', false) n", [doc])).rows?.[0].n, 5);
+  assert.match((await as("alice", "select sop_restore($1, $2::jsonb, 1)", [doc, JSON.stringify(rows)])).error ?? "", /Only the super admin/);
+  // one step: replaced and live as version 5
+  assert.equal((await as<{ n: number }>("owner", "select sop_restore($1, $2::jsonb, 1) n", [doc, JSON.stringify(rows)])).rows?.[0].n, 5);
+  assert.equal((await as<{ note: string }>("owner", "select note from sop_versions where number = 5")).rows?.[0].note, "Restored version 1");
   assert.equal(await liveText("bob", S1), "Call the guest.");
   const access = (await db.query<{ id: string }>("select id from sop_access where user_id = $1", [U.alice])).rows[0].id;
   await as("owner", "select sop_revoke($1)", [access]);
   assert.equal((await status("alice")).can_view, false);
   assert.equal((await as("alice", "select * from sop_versions")).rows?.length, 0);
+});
+
+// ---------------------------------------------------------------- the owner's real Word file
+// Live site, 4 Nov 2026: "Import and make live" with the real file (62 sections) said only "Could
+// not save". Cause: the database had the previous sop_module.sql (no sop_publish with the read
+// tick). The import is now ONE database step (sop_import), and a missing function is named.
+
+const REAL = join(__dirname, "..", "..", "rate-docs", "2024_SOP__pptx_1.docx");
+test("the real file's 62 sections: imported and live in one step; a failure changes nothing and says why", { skip: !existsSync(REAL) && "rate-docs/2024_SOP__pptx_1.docx is not here" }, async () => {
+  // exactly what the browser uploads ({ title, body }) and the server makes of it (importRows)
+  const parts = await readDocx(new Uint8Array(readFileSync(REAL)), async (d) => new Uint8Array(inflateRawSync(d)));
+  const uploaded = buildSections(cleanBlocks(parseDocument(parts.document, parts.rels, parts.numbering))).map((s) => ({ title: s.title, body: s.body }));
+  const rows = importRows(JSON.parse(JSON.stringify(uploaded)));
+  assert.equal(rows.length, 62);
+  assert.ok(rows.every((r) => !("id" in r)), "imported sections are new sections");
+  const payload = JSON.stringify(rows);
+  assert.ok(payload.length < 1_000_000, `sent to the database in one call: ${Math.round(payload.length / 1024)} KB`);
+  const before = (await as<{ c: number }>("owner", "select count(*)::int c from sop_versions")).rows![0].c;
+  const call = "select sop_import($1, $2::jsonb, $3::jsonb, $4, $5) n";
+  const args = (p: string) => [doc, p, JSON.stringify({ file: "2024_SOP__pptx_1.docx" }), "Imported from Word (2024_SOP__pptx_1.docx)", true];
+
+  // 1. the database without the function (an older sop_module.sql): named, nothing changed
+  await db.exec("alter function public.sop_import(uuid, jsonb, jsonb, text, boolean) rename to sop_import_hidden");
+  const missing = await as("owner", call, args(payload));
+  await db.exec("alter function public.sop_import_hidden(uuid, jsonb, jsonb, text, boolean) rename to sop_import");
+  assert.match(explainDbError({ message: missing.error }), /missing the SOP function sop_import .*sop_module\.sql again.*Nothing was changed/);
+
+  // 2. a section the database refuses, in the middle: all or nothing
+  const broken = JSON.stringify(rows.map((r, i) => (i === 40 ? { ...r, title: null } : r)));
+  assert.ok((await as("owner", call, args(broken))).error, "refused");
+  assert.equal((await as<{ c: number }>("owner", "select count(*)::int c from sop_versions")).rows![0].c, before, "no new version");
+  assert.equal((await as<{ c: number }>("owner", "select count(*)::int c from sop_sections")).rows![0].c, 2, "the SOP before the import is untouched");
+
+  // 3. staff cannot import
+  assert.match((await as("bob", call, args(payload))).error ?? "", /Only the super admin/);
+
+  // 4. the real import: 62 sections live at once, staff asked to read
+  const ok = await as<{ n: number }>("owner", call, args(payload));
+  assert.equal(ok.rows?.[0].n, before + 1, ok.error);
+  const toc = (await as<{ title: string }>("bob", "select s.title from sop_version_sections s join sop_versions v on v.id = s.version_id where v.number = $1 order by s.position", [before + 1])).rows!.map((r) => r.title);
+  assert.equal(toc.length, 62, "staff see all 62 sections");
+  assert.deepEqual(toc.slice(0, 4), ["Introduction", "A-1 GUEST CHECK-IN AT LODGE AND PRIOR", "Training", "A-2 During the Stay of Guest"]);
+  assert.equal(toc[61], "F-7 Naturalist\u2019s behavior in the National Park");
+  const s = await status("bob");
+  assert.deepEqual([s.version, s.read_version, s.read], [before + 1, before + 1, false], "the tick: staff asked to read");
+  const audit = (await as<{ action: string; detail: { sections?: number; file?: string } }>("owner", "select action, detail from sop_audit where action = 'import' order by id desc limit 1")).rows![0];
+  assert.deepEqual([audit.detail.sections, audit.detail.file], [62, "2024_SOP__pptx_1.docx"]);
+  assert.ok((await as<{ c: number }>("owner", "select count(*)::int c from sop_versions")).rows![0].c > 1, "the old versions are kept");
 });

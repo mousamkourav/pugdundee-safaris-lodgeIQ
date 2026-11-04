@@ -11,7 +11,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sopEditor, loadVersion, loadVersionFull, SOP_BUCKET } from "@/lib/sop/server";
-import { docHtml, docText, isUuid, sanitizeDoc, toDraftRows } from "@/lib/sop/content";
+import { docHtml, docText, isUuid, sanitizeDoc, toDraftRows, importRows } from "@/lib/sop/content";
+import { explainDbError, type DbError } from "@/lib/sop/errors";
 
 type Fail = { error: string };
 type Live = { ok: true; version: number };
@@ -22,8 +23,7 @@ async function run<T>(label: string, fn: () => Promise<T | Fail>): Promise<T | F
   } catch (e) {
     console.error(`[sop] ${label} failed:`, e);
     const msg = e instanceof Error ? e.message : String(e);
-    if (/fetch failed|ECONN|ETIMEDOUT|ENOTFOUND|network|timeout/i.test(msg)) return { error: "The database could not be reached. Please try again in a moment." };
-    return { error: "Something went wrong on the server. Please try again." };
+    return { error: explainDbError({ message: msg }) };
   }
 }
 
@@ -35,14 +35,17 @@ async function guard() {
 }
 
 const cleanTitle = (t: unknown) => String(t ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
-const KNOWN = /Only the super admin|Write what changed|The SOP is empty|No sections|Choose a person|Nothing is published/;
-const dbError = (e: { message?: string } | null): Fail => (e?.message && KNOWN.test(e.message) ? { error: e.message } : { error: "Could not save. Please try again." });
+// The real reason, in plain words (lib/sop/errors.ts); the full error goes to the server log.
+function dbError(e: DbError | null, label = "database"): Fail {
+  console.error(`[sop] ${label}:`, e);
+  return { error: explainDbError(e) };
+}
 
 // The working copy goes live as the next version.
 async function goLive(documentId: string, note: string, ask: boolean): Promise<Live | Fail> {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("sop_publish", { p_doc: documentId, p_note: note.slice(0, 500), p_ask_read: ask });
-  if (error) return dbError(error);
+  if (error) return dbError(error, "sop_publish");
   revalidatePath("/", "layout"); // the SOP page, and the banner on every page
   return { ok: true, version: Number(data) };
 }
@@ -161,10 +164,12 @@ export async function restoreVersion(number: number): Promise<Live | Fail> {
     const v = await loadVersion(g.documentId, number);
     if (!v) return { error: "Unknown version." };
     const rows = toDraftRows(await loadVersionFull(v.id));
+    // one database step: the sections replaced AND live, or nothing changes
     const supabase = await createClient();
-    const { error } = await supabase.rpc("sop_replace_draft", { p_doc: g.documentId, p_sections: rows, p_action: "restore", p_detail: { from_version: number } });
-    if (error) return dbError(error);
-    return goLive(g.documentId, `Restored version ${number}`, false);
+    const { data, error } = await supabase.rpc("sop_restore", { p_doc: g.documentId, p_sections: rows, p_from: number });
+    if (error) return dbError(error, "sop_restore");
+    revalidatePath("/", "layout");
+    return { ok: true as const, version: Number(data) };
   });
 }
 
@@ -243,11 +248,7 @@ export async function commitImport(input: { jsonPath: string; fileName: string; 
     }
     let rows;
     try {
-      rows = toDraftRows(parsed as { title?: unknown; body?: unknown }[]).map((r) => {
-        const rest = { ...r };
-        delete rest.id; // imported sections are new sections
-        return rest;
-      });
+      rows = importRows(parsed as { title?: unknown; body?: unknown }[]);
     } catch (e) {
       return { error: e instanceof Error ? e.message : "Nothing to import." };
     }
@@ -256,12 +257,19 @@ export async function commitImport(input: { jsonPath: string; fileName: string; 
     const fileName = String(input.fileName ?? "").slice(0, 200);
     if (fileName) detail.file = fileName;
 
+    // one database step: every section replaced AND live as the next version, or nothing changes
     const supabase = await createClient();
-    const { error } = await supabase.rpc("sop_replace_draft", { p_doc: g.documentId, p_sections: rows, p_action: "import", p_detail: detail });
-    if (error) return dbError(error);
+    const { data, error } = await supabase.rpc("sop_import", {
+      p_doc: g.documentId,
+      p_sections: rows,
+      p_detail: detail,
+      p_note: `Imported from Word${fileName ? ` (${fileName})` : ""}`,
+      p_ask_read: !!input.ask,
+    });
+    if (error) return dbError(error, "sop_import");
     await admin.storage.from(SOP_BUCKET).remove([input.jsonPath]);
-    const live = await goLive(g.documentId, `Imported from Word${fileName ? ` (${fileName})` : ""}`, !!input.ask);
-    return "error" in live ? live : { ...live, sections: rows.length };
+    revalidatePath("/", "layout");
+    return { ok: true as const, version: Number(data), sections: rows.length };
   });
 }
 
