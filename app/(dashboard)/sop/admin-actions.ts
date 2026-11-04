@@ -13,6 +13,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { sopEditor, loadVersion, loadVersionFull, SOP_BUCKET } from "@/lib/sop/server";
 import { docHtml, docText, isUuid, sanitizeDoc, toDraftRows, importRows } from "@/lib/sop/content";
 import { explainDbError, type DbError } from "@/lib/sop/errors";
+import { NOT_PLAIN, isTemporaryReferenceError } from "@/lib/sop/plain";
 
 type Fail = { error: string };
 type Live = { ok: true; version: number };
@@ -74,6 +75,8 @@ export async function saveSection(input: { id: string; title: string; body: unkn
   try {
     body = sanitizeDoc(input.body);
   } catch (e) {
+    // the browser sent something that is not plain data (never React's own message to the user)
+    if (isTemporaryReferenceError(e)) return { error: NOT_PLAIN };
     return { error: e instanceof Error ? e.message : "This section could not be saved." };
   }
   return run("saveSection", async () => {

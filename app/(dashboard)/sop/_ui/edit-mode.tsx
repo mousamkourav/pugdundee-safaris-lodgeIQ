@@ -14,6 +14,7 @@ import { Icon } from "@/components/icons";
 import { ui } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
 import type { Doc } from "@/lib/sop/types";
+import { toPlainJson } from "@/lib/sop/plain";
 import { PROSE } from "./content";
 import { saveSection, addSection, moveSection, deleteSection, createImageUpload } from "../admin-actions";
 
@@ -64,7 +65,8 @@ export function SopEditMode({ sections, current }: { sections: Item[]; current: 
   const save = () =>
     start(async () => {
       if (!editor) return;
-      const r = await saveSection({ id: current.id, title, body: editor.getJSON(), ask });
+      // plain JSON: the editor's own objects cannot be read by a server action (lib/sop/plain.ts)
+      const r = await saveSection({ id: current.id, title, body: toPlainJson(editor.getJSON()), ask });
       if ("error" in r) return setMsg({ ok: false, text: r.error });
       setDirty(false);
       dirtyRef.current = false;

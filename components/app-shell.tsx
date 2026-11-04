@@ -25,7 +25,9 @@ function ModuleSwitcher({ modules, current, className = "" }: { modules: { key: 
   return (
     <div
       className={
-        "inline-flex rounded-lg border border-sand-200 bg-sand-100 p-1 text-sm " + className
+        // no display class here: the caller sets it ("flex w-full" in the drawer, "hidden md:inline-flex" in
+        // the top bar); a built-in inline-flex beat "hidden" and widened the page on phones
+        "rounded-lg border border-sand-200 bg-sand-100 p-1 text-sm " + className
       }
       role="navigation"
       aria-label="Switch module"

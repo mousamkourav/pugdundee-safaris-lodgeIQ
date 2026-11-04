@@ -246,6 +246,12 @@ private bucket `sop-media`, SQL `supabase/sop_module.sql`. Editor: TipTap 3.32.0
   refused before anything is touched ("run sop_module.sql again"). Raise both when the SQL changes.
   Errors are explained in plain words (`lib/sop/errors.ts`, `explainDbError`), never a bare
   "Could not save" (owner, 4 Nov 2026: the live import failed because the SQL was not re-run).
+- Server actions take PLAIN data only: TipTap's `editor.getJSON()` holds ProseMirror attrs objects
+  with no prototype, which a server action receives as opaque "temporary client references"
+  (reading `attrs.start` threw "Cannot access start on the server..."; owner, 4 Nov 2026). Always
+  send `toPlainJson(editor.getJSON())` (`lib/sop/plain.ts`); `plain.test.ts` runs the real React
+  encode/decode round trip. `lib/client-boundary.test.ts` fails if server code (lib, "use server",
+  pages, layouts, routes) reads a value from a "use client" module (only components may cross).
 - `lib/sop/sql.test.ts` runs `supabase/sop_module.sql` in PGlite (dev dependency, pinned 0.3.14)
   under RLS: auto-publish, save goes live, banner only when asked, staff cannot edit, Access &
   reading data super admin only.
