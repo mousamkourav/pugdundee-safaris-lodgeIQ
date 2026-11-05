@@ -105,6 +105,31 @@ Middleware (`middleware.ts`) only routes; it is not the security boundary.
 - Trip days are shown with `fmtDay` ("Sat, 16 Jan 2027").
 - Server timings: `[timing]` lines in the Vercel logs (`lib/timing.ts`).
 
+## Payments tracker (Sales > Payments, 5 Nov 2026)
+Replaces the team's payments Excel. SQL `supabase/sales_payments.sql`; code `lib/sales/payments/*`,
+pages `app/(dashboard)/sales/payments/*`, routes `app/api/sales/payments/{export,import,attachment}`.
+- Tables: `sales_bookings` (one per booked query, `query_id` unique; or by hand / imported),
+  `sales_booking_lines` (each lodge booking: lodge, Djubo booking no., dates, rooms, nights, room /
+  safari / transfer / other amounts incl. GST), `sales_booking_dues`, `sales_booking_payments` (kind
+  payment / refund / cancellation_charge; removed = `deleted_at`, never deleted by members),
+  `sales_booking_audit` (trigger: every insert / change / delete with the old and new row, who, and
+  the reason the app writes in `change_reason`). Private bucket `sales-payments` for receipts
+  (signed upload link; opened through the attachment route after a check).
+- Who: RLS functions `sales_pay_is_admin()` (super_admin, senior_manager, sales_admin, active) and
+  `sales_pay_can_row(owner, query)` / `sales_pay_can(booking)`: a sales member sees and changes the
+  bookings of queries assigned to them and the ones they own; only admins delete a booking or import.
+- Money rules (`money.ts`, pure): total = lines + booking other - booking discount; balance = owed -
+  payments + refunds (owed = total, or the cancellation charges once cancelled); below 0 = a
+  warning (refund due / overpaid). Status: Paid, Overdue (a due date passed unpaid), Due soon (7
+  days), Partly paid, Not paid yet, Cancelled. `byLine` spreads payments not tied to a lodge over
+  the lodges in order (the "By lodge booking" view, like the Excel).
+- Marking a query Booked makes its booking from the latest version (`from-version.ts`: a line per
+  lodge from `pricing.byProperty`, the rest on the booking, dues from `pricing.payments`, the Booked
+  dialog's payment); Cancelled cancels it with the cancellation charge. Never blocks the status
+  change. "Make bookings for booked queries" (admins) fills in older ones.
+- Import (`import-sheet.ts`): headings found by name; PAL / website in a date cell = the mode; the
+  same guest within 45 days = one booking; odd years and sums that do not add up are reported.
+
 ## AI assistant (Sales builder)
 One reading flow, AI first (`lib/sales/plan/reading.ts`):
 1. Memory: `sales_reading_patterns` (Master data > Reading memory), saved when a quote is

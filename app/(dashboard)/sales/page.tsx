@@ -11,6 +11,8 @@ import { rupees } from "@/lib/sales/format";
 import { QUERY_LIST_COLUMNS, type QueryRow } from "@/lib/sales/status";
 import { resolveDashboardRange, RANGE_LABEL } from "@/lib/sales/dashboard-range";
 import { summarise, conversion as pct, followUps, byMember, type Totals } from "@/lib/sales/dashboard-summary";
+import { loadBookings } from "@/lib/sales/payments/server";
+import { summarise as paymentsSummary } from "@/lib/sales/payments/money";
 
 // Supabase returns at most 1000 rows per request, so the period is read page by page
 // (a single .limit(5000) silently stopped at 1000 queries).
@@ -65,6 +67,11 @@ export default async function SalesDashboard({
 
   const first = (profile?.full_name || "").split(" ")[0] || "there";
 
+  // Payments (whatever the period: money due now). Nothing shows until the payments SQL is run.
+  const pay = await loadBookings(supabase);
+  const today = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
+  const money = pay.error ? null : paymentsSummary(pay.bookings, today);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -110,6 +117,25 @@ export default async function SalesDashboard({
         <StatCard label="Received" value={rupees(t.received)} hint="Payments recorded at booking" />
         <StatCard label="Pending value" value={rupees(t.pendingValue)} hint={range.key === "all" ? "Open and quoted, all time" : "Open and quoted in this period"} />
       </div>
+
+      {money && (
+        <section>
+          <div className="mb-3 flex items-end justify-between gap-3">
+            <h2 className="text-lg">Payments</h2>
+            <Link href="/sales/payments" className={`${ui.btnGhost} ${ui.btnSm}`}>Open Payments</Link>
+          </div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <StatCard label="Received this month" value={rupees(money.receivedThisMonth)} valueClass="!text-success" />
+            <StatCard label="Balance due" value={rupees(money.balance)} hint="All live bookings" highlight />
+            <Link href="/sales/payments?status=overdue" className="block">
+              <StatCard label="Overdue" value={rupees(money.overdue.amount)} hint={`${money.overdue.count} booking${money.overdue.count === 1 ? "" : "s"}`} valueClass={money.overdue.count ? "!text-error" : ""} />
+            </Link>
+            <Link href="/sales/payments?status=due_soon" className="block">
+              <StatCard label="Due this week" value={rupees(money.dueThisWeek)} hint="Next 7 days" />
+            </Link>
+          </div>
+        </section>
+      )}
 
       {admin && (
         <section>

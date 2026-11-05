@@ -80,6 +80,8 @@ export const NAV: NavGroup[] = [
       { label: "Dashboard", href: "/sales", icon: "grid", exact: true },
       { label: "Create itinerary", href: "/sales/new", icon: "plus" },
       { label: "Queries", href: "/sales/queries", icon: "list" },
+      // every Sales user; a member sees only their own bookings (row level security)
+      { label: "Payments", href: "/sales/payments", icon: "receipt" },
       { label: "Lost & cancelled", href: "/sales/closed", icon: "xCircle" },
     ],
   },

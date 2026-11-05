@@ -81,6 +81,9 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
     // "Update the current version" corrections (sales_version_audit.sql; none before it is run)
     supabase.from("sales_version_audit").select("version_id, changed_by, changed_at").eq("query_id", id).order("changed_at", { ascending: false }),
   ]);
+  // its booking in Payments (none before sales_payments.sql is run, or before it is booked)
+  const { data: bookingRow } = await supabase.from("sales_bookings").select("id").eq("query_id", id).is("deleted_at", null).maybeSingle();
+  const bookingId = (bookingRow as { id: string } | null)?.id ?? null;
   const list = (vData ?? []) as { id: string; version_no: number; total_amount: number; currency: string; created_by: string | null; created_at: string; share_token: string; share_slug: string | null }[];
   const full = latest as { id: string; plan: Plan; pricing: PriceResult } | null;
   const versions = list.map((v) => (full && v.id === full.id ? { ...v, plan: full.plan, pricing: full.pricing } : { ...v, plan: undefined, pricing: undefined }));
@@ -386,6 +389,11 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
                 <div className="flex justify-between gap-3"><dt className="text-sand-600">Payment date</dt><dd className="font-medium text-olive-800">{fmtDate(q.booked_at)}</dd></div>
                 <div className="flex justify-between gap-3"><dt className="text-sand-600">Reference</dt><dd className="font-medium text-olive-800">{q.payment_ref || "-"}</dd></div>
               </dl>
+              {bookingId && (
+                <Link href={`/sales/payments/${bookingId}`} className={`${ui.btnSecondary} ${ui.btnSm} mt-3`}>
+                  Payments, balance and due dates
+                </Link>
+              )}
             </section>
           )}
 

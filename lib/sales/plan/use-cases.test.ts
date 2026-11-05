@@ -503,7 +503,9 @@ test("every Sales server action and API route checks the caller's role on the se
   walk(join(root, "app", "api", "sales"));
   const actions = files.filter((f) => /^\s*["']use server["']/.test(readFileSync(f, "utf8")) || /[\\/]route\.ts$/.test(f));
   assert.ok(actions.length >= 9, `found ${actions.length}`);
-  const adminOnly = /[\\/](admin|members)[\\/]|[\\/]api[\\/]sales[\\/]/;
+  // API routes are for Sales admins, except the payments list export and receipts, which every
+  // Sales user opens for their own bookings (row level security decides which)
+  const adminOnly = /[\\/](admin|members)[\\/]|[\\/]api[\\/]sales[\\/](?!payments[\\/](export|attachment)[\\/])/;
   for (const f of actions) {
     const src = readFileSync(f, "utf8");
     const rel = f.slice(root.length + 1);

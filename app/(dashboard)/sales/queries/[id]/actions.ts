@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser, isInactive, isSalesUser, isSalesAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { canMoveStatus, STATUS_LABEL, isQueryStatus } from "@/lib/sales/status";
+import { createBookingForQuery } from "@/lib/sales/payments/server";
 
 export type StatusInput =
   | { to: "booked"; amount: number; paymentRef: string; paymentDate: string; remark?: string }
@@ -99,9 +100,34 @@ async function changeStatusUnsafe(queryId: string, input: StatusInput): Promise<
   if (error) return { error: error.message };
   if (!data) return { error: "This query is not assigned to you, so its status cannot be changed." };
 
+  // the payments tracker follows the query (never stops the status change)
+  const today = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
+  if (input.to === "booked") {
+    const r = await createBookingForQuery(supabase, queryId, today);
+    if (r.skipped === "already there" && r.id) await supabase.from("sales_bookings").update({ cancelled: false, cancelled_on: null, change_reason: "Booked again" }).eq("id", r.id).eq("cancelled", true);
+    if (r.error) console.error("[sales] booking for query", queryId, r.error);
+  }
+  if (input.to === "cancelled") await markBookingCancelled(supabase, queryId, today, money(input.cancelCharge), clean(input.remark));
+
   revalidatePath(`/sales/queries/${queryId}`);
   revalidatePath("/sales", "layout");
   return { ok: true };
+}
+
+// A cancelled query: its booking is cancelled too, with the cancellation charge as an entry (what
+// the guest still owes; what was paid above it shows as a refund to make).
+async function markBookingCancelled(supabase: Awaited<ReturnType<typeof createClient>>, queryId: string, today: string, charge: number | null | "bad", remark: string) {
+  try {
+    const { data: b } = await supabase.from("sales_bookings").select("id, cancelled").eq("query_id", queryId).is("deleted_at", null).maybeSingle();
+    if (!b || (b as { cancelled: boolean }).cancelled) return;
+    const id = (b as { id: string }).id;
+    await supabase.from("sales_bookings").update({ cancelled: true, cancelled_on: today, change_reason: `Query cancelled: ${remark}`.slice(0, 500) }).eq("id", id);
+    if (typeof charge === "number" && charge > 0) {
+      await supabase.from("sales_booking_payments").insert({ booking_id: id, kind: "cancellation_charge", amount: charge, paid_on: today, mode: "other", note: "Cancellation charge from the cancelled query", change_reason: "Query cancelled" });
+    }
+  } catch (e) {
+    console.error("[sales] cancel booking for query", queryId, e instanceof Error ? e.message : e);
+  }
 }
 
 async function reassignQueryUnsafe(queryId: string, memberId: string, remark: string): Promise<Result> {
