@@ -196,6 +196,15 @@ only Sales users can have it (`lib/sales/group/server.ts`, any failure = no acce
   for the group size chosen in the costing step; dues by the quote's payment percentages.
 - A group quote stays a group quote (save refuses a change of type); /sales/new redirects it.
 
+## Installed app (PWA, 6 Nov 2026)
+LodgeIQ installs on phones and computers (Add to Home screen / Install app). Files:
+`public/manifest.webmanifest`, `public/icons/*` (paw from the circle logo), `public/sw.js`,
+`public/offline.html`, `components/pwa/register-sw.tsx`, `lib/pwa.ts`.
+- The service worker caches NOTHING but the offline page: every page and figure comes from the server.
+  It never touches guest pages (/i/...), and only staff pages (dashboard, login, hub) link the manifest.
+- middleware.ts lets manifest.webmanifest, sw.js and offline.html through without a login;
+  next.config.ts serves sw.js with no-cache. Change the offline page? Bump CACHE in sw.js.
+
 ## AI assistant (Sales builder)
 One reading flow, AI first (`lib/sales/plan/reading.ts`):
 1. Memory: `sales_reading_patterns` (Master data > Reading memory), saved when a quote is

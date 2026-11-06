@@ -1,5 +1,10 @@
 import Image from "next/image";
 import { login } from "./actions";
+import { appMetadata, appViewport } from "@/lib/pwa";
+import { RegisterServiceWorker } from "@/components/pwa/register-sw";
+
+export const metadata = appMetadata;
+export const viewport = appViewport;
 
 export default async function LoginPage({
   searchParams,
@@ -10,6 +15,7 @@ export default async function LoginPage({
 
   return (
     <div className="min-h-screen grid place-items-center bg-sand-50 p-4">
+      <RegisterServiceWorker />
       <div className="w-full max-w-sm rounded-2xl border border-sand-200 bg-white p-8">
         <Image
           src="/pugdundee-logo-horizontal.jpeg"

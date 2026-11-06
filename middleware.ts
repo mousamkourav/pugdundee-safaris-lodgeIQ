@@ -132,6 +132,8 @@ export const config = {
   matcher: [
     // Exclude API routes (they handle their own auth - e.g. the cron endpoint),
     // Next internals, robots.txt and static image files.
-    "/((?!api|_next/static|_next/image|favicon.ico|robots.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // Also the installed-app files (manifest, service worker, offline page), which must load
+    // before anyone signs in.
+    "/((?!api|_next/static|_next/image|favicon.ico|robots.txt|manifest.webmanifest|sw.js|offline.html|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

@@ -7,6 +7,11 @@ import { Icon } from "@/components/icons";
 import { ui } from "@/components/ui";
 import { sopStatus } from "@/lib/sop/server";
 import { rpStatus } from "@/lib/redpanda/server";
+import { appMetadata, appViewport } from "@/lib/pwa";
+import { RegisterServiceWorker } from "@/components/pwa/register-sw";
+
+export const metadata = appMetadata;
+export const viewport = appViewport;
 
 // Module picker shown after sign-in to super roles. Everyone else is sent
 // straight to their own module.
@@ -78,6 +83,7 @@ export default async function HubPage() {
 
   return (
     <div className="min-h-screen bg-sand-50">
+      <RegisterServiceWorker />
       <header className="flex h-16 items-center justify-between border-b border-sand-200 bg-white px-4 sm:px-6">
         <div className="flex items-center gap-3">
           <Image

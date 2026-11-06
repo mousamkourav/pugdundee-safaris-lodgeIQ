@@ -4,6 +4,11 @@ import { sopStatus } from "@/lib/sop/server";
 import { showReadBanner } from "@/lib/sop/access";
 import { rpStatus } from "@/lib/redpanda/server";
 import { groupStatus } from "@/lib/sales/group/server";
+import { appMetadata, appViewport } from "@/lib/pwa";
+import { RegisterServiceWorker } from "@/components/pwa/register-sw";
+
+export const metadata = appMetadata;
+export const viewport = appViewport;
 
 export default async function DashboardLayout({
   children,
@@ -18,6 +23,7 @@ export default async function DashboardLayout({
 
   return (
     <AppShell role={role} name={name} sopAccess={sop.canView} sopUnread={showReadBanner(sop) ? sop.readVersion : null} rpAccess={rp.canUse} groupAccess={grp.canUse}>
+      <RegisterServiceWorker />
       {children}
     </AppShell>
   );
