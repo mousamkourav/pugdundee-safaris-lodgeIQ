@@ -74,7 +74,8 @@ Middleware (`middleware.ts`) only routes; it is not the security boundary.
 - Indian and foreign guests: seasonal rates (Shoulder / High / Peak). Indian rates (management,
   4 Nov 2026) have weekend rates on Friday and Saturday nights (`sales_tariff.weekend_days` {5,6})
   and their own season dates: `sales_tariff_calendar.nationality` = 'indian' rows; a nationality
-  with no rows of its own uses the 'all' rows (`calendarFor` in tariff.ts). Ken River: B2B,
+  with no rows of its own uses the 'all' rows (`calendarFor` in tariff.ts). Our lodges' "... per BAR
+  policy" room rate rows are for foreign guests only (owner, 5 Nov 2026, option A). Ken River: B2B,
   taxes included. The guest page and PDF show the number of rooms (`plan.guest.rooms`).
 - `sales_safari_rates` (park, zone, session, nationality, Tadoba booking window; weekend
   rates also on the festive dates in settings), `sales_transfer_rates` (one row per road,
@@ -196,6 +197,18 @@ added: ...", "built-in reader"). `enquiries.test.ts` checks every enquiry with a
 Gemini too (invented quotes, an empty answer): the trip must not change.
 
 Route rules (do not patch phrases around them):
+- The travel rule book (owner, 5 Nov 2026): `lib/sales/plan/travel-rules.ts` (`applyTravelRules`, run
+  by chatTurn on every trip, whoever read it). From Master data only: a lodge's airport = the one
+  with the shortest drive (Iora Retreat: Jorhat or Guwahati, asked once); two stays in different
+  road regions = lodge > its airport, the flight, airport > next stay (never a road); city nights
+  use their own city's airport; "back to Delhi" after a lodge = the flight from its airport; guest
+  words (`guestWords`: "1 double" = 2 adults 1 room, "2 doubles", "1 triple", "single", "couple",
+  "family of 4"), also accepted by the evidence rule. The trip's own way in / out is NOT filled in
+  (`fillEnds` off): when not written, the chat asks, the lodge's nearest airport offered first
+  ("same" first only when it is also the last lodge's nearest).
+- Flights: every circuit flight Rs 15,000 per person one way: a Flight routes row, else Sales
+  settings "Domestic flight fare" (`flight_fare_pp`, `flight-fare.ts`). A flight with no fare is a
+  price to type (a hard check), never 0. SQL `sales_itinerary_rules_2026-11-05.sql`.
 - `lib/sales/plan/route.ts` (`resolveRoute`): the places in the order written (city nights and
   lodges); two in a row that no road joins (different road regions, `roadRegions`) are joined by
   a flight, written or not. A lodge's airport: named in the text for that leg, else the airport
@@ -225,7 +238,12 @@ Route rules (do not patch phrases around them):
 - Master data > Rate coverage (`lib/sales/master/coverage.ts`) prices every case with the engine
   (rooms by month, child, safaris, full day, naturalist, experiences understood with no add-on);
   `real-circuit.test.ts` runs the owner's whole-circuit enquiry on his REAL Master data
-  (`real-master.data.ts`, generated from his export of 2 Nov 2026; `real-fixture.ts` = `realCtx`).
+  (`real-master.data.ts`, generated from his export of 5 Nov 2026 by `scripts/real-master-from-export.ts`;
+  `real-fixture.ts` = `realCtx`, with the 5 Nov SQL applied: BAR rows foreign only, circuit flights).
+  `trip-generator.ts` makes hundreds of trips from it and an independent judge checks each against
+  the rule book (`trip-generator.test.ts`: 320 must be clean; `scripts/trip-generator-report.ts 640`
+  lists failures and the roads / rates genuinely missing in Master data). `reliable.test.ts`: the
+  bugs of 5 Nov.
   Test reading and routing on real data, never only on made-up rows; regenerate it from a new export.
 - A break from our itinerary ("they go to another resort for 2 days and resume with us", "2 nights
   at another resort", "not with us for 3 nights", "take a break of 2 days"): the reader adds a

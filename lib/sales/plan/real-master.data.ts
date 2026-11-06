@@ -6,7 +6,6 @@
 // as airports (the owner's missing-roads result). Lodge exceptions' child rates come from their note
 // ("children 25%/40% of double"; free under 5 as the tariff). Flight routes are not in the export:
 // real-fixture.ts adds the circuit routes the SQL puts in Master data.
-/* eslint-disable */
 export const REAL_MASTER = {
  "parks": [
   {

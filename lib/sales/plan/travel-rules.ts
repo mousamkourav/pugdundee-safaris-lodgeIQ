@@ -19,7 +19,7 @@
 //    "family of 4" = 4 guests (the adult / child split is asked).
 // =====================================================================
 
-import { airportServes, roadRegions, segments, type Segment } from "./planner";
+import { roadRegions, segments, type Segment } from "./planner";
 import { sameCity } from "./cities";
 import { DRIVE_CITIES } from "@/lib/sales/master/missing-transfers";
 import type { BuilderContext, Plan, PlanFlight } from "./types";
