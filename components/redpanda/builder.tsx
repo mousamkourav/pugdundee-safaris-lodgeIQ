@@ -6,7 +6,7 @@
 // price is the same pure pricing the server runs again when saving.
 import { useMemo, useState, useTransition } from "react";
 import { RpChat, type RpChatMessage } from "./rp-chat";
-import { applyReading, isRpConfirmed, nextQuestion, replyText, rpConfirmKey, tripSummary } from "@/lib/redpanda/assist";
+import { applyReading, isRpConfirmed, mentionsOtherPlaces, nextQuestion, replyText, rpConfirmKey, salesHandoffText, tripSummary } from "@/lib/redpanda/assist";
 import { rpGuestContent } from "@/lib/redpanda/content";
 import { rpAssist } from "@/app/(dashboard)/red-panda/ai-actions";
 import type { RpPending } from "@/lib/redpanda/reader";
@@ -60,6 +60,7 @@ function Stepper({ step, canGo, go }: { step: number; canGo: (n: number) => bool
   );
 }
 
+const OPEN_SALES = "Open in the Sales builder";
 const QUICK: Partial<Record<NonNullable<RpPending>, string[]>> = { nationality: ["Indian", "Foreign"], hotel_side: ["Before", "After"] };
 const HELLO: RpChatMessage = {
   role: "assistant",
@@ -92,6 +93,16 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
 
   async function onSend(text: string) {
     setMessages((m) => [...m, { role: "user", text }]);
+    // Delhi, Kaziranga, our lodges: one place builds mixed trips (the Sales builder, Red Panda as a
+    // stop). Not read here (the Red Panda reader would take Delhi's dates or nights as the Outpost's).
+    if (mentionsOtherPlaces(text)) {
+      setPlan((p) => ({ ...p, enquiry: [p.enquiry, text].filter(Boolean).join("\n---\n").slice(-6000) }));
+      setMessages((m) => [
+        ...m,
+        { role: "assistant", text: "This trip has places besides Red Panda Outpost. Trips with Delhi, Kaziranga or our lodges are built in the Sales builder, with Red Panda Outpost as a stop at the same tariff; your enquiry goes with it. For a Red Panda only quote, write the trip without the other places.", quick: [OPEN_SALES] },
+      ]);
+      return;
+    }
     setBusy(true);
     try {
       const r = await rpAssist({ message: text, pending: asking, guestName: plan.guest.name, hotelRooms: rooms.map((x) => x.name) });
@@ -104,13 +115,15 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
       setFormRev((x) => x + 1);
       setAsking(a.pending);
       setMessages((m) => [...m, { role: "assistant", text: replyText(a, ""), source: r.note || undefined, quick: a.pending === "hotel_room" ? rooms.map((x) => x.name) : a.pending ? QUICK[a.pending] : a.ready ? ["Check the trip"] : undefined }]);
+
     } catch {
       setMessages((m) => [...m, { role: "assistant", text: "Could not reach the server. Check the connection and try again." }]);
     } finally {
       setBusy(false);
     }
   }
-  const send = (text: string) => (text === "Check the trip" && tripReady ? setStep(1) : void onSend(text));
+  const openSales = () => router.push(`/sales/new?text=${encodeURIComponent(salesHandoffText(plan, s))}`);
+  const send = (text: string) => (text === OPEN_SALES ? openSales() : text === "Check the trip" && tripReady ? setStep(1) : void onSend(text));
 
   function save(mode: "draft" | "final") {
     setMsg(null);
@@ -208,6 +221,15 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
         <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
           <div className="space-y-4 lg:sticky lg:top-24 lg:self-start">
             <RpChat messages={messages} busy={busy} onSend={send} />
+            {!queryId && (
+              <div className={`${ui.muted} space-y-2 p-4 text-sm`}>
+                <p className="font-semibold text-olive-800">Delhi, Kaziranga or our lodges too?</p>
+                <p className="text-sand-600">
+                  Most foreign guests land in Delhi first. Trips with other places are built in the Sales builder, with Red Panda Outpost as a stop at the same tariff. This quote stays Red Panda only.
+                </p>
+                <button type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} onClick={openSales}>{OPEN_SALES}</button>
+              </div>
+            )}
           </div>
           <div className="min-w-0 space-y-6">
         <section className={`${ui.card} space-y-4 p-5`}>

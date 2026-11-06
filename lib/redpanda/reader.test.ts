@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readEnquiry } from "./reader";
 import { checkRpEvidence, mergeReadings, scrubRp } from "./ai";
-import { applyReading, isRpConfirmed, replyText, rpConfirmKey, tripSummary } from "./assist";
+import { applyReading, isRpConfirmed, mentionsOtherPlaces, replyText, rpConfirmKey, salesHandoffText, tripSummary } from "./assist";
 import { emptyRpPlan, readSettings, sanitizeRpPlan } from "./plan";
 
 const TODAY = "2026-11-06";
@@ -172,4 +172,14 @@ test("the test enquiry on the real Mayfair room names (Master data export of 2 N
   // a tap on the room's name, or a word of it
   assert.equal(readEnquiry("Jungle View Room (double bed)", TODAY, { pending: "hotel_room", hotelRooms: real.map((x) => x.name) }).hotel_room, "Jungle View Room (double bed)");
   assert.equal(readEnquiry("jungle", TODAY, { pending: "hotel_room", hotelRooms: real.map((x) => x.name) }).hotel_room, "Jungle View Room (double bed)");
+});
+
+test("other places (Delhi, Kaziranga, our lodges): the trip goes to the Sales builder with the enquiry", () => {
+  assert.equal(mentionsOtherPlaces("2 adults, delhi 1 night then red panda"), true);
+  assert.equal(mentionsOtherPlaces("then kaziranga 3 nights"), true);
+  assert.equal(mentionsOtherPlaces("2 adults from UK, bagdogra, 5 nights, mayfair after"), false);
+  const p = { ...emptyRpPlan(), enquiry: "2 adults from UK\n---\nalso delhi 1 night first" };
+  assert.equal(salesHandoffText(p, S), "2 adults from UK\nalso delhi 1 night first");
+  const q = { ...emptyRpPlan(), arrival: "2027-02-12", hotel_after: { nights: 1, room_id: "R1" }, guest: { ...emptyRpPlan().guest, adults: 2, country: "United Kingdom" } };
+  assert.equal(salesHandoffText(q, S), "2 adults, from United Kingdom, arriving bagdogra on 12 Feb 2027, red panda outpost 5 nights, then 1 night at mayfair chumta, fly out from bagdogra");
 });

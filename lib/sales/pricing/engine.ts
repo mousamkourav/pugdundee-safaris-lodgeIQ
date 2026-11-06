@@ -20,6 +20,7 @@
 //   the deposit at booking.
 // =====================================================================
 
+import { isRedPandaName, MARKET_TEXT, rpNight, rpStopProblems, salesMarket } from "@/lib/redpanda/in-sales";
 import { addDays, addYears, dayName, inRange, nightsOf, weekday } from "./dates";
 import type {
   Instalment,
@@ -242,6 +243,37 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
   const totalRooms = trip.stays.reduce((m, s) => Math.max(m, s.rooms), 0);
   for (const stay of trip.stays) {
     const room = roomOf(stay.room_category_id);
+    // Red Panda Outpost: its own per-person package tariff, never room rates (lib/redpanda/in-sales.ts)
+    if (isRedPandaName(propName(stay.property_id))) {
+      const name = propName(stay.property_id);
+      const rp = data.redPanda;
+      if (!rp) {
+        errors.push(`${name} is priced from the Red Panda tariff: only people with Red Panda access can quote it.`);
+        continue;
+      }
+      const nights = nightsOf(stay.check_in, stay.nights);
+      const chk = rpStopProblems(rp, { name, adults: trip.adults, children: trip.children, nights, dateless: !!basis, rooms: stay.rooms });
+      errors.push(...chk.errors);
+      warnings.push(...chk.warnings);
+      const market = salesMarket(!!trip.b2b, trip.nationality);
+      const guestsHere = trip.adults + trip.children.length;
+      for (const night of nights) {
+        const n = rpNight(rp, { market, guests: guestsHere, rooms: stay.rooms, night, basis, today: trip.booking_date });
+        if (!n) {
+          errors.push(`${name}: no Red Panda tariff (${MARKET_TEXT[market]}, ${guestsHere} guests) for ${basis ? "these dates" : readableDate(night)}. Add it in Red Panda > Master data.`);
+          break;
+        }
+        const label = `${name}, ${room?.name ?? "Room"}${stay.rooms > 1 ? ` x${stay.rooms}` : ""}, package (${MARKET_TEXT[market]} ${n.season}${n.extraRooms ? `, ${n.extraRooms} single room supplement${n.extraRooms === 1 ? "" : "s"}` : ""})`;
+        keyDesc.set(label, label);
+        const { amount, tax } = withTax(n.base, rp.gst_pct, false);
+        lines.push({
+          kind: "room", date: night, description: label, quantity: stay.rooms, unit_price: round(n.base / stay.rooms), amount, tax, tax_pct: rp.gst_pct,
+          property_id: stay.property_id, ref_id: stay.room_category_id,
+          pax: { adult: trip.adults / guestsHere, extra: 0, child: trip.children.map(() => 1 / guestsHere) },
+        });
+      }
+      continue;
+    }
     // what the line is: the lodge or hotel, the room and the meal plan ("Roseate House, AC Deluxe, B&B")
     const label = `${propName(stay.property_id)}, ${room?.name ?? "Room"}${stay.rooms > 1 ? ` x${stay.rooms}` : ""}, ${mealLabel(stay.meal_plan)}`;
     // the line's key keeps the older wording, so prices corrected by hand on saved quotes still match

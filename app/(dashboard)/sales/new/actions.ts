@@ -12,6 +12,7 @@ import { getCurrentUser, isSalesUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadBuilderContext, todayIST } from "@/lib/sales/plan/load-context";
+import { withRedPanda } from "@/lib/redpanda/server";
 import { sanitizePlan } from "@/lib/sales/plan/sanitize";
 import type { Plan } from "@/lib/sales/plan/types";
 import { planToTrip, routeProblems } from "@/lib/sales/plan/planner";
@@ -56,8 +57,10 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
   const plan = sanitizePlan(raw);
   if (!plan) return { error: "The itinerary is missing its arrival date." };
 
-  const { ctx, error: loadError } = await loadBuilderContext();
+  const { ctx: base, error: loadError } = await loadBuilderContext();
   if (loadError) return { error: "Could not load master data: " + loadError };
+  // Red Panda Outpost in the trip: priced from its tariff, for people with Red Panda access only
+  const ctx = await withRedPanda(base, cu.profile?.role);
   const today = todayIST();
   const problems = routeProblems(plan, ctx);
   const result = plan.days.length && !problems.length ? priceTrip(planToTrip(plan, today), ctx.pricing) : null;

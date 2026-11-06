@@ -2,6 +2,8 @@
 // function (no database, no dates from the clock) so it can be tested
 // against the Excel costing sheet and reused by the builder and the PDF.
 
+import type { RpSalesPricing } from "@/lib/redpanda/in-sales";
+
 export type ISODate = string; // "YYYY-MM-DD"
 export type Session = "morning" | "afternoon" | "full_day";
 export type Nationality = "indian" | "foreign";
@@ -216,6 +218,8 @@ export interface PricingData {
   offers: Offer[];
   settings: PricingSettings;
   carPackages?: CarPackage[]; // empty before sales_car_packages.sql
+  // Red Panda Outpost's tariff (lib/redpanda/in-sales.ts): only for people with Red Panda access
+  redPanda?: RpSalesPricing | null;
 }
 
 // ---------- the trip being priced ----------
@@ -268,6 +272,7 @@ export interface TripInput {
   adults: number;
   children: number[]; // ages
   nationality: Nationality;
+  b2b?: boolean; // booked through an agent (Red Panda Outpost's B2B tariff)
   stays: StayInput[];
   safaris: SafariInput[];
   transfers: TransferInput[];

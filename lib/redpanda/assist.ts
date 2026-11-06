@@ -144,3 +144,27 @@ export function rpConfirmKey(p: RpPlan): string {
   ]);
 }
 export const isRpConfirmed = (p: RpPlan) => !!p.confirmed && p.confirmed === rpConfirmKey(p);
+
+// ---------------- other places too (Delhi, Kaziranga, our lodges) ----------------
+
+// Places a Red Panda enquiry may also name: those trips are built in the Sales builder (one
+// place for mixed trips), with Red Panda Outpost as a stop.
+export const OTHER_PLACES = /\b(delhi|agra|jaipur|kaziranga|iora|guwahati|jorhat|assam|tadoba|waghoba|kanha|pench|bandhavgarh|satpura|denwa|panna|ken river|khajuraho|nagpur|jabalpur|bhopal|tiger|kings lodge|tree house)\b/i;
+export const mentionsOtherPlaces = (text: string) => OTHER_PLACES.test(text);
+
+// The text the Sales builder starts from: the enquiry as written, or the trip in words.
+export function salesHandoffText(p: RpPlan, s: RpSettings): string {
+  if (p.enquiry.trim()) return p.enquiry.replace(/\n---\n/g, "\n").trim().slice(0, 1500);
+  const air = (c: string) => (s.airports.find((a) => a.code === c)?.name ?? c).replace(/\s*(airport)?\s*\(.*$/i, "").replace(/\s+airport$/i, "").trim().toLowerCase();
+  const parts = [
+    `${p.guest.adults} adult${p.guest.adults === 1 ? "" : "s"}${p.guest.child_ages.length ? ` and ${p.guest.child_ages.length} child${p.guest.child_ages.length === 1 ? "" : "ren"} aged ${p.guest.child_ages.join(", ")}` : ""}`,
+    p.guest.country ? `from ${p.guest.country}` : p.guest.nationality === "indian" ? "indian" : "foreign",
+    p.guest.booked_by === "agent" ? `through travel agent${p.guest.agent_name ? ` ${p.guest.agent_name}` : ""}` : "",
+    p.arrival ? `arriving ${air(p.arrive_airport)} on ${fmtD(p.arrival).replace(/^\w+, /, "")}` : "",
+    p.hotel_before.nights ? `${p.hotel_before.nights} night at mayfair chumta` : "",
+    `red panda outpost ${p.nights} nights`,
+    p.hotel_after.nights ? `then ${p.hotel_after.nights} night at mayfair chumta` : "",
+    `fly out from ${air(p.depart_airport)}`,
+  ];
+  return parts.filter(Boolean).join(", ");
+}

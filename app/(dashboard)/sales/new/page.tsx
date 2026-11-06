@@ -8,6 +8,7 @@ import { loadBuilderContext, todayIST } from "@/lib/sales/plan/load-context";
 import { defaultVehicle, emptyPlan } from "@/lib/sales/plan/planner";
 import { sanitizePlan } from "@/lib/sales/plan/sanitize";
 import { isRedPandaPlan } from "@/lib/redpanda/plan";
+import { withRedPanda } from "@/lib/redpanda/server";
 import type { Plan } from "@/lib/sales/plan/types";
 import { aiEnabled } from "./ai-actions";
 import { logTiming } from "@/lib/timing";
@@ -19,7 +20,7 @@ export const maxDuration = 60;
 export default async function NewItineraryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; step?: string }>;
+  searchParams: Promise<{ from?: string; step?: string; text?: string }>;
 }) {
   const { profile } = await requireUser();
   const sp = await searchParams;
@@ -29,13 +30,15 @@ export default async function NewItineraryPage({
   // master data, the query being edited (with its latest version) and the AI switch: all at once
   const supabase = await createClient();
   const started = performance.now();
-  const [{ ctx, error }, q, v, aiAvailable] = await Promise.all([
+  const [{ ctx: base, error }, q, v, aiAvailable] = await Promise.all([
     loadBuilderContext(),
     fromId ? supabase.from("sales_queries").select("id, query_no, status").eq("id", fromId).is("deleted_at", null).maybeSingle() : null,
     fromId ? supabase.from("sales_itinerary_versions").select("plan").eq("query_id", fromId).order("version_no", { ascending: false }).limit(1).maybeSingle() : null,
     aiEnabled(),
   ]);
   logTiming("page /sales/new data", performance.now() - started);
+  // the Red Panda tariff, for people with Red Panda access (a Red Panda stop in the trip)
+  const ctx = await withRedPanda(base, profile?.role);
 
   let initial: Plan = emptyPlan(today);
   let queryNo: string | null = null;
@@ -82,7 +85,7 @@ export default async function NewItineraryPage({
           )}
         </div>
       ) : (
-        <Builder ctx={ctx} initial={initial} queryId={fromId} queryNo={queryNo} today={today} aiAvailable={aiAvailable} startStep={startStep} queryStatus={queryStatus} isAdmin={isSalesAdmin(profile?.role)} />
+        <Builder ctx={ctx} initial={initial} queryId={fromId} queryNo={queryNo} today={today} aiAvailable={aiAvailable} startStep={startStep} queryStatus={queryStatus} isAdmin={isSalesAdmin(profile?.role)} initialText={fromId ? "" : String(sp.text ?? "").slice(0, 1500)} />
       )}
     </div>
   );

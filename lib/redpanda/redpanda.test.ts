@@ -217,8 +217,13 @@ test("a Red Panda quote never reaches the Safari pricing engine, planner, reader
     const walk = (x: string): string[] => readdirSync(join(ROOT, x)).flatMap((f) => (statSync(join(ROOT, x, f)).isDirectory() ? walk(join(x, f)) : /\.tsx?$/.test(f) && !/\.test\.ts$/.test(f) ? [join(x, f)] : []));
     for (const f of walk(d)) assert.doesNotMatch(src(f), /lib\/sales\/(pricing\/engine|plan\/(planner|parse-text|chat|ai|reading|sanitize))/, f);
   }
-  // and the Safari engine / reader never import Red Panda code
-  for (const f of ["lib/sales/pricing/engine.ts", "lib/sales/plan/planner.ts", "lib/sales/plan/parse-text.ts", "lib/sales/plan/sanitize.ts"]) assert.doesNotMatch(src(f), /redpanda/, f);
+  // and the Safari engine / planner use only the Red Panda stop's pricing and name rule (a Red Panda
+  // stop in a Sales trip, lib/redpanda/in-sales.ts, 6 Nov 2026); the reader and plan check none
+  for (const f of ["lib/sales/pricing/engine.ts", "lib/sales/plan/planner.ts"]) {
+    const imports = [...src(f).matchAll(/from "(@\/lib\/redpanda\/[^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual([...new Set(imports)], ["@/lib/redpanda/in-sales"], f);
+  }
+  for (const f of ["lib/sales/plan/parse-text.ts", "lib/sales/plan/sanitize.ts"]) assert.doesNotMatch(src(f), /redpanda/, f);
   // the browser's plan is checked field by field
   assert.equal(sanitizeRpPlan({ kind: "red_panda", guest: { adults: 2 } }).guest.adults, 2);
 });

@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { NO_RP, readAccess, type RpAccess } from "./access";
 import { readSettings } from "./plan";
 import type { Market, RpHotel, RpMaster, RpSupplementRow, RpTariffRow } from "./types";
+import type { RpSalesPricing } from "./in-sales";
 
 // One call per request (layout and page share it). Tables not there yet (SQL not run) or any
 // failure = no access: the tab stays hidden.
@@ -137,4 +138,21 @@ export async function loadRpMaster(): Promise<{ master: RpMaster | null; error?:
     };
   }
   return { master: { tariff, supplements, settings, hotel } };
+}
+
+// The Red Panda tariff for the Sales builder and its save (a Red Panda stop in a Safari trip):
+// only for people with Red Panda access; anyone else gets null (the stop is then an error).
+export async function loadRpSalesPricing(role: string | null | undefined): Promise<RpSalesPricing | null> {
+  const access = await rpStatus(role);
+  if (!access.canUse) return null;
+  const { master } = await loadRpMaster();
+  if (!master) return null;
+  const s = master.settings;
+  return { tariff: master.tariff, supplements: master.supplements, gst_pct: s.gst_pct, package_nights: s.package_nights, min_nights: s.min_nights, max_guests: s.max_guests, min_age: s.min_age, closed_months: s.closed_months };
+}
+
+// The Sales builder context with the Red Panda tariff (a new object: the cached one is shared).
+export async function withRedPanda<T extends { pricing: object }>(ctx: T, role: string | null | undefined): Promise<T> {
+  const redPanda = await loadRpSalesPricing(role);
+  return { ...ctx, pricing: { ...ctx.pricing, redPanda } };
 }

@@ -107,6 +107,7 @@ export function Builder({
   isAdmin = false,
   startStep = 0,
   queryStatus = null,
+  initialText = "",
 }: {
   ctx: BuilderContext;
   initial: Plan;
@@ -117,6 +118,7 @@ export function Builder({
   isAdmin?: boolean; // Sales admin: a typed rate is saved straight into Master data
   startStep?: number;
   queryStatus?: string | null;
+  initialText?: string; // an enquiry to start from, in the message box (from the Red Panda builder)
 }) {
   const router = useRouter();
   const storageKey = `lq-itinerary-draft:${queryId ?? "new"}`;
@@ -573,7 +575,7 @@ export function Builder({
               ))}
             </div>
             {tripMode === "chat" ? (
-              <ChatPanel messages={messages} busy={chatBusy} onSend={send} onQuick={quick} aiAvailable={aiAvailable} />
+              <ChatPanel messages={messages} busy={chatBusy} onSend={send} onQuick={quick} aiAvailable={aiAvailable} initialText={initialText} />
             ) : (
               <TripForm plan={plan} setPlan={setPlan} ctx={ctx} />
             )}
