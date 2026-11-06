@@ -20,7 +20,7 @@ import { addDays } from "@/lib/sales/pricing/dates";
 import type { BuilderContext, Plan, PlanStop } from "./types";
 import { cityHotelNamed, cityHotels, safariOnly, sameCity, stayKey, stayWhere } from "./cities";
 import { tripChecklist, type CheckItem } from "./checklist";
-import { applyTravelRules, cityEnds } from "./travel-rules";
+import { applyTravelRules, cityEnds, lodgeAirports } from "./travel-rules";
 
 export interface ChatFlags {
   dateSet: boolean;
@@ -118,6 +118,12 @@ export function greeting(plan: Plan, queryNo?: string | null): ChatMessage {
 const placesOf = (ctx: BuilderContext) => {
   const rank: Record<string, number> = { airport: 0, railway: 1, city: 2, other: 3 };
   return ctx.locations.filter((l) => l.type !== "property").sort((a, b) => (rank[a.type] ?? 9) - (rank[b.type] ?? 9));
+};
+// the places offered for a lodge's way in / out: its airports first, the nearest first (rule 1, travel-rules.ts)
+const placesNear = (ctx: BuilderContext, full: BuilderContext, propertyId?: string) => {
+  const all = placesOf(ctx);
+  const near = propertyId ? lodgeAirports(full, propertyId).flatMap((a) => all.filter((l) => l.id === a.id)) : [];
+  return [...near, ...all.filter((l) => !near.includes(l))];
 };
 
 // ---------------------------------------------------------------------------
@@ -350,6 +356,18 @@ export function chatTurn(
     const isOther = (id: string | null) => !!id && others.some((o) => sameCity(ctx.locations.find((l) => l.id === id)?.name ?? "", o));
     if (newPort && isOther(next.arrival_location_id)) next.arrival_location_id = newPort.id;
     if (newPort && isOther(next.departure_location_id)) next.departure_location_id = newPort.id;
+    // the lodge is the first (last) stay and the way in (out) is not set yet: this airport is it, not
+    // asked again ("arriving at Guwahati Airport" answers both; 6 Nov 2026)
+    const parkOf = (s?: PlanStop) => ctx.pricing.parks.find((p) => p.id === s?.park_id)?.name;
+    const ends = cityEnds(next);
+    if (newPort && !next.arrival_location_id && !ends.startsInCity && parkOf(next.stops[0]) === a.key.slice(8)) {
+      next.arrival_location_id = newPort.id;
+      f.arrivalAsked = true;
+    }
+    if (newPort && !next.departure_location_id && !ends.endsInCity && parkOf(next.stops[next.stops.length - 1]) === a.key.slice(8)) {
+      next.departure_location_id = newPort.id;
+      f.departureAsked = true;
+    }
     f.asks = (f.asks ?? []).filter((x) => x !== a);
     f.airportsDone = [...new Set([...(f.airportsDone ?? []), a.key])]; // asked once (owner, 5 Nov 2026)
     if (f.askFor === a.key) f.askFor = null;
@@ -596,13 +614,19 @@ export function chatTurn(
     const isAfterCity = (c: string) => stays.some((s) => s.when === "after" && sameCity(s.city, c));
     // flying in: from the city they stay in first, else the first flight that does not leave an end-of-trip city
     const inbound = (beforeCity ? fl.find((x) => sameCity(x.from, beforeCity)) : undefined) ?? fl.find((x) => !isAfterCity(x.from) && (fl.length > 1 || !afterCity));
-    const outbound =
-      [...fl].reverse().find((x) => afterCity && sameCity(x.to, afterCity) && x !== inbound) ??
-      fl.find((x) => afterCity && sameCity(x.from, afterCity) && x !== inbound) ??
-      (fl.length > 1 ? fl[fl.length - 1] : undefined);
     // the way in is a flight whose airport has a road to the first lodge, the way out one from the
     // last lodge's (Nagpur > Guwahati between Pench and Iora Retreat is neither) (3 Nov 2026)
     const lodgeLoc = (s: PlanStop | undefined) => (s ? full.locations.find((l) => l.property_id === s.property_id)?.id : undefined);
+    // the trip's last flight is the way home only when it leaves the trip: not one that lands at a city
+    // stay or at a lodge's airport (Kings Lodge, Jabalpur > Delhi 2 nights, then Kanha and Pench; Ken
+    // River, Khajuraho > Guwahati, then Iora Retreat; 6 Nov 2026)
+    const intoTrip = (x: { to: string }) =>
+      allCityStays.some((c) => sameCity(c.city, x.to)) || next.stops.some((s) => { const l = lodgeLoc(s); return !!l && airportReachesLodge(full, x.to, l); });
+    const lastFlight = fl[fl.length - 1];
+    const outbound =
+      [...fl].reverse().find((x) => afterCity && sameCity(x.to, afterCity) && x !== inbound) ??
+      fl.find((x) => afterCity && sameCity(x.from, afterCity) && x !== inbound) ??
+      (fl.length > 1 && !intoTrip(lastFlight) ? lastFlight : undefined);
     const firstLodgeIn = !beforeCity ? lodgeLoc(next.stops[0]) : undefined;
     const lastLodgeOut = !afterCity ? lodgeLoc(next.stops[next.stops.length - 1]) : undefined;
     const inAirport = !keepIn && inbound && (!firstLodgeIn || airportReachesLodge(full, inbound.to, firstLodgeIn)) && airportFor(inbound.to);
@@ -948,22 +972,29 @@ export function nextQuestion(
     return {
       text: 'Where will they arrive? Pick a place, or say "on their own" if they reach the lodge themselves.',
       pending: "arrival",
-      quick: [...placesOf(ctx).slice(0, 5).map((l) => ({ label: l.name, text: `arriving at ${l.name}` })), { label: "On their own", text: "on their own" }],
+      quick: [...placesNear(ctx, full, plan.stops[0]?.property_id).slice(0, 5).map((l) => ({ label: l.name, text: `arriving at ${l.name}` })), { label: "On their own", text: "on their own" }],
       warnings: [],
       ready: false,
     };
   }
   // The way out is asked separately: guests often fly in and out of different cities.
-  if (!f.departureAsked && plan.arrival_location_id && !plan.departure_location_id && !ends.endsInCity) {
+  // (also after city nights at the start: Khajuraho 2 nights, then Denwa, which has no arrival point)
+  if (!f.departureAsked && (plan.arrival_location_id || ends.startsInCity) && !plan.departure_location_id && !ends.endsInCity) {
     const arrName = ctx.locations.find((l) => l.id === plan.arrival_location_id)?.name ?? "the same place";
+    // the last lodge's airports first; "same" first only when the arrival airport is also the nearest to
+    // it (Waghoba, then Denwa: Bhopal 4 h before Nagpur 6.5 h)
+    const lastId = plan.stops[plan.stops.length - 1]?.property_id;
+    const lastPorts = lastId ? lodgeAirports(full, lastId) : [];
+    const others = placesNear(ctx, full, lastId).filter((l) => l.id !== plan.arrival_location_id).slice(0, 4).map((l) => ({ label: l.name, text: `leaving from ${l.name}` }));
+    if (!plan.arrival_location_id) {
+      return { text: "Where do they leave from at the end?", pending: "departure", quick: [...others, { label: "On their own", text: "leaving on their own" }], warnings: [], ready: false };
+    }
+    const sameFits = !lastPorts.length || lastPorts.some((a) => a.id === plan.arrival_location_id && a.hours === lastPorts[0].hours);
+    const same = { label: `Same: ${arrName}`, text: "same" };
     return {
       text: `Where do they leave from at the end? The same place (${arrName}), or somewhere else?`,
       pending: "departure",
-      quick: [
-        { label: `Same: ${arrName}`, text: "same" },
-        ...placesOf(ctx).filter((l) => l.id !== plan.arrival_location_id).slice(0, 4).map((l) => ({ label: l.name, text: `leaving from ${l.name}` })),
-        { label: "On their own", text: "leaving on their own" },
-      ],
+      quick: [...(sameFits ? [same, ...others] : [...others.slice(0, 1), same, ...others.slice(1)]), { label: "On their own", text: "leaving on their own" }],
       warnings: [],
       ready: false,
     };

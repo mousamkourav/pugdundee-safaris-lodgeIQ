@@ -50,6 +50,7 @@ export interface TripSpec {
   dateless: boolean;
   mode: "flight" | "train" | "own";
   airportsSaid: boolean; // the Kaziranga airport written ("fly to jorhat", "arriving guwahati")
+  endsSaid: boolean; // the way in and out written ("arriving nagpur and departing jabalpur", own car, train)
 }
 
 // the lodges written by their own names (the reader knows each of them)
@@ -128,7 +129,18 @@ export function masterView(ctx: BuilderContext) {
     const all = airports.filter((a) => airportCity(a.name).toLowerCase() === city.toLowerCase());
     return all.find((a) => region.has(a.id)) ?? all[0];
   };
-  return { rates, loc, locOf, hasRate, region, regionOfPlace, cityHotelLoc, airportCity, airports, airportByCity, delhiRegion };
+  // a lodge's nearest airports: those with a road to it, the shortest drive (all of them when tied)
+  const nearestAirports = (propertyId: string): string[] => {
+    const l = locOf(propertyId);
+    const hours = new Map<string, number>();
+    for (const t of rates) {
+      const other = t.from_location_id === l ? t.to_location_id : t.to_location_id === l ? t.from_location_id : null;
+      if (other && loc(other)?.type === "airport") hours.set(other, Math.min(hours.get(other) ?? 99, t.drive_hours ?? 99));
+    }
+    const best = Math.min(...hours.values());
+    return [...hours].filter(([, h]) => h === best).map(([id]) => id);
+  };
+  return { rates, loc, locOf, hasRate, region, regionOfPlace, cityHotelLoc, airportCity, airports, airportByCity, delhiRegion, nearestAirports };
 }
 export type MasterView = ReturnType<typeof masterView>;
 
@@ -207,7 +219,7 @@ export function makeTrip(n: number, r: Rng, ctx: BuilderContext, mv: MasterView)
     }
   }
   const text = `${g.text}${kids ? ` + ${kids.text}` : ""} ${nat.text}, ${date}, ${parts.join(", then ")}${ends}`;
-  return { n, text, places, adults: g.adults, children: kids?.ages ?? [], rooms: g.rooms, nationality: nat.nat, dateless, mode, airportsSaid };
+  return { n, text, places, adults: g.adults, children: kids?.ages ?? [], rooms: g.rooms, nationality: nat.nat, dateless, mode, airportsSaid, endsSaid: !!ends };
 }
 
 export function makeTrips(count: number, ctx: BuilderContext, seed = 20261105): TripSpec[] {
@@ -225,6 +237,7 @@ export type FailKind =
   | "read: nationality / dates"
   | "question not needed"
   | "Kaziranga airport not asked once"
+  | "not the nearest airport"
   | "days not continuous"
   | "lodge without a way in"
   | "lodge without a way out"
@@ -270,10 +283,17 @@ export function readTrip(spec: TripSpec, ctx: BuilderContext): { plan: Plan; fla
 // questions a sales person can rightly be asked: the room at a lodge with several kinds, the Kaziranga
 // airport when the enquiry does not say it (asked once)
 // airport when the enquiry does not say it (asked once), our car or theirs between lodges when they come
-// by their own car; the guest's name is the chat's last step (not needed for the trip, never blocks it)
-const ANSWERABLE = (q: string) => /^room\b/.test(q) || /^ask:airport:Kaziranga/.test(q) || /^leg\b/.test(q);
-export const NEEDED_QUESTION = (spec: TripSpec, q: string) =>
+// by their own car, where they arrive / leave when the enquiry does not say (never assumed; the nearest
+// airport is the first answer offered); the guest's name is the chat's last step (never blocks the trip)
+const ANSWERABLE = (q: string) => /^room\b/.test(q) || /^ask:airport:Kaziranga/.test(q) || /^leg\b/.test(q) || /^(arrival|departure)\b/.test(q);
+export const NEEDED_QUESTION = (spec: TripSpec, q: string, plan?: Plan) =>
+  // New Year: the stay covers the night of 31 Dec (minimum 3 nights, the supplement): asked to confirm
+  (/^ask:newyear/.test(q) && !!plan?.days.slice(0, -1).some((d) => d.date.endsWith("-12-31"))) ||
   /^(room|name)\b/.test(q) ||
+  (/^arrival\b/.test(q) && !spec.endsSaid && spec.places[0].kind === "lodge") ||
+  (/^departure\b/.test(q) && !spec.endsSaid && spec.places[spec.places.length - 1].kind === "lodge") ||
+  // "coming by own car": how they leave is asked, never assumed (a drop at an airport is possible)
+  (/^departure: How do they leave/.test(q) && spec.mode === "own") ||
   (/^leg\b/.test(q) && spec.mode === "own") ||
   (/^ask:airport:Kaziranga/.test(q) && spec.places.some((p) => p.kind === "lodge" && p.name === "Iora Retreat") && !spec.airportsSaid);
 
@@ -295,11 +315,29 @@ export function judgeTrip(spec: TripSpec, ctx: BuilderContext, mv: MasterView = 
   if (plan.guest.adults !== spec.adults || plan.guest.children.join(",") !== spec.children.join(",") || (spec.rooms != null && plan.guest.rooms !== spec.rooms))
     fail("read: guests", `want ${spec.adults}a [${spec.children}] ${spec.rooms ?? "-"}r got ${plan.guest.adults}a [${plan.guest.children}] ${plan.guest.rooms}r`);
   if (plan.guest.nationality !== spec.nationality || !!plan.dateless !== spec.dateless) fail("read: nationality / dates", `want ${spec.nationality} dateless=${spec.dateless} got ${plan.guest.nationality} dateless=${!!plan.dateless}`);
-  for (const q of questions) if (!NEEDED_QUESTION(spec, q)) fail("question not needed", q);
+  for (const q of questions) if (!NEEDED_QUESTION(spec, q, plan)) fail("question not needed", q);
   // the Kaziranga airport, not written: asked once (owner, 5 Nov 2026)
   const iora = spec.places.some((p) => p.kind === "lodge" && p.name === "Iora Retreat");
+  // (when Iora Retreat is the first / last stay and the ends are not written, "Where will they arrive /
+  // leave from?" is that question: its answer is Jorhat or Guwahati)
+  const ioraEnd = (q: string) =>
+    !spec.endsSaid &&
+    ((/^arrival\b/.test(q) && spec.places[0].kind === "lodge" && spec.places[0].name === "Iora Retreat") ||
+      (/^departure\b/.test(q) && spec.places[spec.places.length - 1].kind === "lodge" && (spec.places[spec.places.length - 1] as { name: string }).name === "Iora Retreat"));
+  // The airport question itself never twice; and asked at least once, by itself or as the way in / out.
+  // (Delhi, then Iora Retreat: the airport of the flight in and where they leave from are two facts)
   const airportQs = questions.filter((q) => /^ask:airport:Kaziranga/.test(q)).length;
-  if (iora && !spec.airportsSaid && airportQs !== 1) fail("Kaziranga airport not asked once", `asked ${airportQs} times`);
+  if (iora && !spec.airportsSaid && (airportQs > 1 || airportQs + (questions.some(ioraEnd) ? 1 : 0) === 0))
+    fail("Kaziranga airport not asked once", `asked ${airportQs} times`);
+  // not written: asked, and the first answer offered is the lodge's nearest airport (rule 1)
+  if (!spec.endsSaid) {
+    const [first, last] = [spec.places[0], spec.places[spec.places.length - 1]];
+    const iora = (p: Place) => p.kind === "lodge" && p.name === "Iora Retreat"; // Jorhat or Guwahati: asked
+    if (first.kind === "lodge" && !iora(first) && !mv.nearestAirports(first.property_id).includes(plan.arrival_location_id ?? ""))
+      fail("not the nearest airport", `arriving ${nameOf(plan.arrival_location_id ?? "-")} for ${first.name}`);
+    if (last.kind === "lodge" && !iora(last) && !mv.nearestAirports(last.property_id).includes(plan.departure_location_id ?? ""))
+      fail("not the nearest airport", `leaving ${nameOf(plan.departure_location_id ?? "-")} for ${last.name}`);
+  }
 
   // ---- the days
   const nights = spec.places.reduce((t, p) => t + p.nights, 0);

@@ -525,8 +525,11 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   } else if (/\b(indian|domestic|resident)s?\b/.test(low)) out.nationality = "indian";
   else if (/\b(foreign(?:er|ers)?|international|overseas|nri)\b/.test(low)) out.nationality = "foreign";
   else {
-    // "a family from Mumbai": guests coming from an Indian city are Indian (not "flying from Mumbai")
-    const home = low.match(new RegExp(`(?<!(?:fly\\w*|flight\\w*|depart\\w*)\\s+)\\bfrom\\s+(${cities.filter((c) => c !== "kathmandu").join("|")})\\b`));
+    // "a family from Mumbai": guests coming from an Indian city are Indian (not "flying from Mumbai",
+    // "leaving from Guwahati Airport", "pickup from Nagpur": the trip's way out / in; 6 Nov 2026)
+    const home = low.match(
+      new RegExp(`(?<!(?:fly\\w*|flight\\w*|depart\\w*|leav\\w*|drop\\w*|pick\\w*|pickup|transfer\\w*|drive\\w*|exit\\w*)\\s+)\\bfrom\\s+(${cities.filter((c) => c !== "kathmandu").join("|")})\\b(?!\\s+(?:airport|railway|station|junction))`)
+    );
     if (home) {
       out.nationality = "indian";
       out.country = "IN";
@@ -1145,9 +1148,10 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     else unclassified.push(h.name);
   }
   // a place that is only named as a city stay ("1 night khajuraho" at the end) is not where they
-  // arrive: the first city after the lodges is where the drive from the last lodge goes
+  // arrive: the first city after the lodges is where the drive from the last lodge goes (after ALL the
+  // lodges: Kings Lodge, Khajuraho 2 nights, then Tree House Hideaway is not the way out; 6 Nov 2026)
   const stayCity = (name: string) => (out.cityStays ?? []).find((c) => name.toLowerCase().startsWith(c.city.toLowerCase()));
-  const firstAfter = out.cityStays?.find((c) => c.when === "after");
+  const firstAfter = out.cityStays?.find((c) => c.when === "after" && (c.at == null || c.at >= order.length));
   for (const name of unclassified) {
     const c = stayCity(name);
     if (c) {

@@ -139,12 +139,12 @@ export interface RuleResult {
  * - two stays in a row that no road joins are joined by a flight (rules 1, 2, 3);
  * - flights are between airports: a city's flight leaves from its airport's city (Siliguri: Bagdogra);
  *   a first flight from a home city not in Master data ("from Mumbai") is the guests' own;
- * - a trip that starts / ends at a lodge: the lodge's nearest airport, unless they come by train or
- *   their own vehicle, or a place is already set;
+ * - a trip that starts / ends at a lodge (only with `fillEnds`; the chat asks): the lodge's nearest
+ *   airport, unless they come by train or their own vehicle, or a place is already set;
  * - the drive at the end (end_city) only from a city that drives there (a road-trip pair or a road).
  * `saidAirports`: airports written in the enquiry ("fly to jorhat"): not asked again.
  */
-export function applyTravelRules(plan: Plan, ctx: BuilderContext, opts: { saidAirports?: string[] } = {}): RuleResult {
+export function applyTravelRules(plan: Plan, ctx: BuilderContext, opts: { saidAirports?: string[]; fillEnds?: boolean } = {}): RuleResult {
   const notes: string[] = [];
   const asked: RuleResult["airportsChosen"] = [];
   if (!plan.stops.length) return { plan, notes, airportsChosen: asked };
@@ -303,11 +303,13 @@ export function applyTravelRules(plan: Plan, ctx: BuilderContext, opts: { saidAi
     if (d !== undefined && d !== next.departure_location_id) next = { ...next, departure_location_id: d };
   }
 
-  // ---- the way in and out of a trip that starts or ends at a lodge (rule 1)
+  // ---- the way in and out of a trip that starts or ends at a lodge (rule 1), only with `fillEnds`: the
+  // chat asks instead, the nearest airport offered first (they may come by car or train, and often fly
+  // in and out of different cities: never assumed; 6 Nov 2026)
   const first = segs[0];
   const last = segs[segs.length - 1];
   const byRoad = (m: Plan["arrival_mode"]) => m === "own" || m === "train" || m === "transfer";
-  if (!next.own_vehicle && first?.kind === "lodge" && !next.arrival_location_id && !byRoad(next.arrival_mode)) {
+  if (opts.fillEnds && !next.own_vehicle && first?.kind === "lodge" && !next.arrival_location_id && !byRoad(next.arrival_mode)) {
     const city = lodgeSide(first);
     const ap = lodgeAirports(ctx, first.stop.property_id).find((o) => o.city === city);
     if (ap) {
@@ -315,7 +317,7 @@ export function applyTravelRules(plan: Plan, ctx: BuilderContext, opts: { saidAi
       notes.push(`Arriving at ${ap.name}, the nearest airport to ${lodgeName(first.stop.property_id)}.`);
     }
   }
-  if (!next.own_vehicle && last?.kind === "lodge" && !next.departure_location_id && !byRoad(next.departure_mode)) {
+  if (opts.fillEnds && !next.own_vehicle && last?.kind === "lodge" && !next.departure_location_id && !byRoad(next.departure_mode)) {
     const options = lodgeAirports(ctx, last.stop.property_id);
     const city = lodgeSide(last);
     const ap = options.find((o) => o.id === next.arrival_location_id) ?? options.find((o) => o.city === city);
