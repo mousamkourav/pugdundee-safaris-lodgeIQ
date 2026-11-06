@@ -16,6 +16,7 @@ import { defaultStop, findAddon, mealPlansOf, roomsOf } from "./planner";
 import type { BuilderContext, Plan, TravelMode } from "./types";
 import { findCountry, countryName } from "@/lib/sales/countries";
 import { resolveRoute, type RouteEntry } from "./route";
+import { cityParkIds } from "./cities";
 
 // Every place and every "N nights / N days" the enquiry names, where (in the reader's text): the
 // coverage check (unread.ts) makes sure each one is in the trip, so nothing is dropped silently.
@@ -276,6 +277,8 @@ export function lodgeAliases(name: string, parkAliases: string[]): string[] {
   const stripped = words.filter((w) => !["lodge", "escape", "camp", "resort", "retreat"].includes(w)).join(" ");
   const distinctive = (a: string) => a.split(" ").some((w) => w.length >= 5 && !GENERIC.has(w));
   if (stripped && stripped !== full && distinctive(stripped)) out.add(stripped); // "kanha earth", "waghoba eco"
+  // one short word left once "retreat", "lodge"... is taken off: "iora" (Iora Retreat; 6 Nov 2026)
+  if (stripped && stripped !== full && /^[a-z]{4}$/.test(stripped) && !GENERIC.has(stripped) && !parkAliases.includes(stripped)) out.add(stripped);
   if (words.length >= 2 && distinctive(words.slice(0, 2).join(" "))) out.add(words.slice(0, 2).join(" ")); // "denwa backwater"
   if (words[0].length >= 5 && !GENERIC.has(words[0]) && !parkAliases.includes(words[0])) out.add(words[0]); // "waghoba", "kings", "denwa"
   return [...out].filter((a) => a.length >= 4);
@@ -861,6 +864,9 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   cityHits.sort((a, b) => a.at - b.at);
   const firstPark = order.length ? order[0].at : Infinity;
   const lastPark = order.length ? order[order.length - 1].at : -Infinity;
+  // the last safari park written (Delhi, a "park" for its city hotel, is not one: "fly jorhat to delhi")
+  const cityParks = cityParkIds(ctx);
+  const lastSafariPark = order.filter((o) => !cityParks.has(ctx.pricing.parks.find((p) => p.name === o.p.name)?.id ?? "")).pop()?.at ?? -Infinity;
   const flights: NonNullable<ParsedTrip["flights"]> = [];
   const flightPos = new Map<object, number>(); // where each flight is written
   const addFlight = (f: NonNullable<ParsedTrip["flights"]>[number], pos: number) => {
@@ -1129,7 +1135,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   // "arriving and departing by train at Itarsi": both ends (a wider look-back than `before`)
   const bothBefore =
     /\b(?:arriv\w*|arr\.?|pick(?:ing)?[\s-]?up)\s*(?:and|&|\/|n|,)?\s*(?:depart\w*|dep\.?|drop(?:ping)?(?:\s+off)?|leav\w*)(?:\s+by\s+(?:train|flight|air|road|car))?\W*(?:at|in|to|from)?\W*(?:the\s+)?$/i;
-  const unclassified: string[] = [];
+  const unclassified: { name: string; at: number; flown: boolean }[] = [];
   for (const h of placeHits) {
     const before = text.slice(Math.max(0, h.index - 25), h.index);
     const after = text.slice(h.end, h.end + 15);
@@ -1145,20 +1151,24 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     else if (arriveWords.test(before)) out.arrival_place ??= h.name;
     else if (/^\s*(out|exit|departure|drop)\b/i.test(after)) out.departure_place ??= h.name;
     else if (/^\s*(in|arrival|pick ?up)\b/i.test(after)) out.arrival_place ??= h.name;
-    else unclassified.push(h.name);
+    // (a flight's start or end: "fly jorhat", "flight from jorhat", "fly jorhat to delhi")
+    else unclassified.push({ name: h.name, at: h.index, flown: /\b(?:fly\w*|flight\w*)(?:\s+from)?(?:\s+[a-z]+\s+to)?\W*$/i.test(before) });
   }
   // a place that is only named as a city stay ("1 night khajuraho" at the end) is not where they
   // arrive: the first city after the lodges is where the drive from the last lodge goes (after ALL the
   // lodges: Kings Lodge, Khajuraho 2 nights, then Tree House Hideaway is not the way out; 6 Nov 2026)
   const stayCity = (name: string) => (out.cityStays ?? []).find((c) => name.toLowerCase().startsWith(c.city.toLowerCase()));
   const firstAfter = out.cityStays?.find((c) => c.when === "after" && (c.at == null || c.at >= order.length));
-  for (const name of unclassified) {
+  for (const { name, at, flown } of unclassified) {
     const c = stayCity(name);
     if (c) {
       if (c === firstAfter && !out.departure_place && /airport/i.test(name)) out.departure_place = name;
       continue;
     }
-    if (!out.arrival_place) out.arrival_place = name;
+    // a flight's start after the last lodge ("..., iora 2 nights, fly jorhat to delhi"): the way out,
+    // never the way in (it put Jorhat before Pench, with a flight Jorhat > Nagpur nobody wrote; 6 Nov 2026)
+    if (flown && at > lastSafariPark) out.departure_place ??= name;
+    else if (!out.arrival_place) out.arrival_place = name;
     else if (!out.departure_place) out.departure_place = name;
   }
   // "same airport": they leave from where they arrive (said, not assumed)
@@ -1166,7 +1176,9 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     out.departure_place = out.arrival_place;
     out.same_out = true;
   }
-  if (out.arrival_place && !out.departure_place && placeHits.length === 1) {
+  // (one park only: across parks the last lodge may have another airport, so it is asked; "arriving
+  // nagpur, pench, then kaziranga" took Nagpur as the way out of Iora Retreat, with a flight; 6 Nov 2026)
+  if (out.arrival_place && !out.departure_place && placeHits.length === 1 && new Set(order.map((o) => o.p.name)).size <= 1) {
     out.departure_place = out.arrival_place;
     out.notes.push(`Assumed the guest also leaves from ${out.arrival_place}.`);
   }
