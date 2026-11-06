@@ -41,7 +41,11 @@ test("the AI's full form is kept by the evidence rule and becomes the trip", () 
   const p0 = emptyPlan(T);
   const r = chatTurn(p0, initialFlags(p0), MSG, ctx, T, { parsed, source: "ai" });
   assert.equal(r.plan.dateless, true);
-  assert.equal(r.plan.end_city, "Delhi");
+  // "back to delhi" after Pench: no road from Pench to Delhi, so the flight home from Pench's nearest
+  // airport (rule book, Example 3: Nagpur > Delhi), not a drive (5 Nov 2026)
+  assert.equal(r.plan.end_city ?? null, null);
+  assert.deepEqual(r.plan.flights, [{ from: "Nagpur", to: "Delhi" }]);
+  assert.equal(r.plan.departure_location_id, "L_nagpur_airport");
   assert.deepEqual((r.plan.city_stays ?? []).filter((c) => c.away).map((c) => c.nights), [2]);
 });
 

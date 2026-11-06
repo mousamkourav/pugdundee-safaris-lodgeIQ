@@ -49,7 +49,9 @@ test("owner's enquiry: the 2-day break is 2 nights not with us between Kings Lod
   assert.equal(p.days[kingsOut + 2].title, "Rejoin at Pench Tree Lodge");
   assert.match(p.days[kingsOut + 2].text, /^After your own arrangements, you rejoin us at Pench Tree Lodge\./);
   // nothing priced for those nights, no transfer, and the quote can be saved (no "no way out / in")
-  assert.ok(!p.days.slice(kingsOut, kingsOut + 3).some((d) => d.transfer || d.city_transfers?.length || d.city_hotel || d.items.length));
+  // (the day they rejoin is a Pench day: its experiences, the culinary workshop asked for, may be on it)
+  assert.ok(!p.days.slice(kingsOut, kingsOut + 3).some((d) => d.transfer || d.city_transfers?.length));
+  assert.ok(!p.days.slice(kingsOut, kingsOut + 2).some((d) => d.city_hotel || d.items.length));
   assert.deepEqual(checksOf(p), []);
   // the Confirm step says it; the guest's exclusions too
   assert.ok(tripSummary(p, realCtx).some((l) => l.text.endsWith("Not with us: 2 nights (own arrangements, not priced)")));

@@ -1,5 +1,5 @@
 // Run with:  npx tsx --test lib/sales/master/real-rate-audit.test.ts
-// The Rate audit on the owner's REAL Master data (export of 2 Nov 2026), with the SQL files
+// The Rate audit on the owner's REAL Master data (export of 5 Nov 2026), with the SQL files
 // run since then applied the same way here: every row must be OK (owner, 3 Nov 2026). A row
 // that is not is either a wrong rate in Master data (fix it with SQL) or a wrong line in
 // rate-card.ts (fix the card), never left as a known false alarm.
@@ -101,28 +101,11 @@ test("real Master data: every Rate audit row is OK once the SQL of 3 and 4 Nov 2
   assert.deepEqual(bad.map((r) => `${r.item}: ${r.status} (${r.expected} / ${r.found})`), []);
 });
 
-test("real Master data before the SQL: only the rows the SQL corrects are flagged", () => {
+// The 5 Nov 2026 export was taken after the owner ran the SQL of 3 and 4 Nov: the export itself has
+// every row those files correct, so nothing is flagged even without applying them here.
+test("real Master data (5 Nov export): the SQL of 3 and 4 Nov is already in it, nothing flagged", () => {
   const bad = auditRates(data(false)).filter((r) => CHECKED(r) && r.status !== "ok").map((r) => r.item).sort();
-  assert.deepEqual(bad, [
-    "General: Culinary workshop",
-    "General: Safari breakfast (outside jeeps), up to 2 guests at all lodges",
-    "Kanha Earth Lodge: Buffer walk",
-    "Ken River: Royal Enfield (per day)",
-    "Tadoba core, indian, booked 60-120 days ahead, evening",
-    "Tadoba core, indian, booked 60-120 days ahead, morning",
-    "General: Picnic lunch at Kanha Earth Lodge",
-    // 4 Nov 2026 (management's rates sheet): the Indian seasons and calendar, the 10 / 11 Mar
-    // change, Tadoba 1-59 days, Kanha - Pench Dzire 7,500, Waghoba - Nagpur 7,000 / 8,000
-    ...["Cottage", "Deluxe Room", "Forest Suite", "Tree House"].flatMap((c) => ["shoulder", "high", "peak"].map((x) => `${c}, Indian, ${x}`)),
-    ...INDIAN_CALENDAR_4NOV.map(([, f, t]) => `Season calendar (Indian guests): ${f} to ${t}`),
-    "Season calendar: 2027-02-01 to 2027-03-10",
-    "Season calendar: 2027-03-11 to 2027-04-30",
-    ...["foreign", "indian"].flatMap((n) => ["morning", "evening"].map((x) => `Tadoba core, ${n}, booked 1-59 days ahead, ${x}`)),
-    "Kanha Earth Lodge - Pench Tree Lodge, Dzire / Etios",
-    "Pench Tree Lodge - Kanha Earth Lodge, Dzire / Etios",
-    "Waghoba Eco Lodge - Nagpur Airport, Dzire / Etios",
-    "Waghoba Eco Lodge - Nagpur Airport, Innova / Crysta",
-  ].sort());
+  assert.deepEqual(bad, []);
 });
 
 // The experiences the owner asked for are found where they are sold (no "not offered" note)

@@ -184,19 +184,17 @@ test("the German enquiry: Roseate House at the start and again in the middle, fl
   assert.ok(!(r.flags.asks ?? []).some((a) => a.key.startsWith("far:")));
 });
 
-test("lodges far apart with nothing between them: no drive, and the way between them is asked once", () => {
+test("lodges far apart, 'then fly to Jorhat': the flight from Pench's airport with the drives, never a road, nothing asked", () => {
   const say = conversation();
   const r = say("2 adults from Germany, 20 April 2027 fly Delhi to Jabalpur, Tree House Hideaway 3 nights, Kanha 2 nights, Pench 2 nights, then fly to Jorhat, Iora Retreat 2 nights, fly Jorhat to Delhi");
   assert.ok(!roads(r.plan).some((x) => x.includes("L_PTL>L_IORA")));
-  const ask = (r.flags.asks ?? []).find((a) => a.key === "far:PTL>IORA");
-  assert.ok(ask, "the way from Pench Tree Lodge to Iora Retreat is asked");
-  assert.match(ask!.text, /How do the guests get from Pench Tree Lodge to Iora Retreat\?/);
-  const iora = r.plan.days.find((d) => d.property_id === "IORA");
-  assert.ok(iora?.notes.some((n) => /far apart/.test(n)));
-  // later messages never add it again (it is asked once, then answered or dropped)
+  // rule 2 of the rule book (5 Nov 2026): Pench Tree Lodge > Nagpur Airport, Nagpur > Jorhat, Jorhat Airport > Iora
+  assert.deepEqual(r.plan.flights, [{ from: "Delhi", to: "Jabalpur" }, { from: "Nagpur", to: "Jorhat" }, { from: "Jorhat", to: "Delhi" }]);
+  assert.ok(roads(r.plan).includes("04-27 L_PTL>NAG") && roads(r.plan).includes("04-27 JRH>L_IORA"));
+  // the way between them is written: no "how do they get from ... to ..." question
+  assert.ok(!(r.flags.asks ?? []).some((a) => a.key.startsWith("far:")));
   const r2 = say("name is Mr Weber");
-  assert.ok((r2.flags.asks ?? []).filter((a) => a.key === "far:PTL>IORA").length <= 1);
-  assert.deepEqual(r2.flags.farAsked, ["far:PTL>IORA"]);
+  assert.ok(!(r2.flags.asks ?? []).some((a) => a.key.startsWith("far:")));
 });
 
 test("regions come from the roads in Master data: Kanha - Waghoba is one region (a missing rate), Pench - Iora two", () => {

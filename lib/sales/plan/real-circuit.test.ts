@@ -66,7 +66,7 @@ test("real data: every experience asked for, by its name in Master data, at its 
   const has = (l: string, ...names: string[]) => { for (const n of names) assert.ok(itemsAt(P, l).includes(n), `${l}: ${n} (got ${itemsAt(P, l).join(" | ")})`); };
   has("Denwa Backwater Escape", "Boat safari, 2 hours", "Canoe ride", "Walking safari in buffer zone", "Tawa cruise to the lodge by boat (up to 8 guests)", "Bhopal transfer via Bhimbetka caves (extra, Innova / Crysta)", "Bush dinner experience", "Safari breakfast (outside jeeps)", "Nature walk / cycling / night trail");
   has("Waghoba Eco Lodge", "Boat safari - 1 hour", "Boat safari - 2 hours", "Moharli gate entry (per safari)", "Modified Gypsy (per safari)", "Modified Scorpio (per safari)", "Nature walk / cycling / night trail");
-  has("Kanha Earth Lodge", "Banjar River picnic", "Nature walk / cycling / night trail");
+  has("Kanha Earth Lodge", "Picnic lunch", "Nature walk / cycling / night trail"); // "Banjar River picnic" until the SQL of 3 Nov
   has("Kings Lodge", "Safari breakfast (outside jeeps)", "Nature walk / cycling / night trail");
   has("Tree House Hideaway", "Bush dinner experience", "Nature walk / cycling / night trail");
   has("Ken River Lodge", "Boat safari on the Ken, 1.5 hours with island high tea (up to 4 guests)", "Night boat safari on the Ken, 2 hours with island high tea (up to 4 guests)", "Fishing and angling, half day (up to 2 guests)", "Fishing, full day (morning + evening), max 2 guests", "Island dinner (Rs 15,000 per couple)", "Bush dinner experience", "Cycling, per hour", "Royal Enfield Bullet motorcycle, per day", "Nature walk, per hour (up to 2 guests)");
@@ -78,9 +78,8 @@ test("real data: every experience asked for, by its name in Master data, at its 
 
 test("real data: only what Master data does not have is a price to type, named with its lodge", () => {
   // a lodge experience the lodge does not sell is left out with a note (owner, 2 Nov 2026);
-  // only city services and city roads stay prices to type
+  // only city services and city roads stay prices to type (the Agra local guide has its add-on since 5 Nov)
   assert.deepEqual(priced.missing.map((m) => m.label).sort(), [
-    "Agra local guide at Courtyard by Marriott Agra",
     "Agra sightseeing at Courtyard by Marriott Agra",
     "Jaipur sightseeing at ITC Rajputana",
     "Transfer Courtyard by Marriott Agra to ITC Rajputana",
@@ -90,12 +89,7 @@ test("real data: only what Master data does not have is a price to type, named w
   const notes = P.days.flatMap((d) => d.notes).filter((n) => / is not offered at /.test(n)).sort();
   assert.deepEqual(notes, [
     "Bird watching is not offered at Tree House Hideaway (not in Master data): left out of the quote.",
-    "Buffer walk is not offered at Kanha Earth Lodge (offered at Denwa Backwater Escape): left out of the quote.",
-    "Buffer walk is not offered at Pench Tree Lodge (offered at Denwa Backwater Escape): left out of the quote.",
     "Bush dinner is not offered at Waghoba Eco Lodge (offered at Kings Lodge, Tree House Hideaway, Kanha Earth Lodge, Pench Tree Lodge, Denwa Backwater Escape, Ken River Lodge): left out of the quote.",
-    "Culinary workshop is not offered at Kanha Earth Lodge (not in Master data): left out of the quote.",
-    "Culinary workshop is not offered at Pench Tree Lodge (not in Master data): left out of the quote.",
-    "Picnic is not offered at Waghoba Eco Lodge (offered at Kanha Earth Lodge): left out of the quote.",
     "Special dinner is not offered at Kanha Earth Lodge (not in Master data): left out of the quote.",
     "Village walk is not offered at Kings Lodge (not in Master data): left out of the quote.",
     "Village walk is not offered at Pench Tree Lodge (not in Master data): left out of the quote.",
