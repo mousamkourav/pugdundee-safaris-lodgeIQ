@@ -18,7 +18,7 @@ export default async function QueriesPage({
   const status = isQueryStatus(sp.status) ? sp.status : null;
   const member = admin && sp.member ? sp.member : null;
   const search = (sp.q ?? "").trim();
-  const type = sp.type === "safari" || sp.type === "red_panda" ? sp.type : null;
+  const type = sp.type === "safari" || sp.type === "red_panda" || sp.type === "group" ? sp.type : null;
 
   const supabase = await createClient();
   // the quote type (Safari / Red Panda) comes with supabase/red_panda.sql: without it, the list as before
@@ -74,7 +74,7 @@ export default async function QueriesPage({
           </h1>
         </div>
         <div className="flex w-full flex-col gap-2 sm:flex-row md:w-auto">
-        <FilterSelect param="type" value={type} options={[{ value: "safari", label: "Safari" }, { value: "red_panda", label: "Red Panda" }]} allLabel="All types" ariaLabel="Quote type" />
+        <FilterSelect param="type" value={type} options={[{ value: "safari", label: "Safari" }, { value: "red_panda", label: "Red Panda" }, { value: "group", label: "Group" }]} allLabel="All types" ariaLabel="Quote type" />
         {admin && memberOptions.length > 0 && <FilterSelect param="member" value={member} options={memberOptions} allLabel="All members" ariaLabel="Member" />}
         <form action="/sales/queries" className="flex w-full gap-2 md:w-auto">
           {status && <input type="hidden" name="status" value={status} />}

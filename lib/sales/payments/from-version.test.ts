@@ -63,3 +63,21 @@ test("dues from the payment schedule add up to the total; the Booked payment is 
   assert.equal(money(b).balance, pricing.totals.grand - 100000);
   assert.ok(["part_paid", "due_soon", "overdue"].includes(status(b, T)));
 });
+
+test("a group quote: one US dollar amount for the group size booked, no lodge lines, dues by percent", () => {
+  const group = {
+    fx: 85, tls: 1, tl_room: "single" as const,
+    rows: [{ paying: 6, tls: 1, jeeps: 3, vehicles: 3, inr: 490535.83, usd: 5770.07, sell: 5800 }],
+    single_supplement: 1450, extra_night: null,
+  };
+  const gp = { ...pricing, group } as typeof pricing;
+  const gd = bookingFromVersion({ ...q, booked_amount: 0 }, { version_no: 1, currency: "INR", plan, pricing: gp }, T);
+  assert.equal(gd.booking.currency, "USD");
+  assert.equal(gd.lines.length, 0);
+  assert.equal(gd.booking.other_amount, 34800);
+  assert.equal(gd.booking.discount_amount, 0);
+  assert.equal(Math.round(gd.dues.reduce((t, x) => t + x.amount, 0) * 100) / 100, 34800);
+  assert.equal(gd.dues.length, pricing.payments.filter((p) => p.pct > 0).length);
+  assert.equal(bookingTotal({ lines: [], other_amount: gd.booking.other_amount, discount_amount: 0 }), 34800);
+  assert.equal(gd.payment, null);
+});

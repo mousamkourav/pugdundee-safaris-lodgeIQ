@@ -2,6 +2,7 @@
 // STORAGE CONTRACT: add keys freely, never rename existing ones. Bump
 // schema_version if the shape changes in a way old plans cannot be read.
 
+import type { GroupSettings } from "@/lib/sales/group/costing";
 import type { ISODate, PricingData, Nationality, RateBasis } from "@/lib/sales/pricing/types";
 
 export interface PlanGuest {
@@ -184,6 +185,8 @@ export interface Plan {
   // the messages that described the trip, as written (names, emails and phones are not sent
   // anywhere): the coverage check (unread.ts) makes sure every place and night in them is in the trip
   enquiry?: string;
+  // a group quote (tour operators, Sales > Group quotes): its costing sheet changes and price ladder
+  group?: GroupSettings;
 }
 
 // flight / train: to or from that airport or station (with our transfer to the lodge);

@@ -44,6 +44,9 @@ export default async function NewItineraryPage({
     if (!q?.data) notFound();
     // a Red Panda quote has its own builder (never the Safari planner or reader)
     if (isRedPandaPlan((v?.data as { plan?: unknown } | null)?.plan)) redirect(`/red-panda/new?from=${fromId}`);
+    // a group quote opens in the group builder (Sales > Group quotes)
+    const saved = (v?.data as { plan?: { group?: unknown } } | null)?.plan;
+    if (saved && typeof saved === "object" && saved.group) redirect(`/sales/groups/new?from=${fromId}${sp.step ? `&step=${encodeURIComponent(sp.step)}` : ""}`);
     const plan = sanitizePlan((v?.data as { plan?: unknown } | null)?.plan);
     if (plan) initial = plan;
     queryNo = (q.data as { query_no: string }).query_no;

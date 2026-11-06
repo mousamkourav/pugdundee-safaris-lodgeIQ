@@ -12,6 +12,7 @@ export interface NavItem {
   icon: string; // key into components/icons.tsx
   roles?: Role[];
   exact?: boolean; // active only on this exact path (for section index pages)
+  needs?: "group"; // shown only with group quote access (the layout decides; lib/sales/group/server.ts)
 }
 export interface NavGroup {
   title: string;
@@ -80,6 +81,10 @@ export const NAV: NavGroup[] = [
       { label: "Dashboard", href: "/sales", icon: "grid", exact: true },
       { label: "Create itinerary", href: "/sales/new", icon: "plus" },
       { label: "Queries", href: "/sales/queries", icon: "list" },
+      // tour operators' groups (6 + 1 tour leader...): for people given access (by person or role)
+      { label: "Group quotes", href: "/sales/groups", icon: "users", exact: true, needs: "group" },
+      { label: "Create group quote", href: "/sales/groups/new", icon: "plus", needs: "group" },
+      { label: "Group access", href: "/sales/groups/access", icon: "shield", needs: "group", roles: ["super_admin"] },
       // every Sales user; a member sees only their own bookings (row level security)
       { label: "Payments", href: "/sales/payments", icon: "receipt" },
       { label: "Lost & cancelled", href: "/sales/closed", icon: "xCircle" },

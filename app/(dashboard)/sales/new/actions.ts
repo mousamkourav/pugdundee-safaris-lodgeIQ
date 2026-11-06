@@ -1,5 +1,8 @@
 "use server";
 
+import { groupActor } from "@/lib/sales/group/server";
+import { defaultGroup, groupTotalInr, priceGroup, rowFor, toSaved } from "@/lib/sales/group/costing";
+import { costSheet } from "@/lib/sales/group/sheet";
 import { safe } from "@/lib/sales/safe";
 import { makeShareSlug } from "@/lib/sales/share-slug";
 import { planToExample } from "@/lib/sales/plan/ai";
@@ -43,9 +46,14 @@ async function insertVersion(
 // mode "final": the full checks, then the query is Open with a client link.
 // The price is always recalculated here from current master data and the
 // prices the sales person typed; the browser's numbers are never trusted.
-async function saveItineraryUnsafe(planJson: string, queryId: string | null, mode: SaveMode = "final", enquiry?: string, typed?: unknown, versionMode: VersionMode = "new"): Promise<SaveResult> {
+async function saveItineraryUnsafe(planJson: string, queryId: string | null, mode: SaveMode = "final", enquiry?: string, typed?: unknown, versionMode: VersionMode = "new", queryType?: "group"): Promise<SaveResult> {
   const cu = await getCurrentUser();
   if (!cu?.user || !isSalesUser(cu.profile?.role)) return { error: "You do not have access to Sales." };
+  // a group quote (Sales > Group quotes): only for people given access
+  if (queryType === "group") {
+    const a = await groupActor();
+    if ("error" in a) return a;
+  }
 
   let raw: unknown;
   try {
@@ -53,8 +61,11 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
   } catch {
     return { error: "The itinerary could not be read. Reload the page and try again." };
   }
-  const plan = sanitizePlan(raw);
-  if (!plan) return { error: "The itinerary is missing its arrival date." };
+  const sane = sanitizePlan(raw);
+  if (!sane) return { error: "The itinerary is missing its arrival date." };
+  // a group quote always carries its group details; any other quote never does
+  const plan: Plan = queryType === "group" ? { ...sane, group: sane.group ?? defaultGroup() } : { ...sane, group: undefined };
+  if (!plan.group) delete plan.group;
 
   const { ctx, error: loadError } = await loadBuilderContext();
   if (loadError) return { error: "Could not load master data: " + loadError };
@@ -69,7 +80,14 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
     // out of every lodge, every price from Master data or typed.
     const checks = quoteChecks(plan, ctx, result);
     if (checks.length) return { problems: checks };
+    if (plan.group && !(plan.group.fx && plan.group.fx > 0)) return { problems: ["Type the US dollar rate (Plan & price, Price by group size)."] };
   }
+  // a group quote: its prices by group size, worked out again here from Master data and the typed changes
+  const groupSaved = plan.group && plan.days.length && !problems.length ? (() => {
+    const g = plan.group!;
+    const rows = g.rows.length ? g.rows : [rowFor(g, g.paying, g.tls)];
+    return toSaved(priceGroup(costSheet(plan, ctx, today, g).days, { ...g, rows }), { ...g, rows });
+  })() : null;
 
   const parkNames = [...new Set(plan.stops.map((s) => ctx.pricing.parks.find((p) => p.id === s.park_id)?.name).filter(Boolean))] as string[];
   const nights = plan.stops.reduce((t, s) => t + s.nights, 0);
@@ -90,9 +108,11 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
   };
   const version = {
     plan,
-    pricing: result ? { ...result, priced_on: today } : { priced_on: today, incomplete: true, nights },
-    total_amount: result?.totals.grand ?? 0,
-    currency: result?.currency ?? plan.currency,
+    pricing: result ? { ...result, priced_on: today, ...(groupSaved ? { group: groupSaved } : {}) } : { priced_on: today, incomplete: true, nights },
+    // a group quote: the rupee value of its first group size at the typed US dollar rate
+    // (selling price per guest x paying guests x rate); the engine total is for one booking, not a group
+    total_amount: groupSaved ? groupTotalInr(groupSaved) : plan.group ? 0 : result?.totals.grand ?? 0,
+    currency: plan.group ? "INR" : result?.currency ?? plan.currency,
   };
 
   const supabase = await createClient();
@@ -100,6 +120,12 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
   if (queryId) {
     const { data: existing } = await supabase.from("sales_queries").select("id, status, query_no").eq("id", queryId).is("deleted_at", null).maybeSingle();
     if (!existing) return { error: "Query not found, or it is not assigned to you." };
+    // a group quote stays a group quote, and an ordinary quote stays ordinary
+    {
+      const { data: t } = await supabase.from("sales_queries").select("query_type").eq("id", queryId).maybeSingle();
+      const was = (t as { query_type?: string } | null)?.query_type;
+      if (queryType === "group" ? was !== "group" : was === "group") return { error: "This quote cannot change between a group quote and an ordinary quote." };
+    }
     const status = (existing as { status: string }).status;
     if (status === "lost" || status === "cancelled") return { error: "Reopen this query before creating a new version." };
     if (mode === "draft" && status !== "draft") {
@@ -139,7 +165,7 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
 
   const q = await supabase
     .from("sales_queries")
-    .insert({ ...queryFields, status: mode === "draft" ? "draft" : "open" })
+    .insert({ ...queryFields, status: mode === "draft" ? "draft" : "open", ...(queryType === "group" ? { query_type: "group" } : {}) })
     .select("id, query_no")
     .single();
   if (q.error) return { error: q.error.message };
@@ -259,8 +285,8 @@ async function teachReader(
 }
 
 // Public actions: same as above, but failures come back as { error } instead of crashing.
-export async function saveItinerary(planJson: string, queryId: string | null, mode: SaveMode = "final", enquiry?: string, typed?: string[], versionMode: VersionMode = "new"): Promise<SaveResult> {
-  return timed("saveItinerary", () => safe("saveItinerary", () => saveItineraryUnsafe(planJson, queryId, mode, enquiry, typed, versionMode === "update" ? "update" : "new")));
+export async function saveItinerary(planJson: string, queryId: string | null, mode: SaveMode = "final", enquiry?: string, typed?: string[], versionMode: VersionMode = "new", queryType?: "group"): Promise<SaveResult> {
+  return timed("saveItinerary", () => safe("saveItinerary", () => saveItineraryUnsafe(planJson, queryId, mode, enquiry, typed, versionMode === "update" ? "update" : "new", queryType === "group" ? "group" : undefined)));
 }
 
 // "Correct, continue" on the Confirm step after the sales person corrected the reading:

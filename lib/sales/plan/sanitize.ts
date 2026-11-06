@@ -1,5 +1,6 @@
 // Rebuilds a plan from untrusted JSON (the browser) keeping only known keys
 // with the right types. Anything malformed becomes a safe default.
+import { sanitizeGroup } from "@/lib/sales/group/costing";
 import type { DaySafari, Plan, PlanDay, PlanDraft, PlanItem, PlanStop, TravelMode } from "./types";
 
 const MODES: TravelMode[] = ["flight", "train", "own", "transfer"];
@@ -173,6 +174,8 @@ export function sanitizePlan(input: unknown): Plan | null {
       ? { confirmed: { key: str((p.confirmed as { key: string }).key, 20000), at: str((p.confirmed as { at?: unknown }).at, 40) } }
       : {}),
     ...(typeof p.enquiry === "string" && p.enquiry.trim() ? { enquiry: p.enquiry.slice(-6000) } : {}),
+    // a group quote's costing (lib/sales/group/costing.ts): only when the quote is a group quote
+    ...(p.group ? { group: sanitizeGroup(p.group) ?? undefined } : {}),
     ...(Number.isInteger(Number(p.transfer_vehicles)) && p.transfer_vehicles !== null && p.transfer_vehicles !== undefined && Number(p.transfer_vehicles) >= 1 ? { transfer_vehicles: Math.min(20, Number(p.transfer_vehicles)) } : {}),
     ...(p.route_vehicles && typeof p.route_vehicles === "object"
       ? {

@@ -7,6 +7,7 @@ import type { PriceResult } from "@/lib/sales/pricing/types";
 import { addDays, type PaymentMode } from "./money";
 import { rpBookingLines } from "@/lib/redpanda/booking";
 import type { RpPrice } from "@/lib/redpanda/types";
+import { groupBooking, type GroupSaved } from "@/lib/sales/group/costing";
 
 export interface QueryForBooking {
   id: string;
@@ -94,6 +95,39 @@ export function bookingFromVersion(q: QueryForBooking, v: VersionForBooking, tod
     });
 
   const amount = Number(q.booked_amount) || 0;
+  const paid: BookingDraft["payment"] = amount > 0 ? { kind: "payment", amount: r2(amount), paid_on: booked, mode: "other", reference: q.payment_ref?.slice(0, 200) || null, note: "Recorded when the query was marked Booked" } : null;
+
+  // a group quote (lib/sales/group): billed in US dollars for the group size it booked, no lodge
+  // lines (its costs are per guest, not per lodge); dues by the quote's payment percentages
+  const grp = (pr as unknown as { group?: GroupSaved }).group;
+  const gb = grp ? groupBooking(grp, (pr.payments ?? []).map((p) => ({ label: p.label, pct: p.pct })), plan.group?.booked_row, plan.group?.singles) : null;
+  if (grp) {
+    const sched = (pr.payments ?? []).filter((p) => p.pct > 0);
+    return {
+      booking: {
+        query_id: q.id,
+        version_no: v.version_no,
+        guest_name: (q.guest_name || "Group").slice(0, 200),
+        owner_id: q.assigned_to,
+        check_in: checkIn,
+        check_out: checkOut && checkIn && checkOut < checkIn ? checkIn : checkOut,
+        currency: "USD",
+        other_amount: gb?.total ?? 0,
+        discount_amount: 0,
+        booked_on: booked,
+        source: "quote",
+      },
+      lines: [],
+      dues: (gb?.dues ?? []).map((d, i) => {
+        let due = sched[i]?.due ?? null;
+        const before = /(\d+)\s+days?\s+before/i.exec(sched[i]?.note ?? "");
+        if (!due && before && checkIn) due = addDays(checkIn, -Number(before[1]));
+        return { label: d.label, due_on: due && due > booked ? due : booked, amount: d.amount, sort: i };
+      }),
+      payment: paid,
+    };
+  }
+
   return {
     booking: {
       query_id: q.id,
@@ -110,6 +144,6 @@ export function bookingFromVersion(q: QueryForBooking, v: VersionForBooking, tod
     },
     lines,
     dues,
-    payment: amount > 0 ? { kind: "payment", amount: r2(amount), paid_on: booked, mode: "other", reference: q.payment_ref?.slice(0, 200) || null, note: "Recorded when the query was marked Booked" } : null,
+    payment: paid,
   };
 }

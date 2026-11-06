@@ -1,3 +1,4 @@
+import { GroupPrices } from "@/components/sales/group/group-prices";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { paxLines } from "@/lib/sales/pricing/pax";
@@ -465,7 +466,16 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
           )}
 
           {/* ---------------- price ---------------- */}
-          {view.show.prices && (
+          {view.group && (
+            <section data-pdf-block="" className="-mx-5 bg-[var(--color-olive-900,#2B3318)] px-6 py-8 text-white sm:mx-0 sm:rounded-2xl sm:px-10 sm:py-10">
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--color-gold-200,#EBD9A0)]">Group quotation</p>
+              <p className="mt-2 text-sm text-white/70">Per guest in US dollars, twin sharing, by group size. Valid until {long(view.validUntil)}.</p>
+              <div className="mt-5">
+                <GroupPrices g={view.group} dark />
+              </div>
+            </section>
+          )}
+          {view.show.prices && !view.group && (
             <section data-pdf-block="" className="-mx-5 bg-[var(--color-olive-900,#2B3318)] px-6 py-8 text-white sm:mx-0 sm:rounded-2xl sm:px-10 sm:py-10">
               <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--color-gold-200,#EBD9A0)]">Trip quotation</p>
               <div className="mt-4 grid gap-6 sm:grid-cols-2 sm:items-end">
@@ -587,7 +597,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
                     <p className="font-medium text-olive-800">{p.label.charAt(0).toUpperCase() + p.label.slice(1)}</p>
                     <p className="text-sm text-sand-500">{p.due ? `By ${long(p.due)}` : p.note && view.dateless ? p.note.charAt(0).toUpperCase() + p.note.slice(1) : "To confirm the booking"}</p>
                   </div>
-                  <p className="tabular font-display text-xl text-olive-800">{view.show.prices ? money(p.amountInCurrency, view.currency) : `${p.pct}%`}</p>
+                  <p className="tabular font-display text-xl text-olive-800">{view.show.prices && !view.group ? money(p.amountInCurrency, view.currency) : `${p.pct}%`}</p>
                 </div>
               ))}
             </div>

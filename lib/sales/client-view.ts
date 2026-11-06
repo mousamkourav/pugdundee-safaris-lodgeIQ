@@ -15,6 +15,7 @@ import { detailedBreakdown, priceBreakdown } from "@/lib/sales/pricing/breakdown
 import { isShareSlug, isShareToken } from "@/lib/sales/share-slug";
 import { cache } from "react";
 import type { Instalment, ParkClosure, PriceResult } from "@/lib/sales/pricing/types";
+import { toGuest, type GroupGuest, type GroupSaved } from "@/lib/sales/group/costing";
 
 export interface Contact {
   name: string;
@@ -58,6 +59,9 @@ export interface ClientView {
   lodges: { id: string; name: string; description: string; photos: string[]; website: string | null }[];
   parkNames: Record<string, string>;
   lodgeNames: Record<string, string>;
+  // a group quote: prices per guest by group size (selling prices only); the one-booking total,
+  // breakup and instalment amounts are not shown (payment terms as percentages)
+  group?: GroupGuest;
   sections: {
     about: string;
     inclusions: string[];
@@ -213,6 +217,7 @@ async function loadClientViewUncached(link: string): Promise<ClientView | null> 
   );
 
   // Any quote currency with a rate (older code only converted USD).
+  const grp = (pricing as { group?: GroupSaved }).group ?? null;
   const fx = pricing.fx ?? null;
   const foreign = pricing.currency !== "INR" && !!fx;
   const conv = (n: number) => (foreign ? Math.round((n / fx!) * 100) / 100 : n);
@@ -225,7 +230,8 @@ async function loadClientViewUncached(link: string): Promise<ClientView | null> 
     queryNo: query.query_no,
     versionNo: version.version_no,
     guestName: query.guest_name,
-    plan,
+    // a group's costing settings (typed costs, rates) never reach the guest page
+    plan: grp ? { ...plan, group: undefined } : plan,
     title: sections.title,
     routeLine: sections.routeLine,
     // the whole trip, including nights in a city before or after the lodges
@@ -235,15 +241,15 @@ async function loadClientViewUncached(link: string): Promise<ClientView | null> 
     guests: pricing.guests,
     currency: foreign ? pricing.currency : "INR",
     fx,
-    total: conv(pricing.totals.grand),
-    perPerson: conv(pricing.perPerson),
-    split: convertSplit(pricing.split, conv),
-    payments: pricing.payments.map((p) => ({ ...p, amountInCurrency: conv(p.amount) })),
+    total: grp ? 0 : conv(pricing.totals.grand),
+    perPerson: grp ? 0 : conv(pricing.perPerson),
+    split: grp ? undefined : convertSplit(pricing.split, conv),
+    payments: pricing.payments.map((p) => (grp ? { ...p, amount: 0, amountInCurrency: 0 } : { ...p, amountInCurrency: conv(p.amount) })),
     validUntil: addDays(version.created_at.slice(0, 10), validity),
     quotedOn: version.created_at.slice(0, 10),
     show: { prices: true, breakup: plan.client?.breakup ?? (plan.client?.show_breakup ? "summary" : "none") },
-    breakup: priceBreakdown(pricing).rows.map((r) => ({ label: r.label, amount: conv(r.amount), ...(r.key === "gst" ? { gst: true } : {}) })),
-    detail: pricing.lines
+    breakup: grp ? [] : priceBreakdown(pricing).rows.map((r) => ({ label: r.label, amount: conv(r.amount), ...(r.key === "gst" ? { gst: true } : {}) })),
+    detail: pricing.lines && !grp
       ? detailedBreakdown(pricing).rows.map((r) => ({ date: r.date, label: r.label, quantity: r.quantity, net: conv(r.net), gstPct: r.gstPct, gst: conv(r.gst), amount: conv(r.amount) }))
       : [],
     dateless: !!plan.dateless,
@@ -256,6 +262,7 @@ async function loadClientViewUncached(link: string): Promise<ClientView | null> 
     lodges,
     parkNames,
     lodgeNames,
+    ...(grp ? { group: toGuest(grp) } : {}),
     sections: {
       about: sections.about,
       inclusions: sections.inclusions,

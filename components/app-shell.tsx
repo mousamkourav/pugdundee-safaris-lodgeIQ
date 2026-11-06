@@ -57,6 +57,7 @@ export function AppShell({
   sopAccess = false,
   sopUnread = null,
   rpAccess = false,
+  groupAccess = false,
   children,
 }: {
   role: Role;
@@ -64,6 +65,7 @@ export function AppShell({
   sopAccess?: boolean; // may read the SOP (adds the SOP tab)
   sopUnread?: number | null; // a published SOP version this person has not marked as read
   rpAccess?: boolean; // may use Red Panda (adds the Red Panda tab)
+  groupAccess?: boolean; // may make group quotes (Sales sidebar)
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -79,7 +81,7 @@ export function AppShell({
   const groups = NAV.filter((g) => g.module === currentModule)
     .map((g) => ({
       ...g,
-      items: g.items.filter((i) => !i.roles || i.roles.includes(role)),
+      items: g.items.filter((i) => (!i.roles || i.roles.includes(role)) && (!i.needs || (i.needs === "group" && groupAccess))),
     }))
     .filter((g) => g.items.length > 0);
 

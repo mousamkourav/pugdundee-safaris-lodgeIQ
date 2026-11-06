@@ -174,6 +174,28 @@ builder, quotes/[id], master, access), components `components/redpanda/*`.
   variables), text from `rp_settings.data` (`lib/redpanda/content.ts`, placeholders like {airport}),
   photos `rp_images` (bucket sales-media, `red-panda/...`; one cover).
 
+## Group quotes (Sales > Group quotes, 6 Nov 2026)
+Quotes for tour operators' groups (for example 6 paying guests + 1 tour leader), priced by group
+size in US dollars. SQL `supabase/sales_group_quotes.sql` (query_type 'group', `sales_group_access`
+by person or role, `sales_group_audit`). Only the super admin gives access (Sales > Group access);
+only Sales users can have it (`lib/sales/group/server.ts`, any failure = no access).
+- Same builder as /sales/new (chat + 4 steps) with `group` on: step 1 asks paying guests, tour
+  leaders, their rooms (single / two share), their cost (divided / free at our own lodges, rest
+  divided / free), guests per jeep, people per vehicle, the US dollar rate (typed, never fetched).
+- The costing sheet (`lib/sales/group/sheet.ts`) prices each day from Master data with probe groups
+  (offers, discount, markup, adjustment, GST, line prices off): single, double, jeep, vehicle,
+  per person (flights fare_pp), per group. Every cell can be typed over (kept in `plan.group.cells`).
+- The ladder (`lib/sales/group/costing.ts`, the owner's Excel to the rupee, `costing.test.ts`):
+  per guest = double/2 + person + group/p + jeep x jeeps/p + vehicle x vehicles/p + TL cost/p;
+  USD = / rate; selling = typed, else round up (cost x (1 + markup %), to $0/10/50/100). Single
+  supplement = single - double/2; extra night = the first city hotel night (sharing, single).
+- Saved: `pricing.group` (recomputed on the server, never from the browser). Final save needs the
+  rate. `total_amount` = first row selling x paying x rate (rupees, for lists). The query page shows
+  costs and margins; the guest page only the selling prices (`toGuest`), payment terms as %.
+- Payments: booking in USD, no lodge lines, total = selling x paying + supplement x single rooms
+  for the group size chosen in the costing step; dues by the quote's payment percentages.
+- A group quote stays a group quote (save refuses a change of type); /sales/new redirects it.
+
 ## AI assistant (Sales builder)
 One reading flow, AI first (`lib/sales/plan/reading.ts`):
 1. Memory: `sales_reading_patterns` (Master data > Reading memory), saved when a quote is

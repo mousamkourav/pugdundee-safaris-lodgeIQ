@@ -1,5 +1,10 @@
 "use client";
 
+import { GroupDetails } from "@/components/sales/group/group-details";
+import { GroupCosting } from "@/components/sales/group/group-costing";
+import { GroupPrices } from "@/components/sales/group/group-prices";
+import { defaultGroup, priceGroup, rowFor, toSaved } from "@/lib/sales/group/costing";
+import { costSheet } from "@/lib/sales/group/sheet";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { paxText } from "@/lib/sales/pricing/pax";
 import { useRouter } from "next/navigation";
@@ -107,6 +112,7 @@ export function Builder({
   isAdmin = false,
   startStep = 0,
   queryStatus = null,
+  group = false,
 }: {
   ctx: BuilderContext;
   initial: Plan;
@@ -117,9 +123,12 @@ export function Builder({
   isAdmin?: boolean; // Sales admin: a typed rate is saved straight into Master data
   startStep?: number;
   queryStatus?: string | null;
+  group?: boolean; // a group quote (Sales > Group quotes): group details, costing sheet and price ladder
 }) {
   const router = useRouter();
-  const storageKey = `lq-itinerary-draft:${queryId ?? "new"}`;
+  const storageKey = `lq-itinerary-draft:${group ? "group:" : ""}${queryId ?? "new"}`;
+  // a group quote starts with the group's details (6 paying guests + 1 tour leader)
+  if (group && !initial.group) initial = { ...initial, group: defaultGroup(), guest: { ...initial.guest, adults: initial.stops.length ? initial.guest.adults : 6, rooms: initial.stops.length ? initial.guest.rooms : 3 } };
 
   // a quote saved before the Confirm step existed was checked when it was made: confirmed as it is
   const [plan, setPlanState] = useState<Plan>(() => (initial.days.length && !initial.confirmed ? markConfirmed(initial, new Date().toISOString()) : initial));
@@ -376,6 +385,14 @@ export function Builder({
     } else if (q.text) void send(q.text);
   }
 
+  // a group quote: its prices by group size, as the tour operator sees them (Final draft)
+  const groupSaved = useMemo(() => {
+    if (!group || !plan.group || step !== 3) return null;
+    const g = plan.group;
+    const rows = g.rows.length ? g.rows : [rowFor(g, g.paying, g.tls)];
+    return toSaved(priceGroup(costSheet(plan, ctx, today, g).days, { ...g, rows }), { ...g, rows });
+  }, [group, plan, ctx, today, step]);
+
   // ---- save
   function save(mode: "draft" | "final", after?: () => void, versionMode: VersionMode = "new") {
     setSaveError(null);
@@ -403,6 +420,11 @@ export function Builder({
         setSaveError("The guest's email address does not look right. Fix it on the Trip step.");
         return;
       }
+      if (group && !(plan.group?.fx && plan.group.fx > 0)) {
+        setSaveError("Type the US dollar rate (Plan & price, Price by group size).");
+        go(2);
+        return;
+      }
       if (plan.adjustment && !plan.adjustment.reason.trim()) {
         setSaveError("The manual adjustment needs a reason (Plan & price step).");
         return;
@@ -418,7 +440,7 @@ export function Builder({
         const enquiry = firstEnquiry ?? (initial.stops.length ? undefined : messages.find((m) => m.role === "user" && m.text.trim().length >= 15)?.text);
         // everything typed in this session: the reader logs the words it could not place
         const typed = messages.filter((m) => m.role === "user").map((m) => m.text);
-        const res = await saveItinerary(JSON.stringify(plan), currentId, mode, enquiry, typed, versionMode);
+        const res = await saveItinerary(JSON.stringify(plan), currentId, mode, enquiry, typed, versionMode, group ? "group" : undefined);
         if (res.error) setSaveError(res.error);
         else if (res.problems?.length) setSaveProblems(res.problems);
         else if (res.id) {
@@ -581,6 +603,7 @@ export function Builder({
           <div className="space-y-3">
             <PriceBar plan={plan} result={result} blockers={plan.stops.length ? blockers : []} />
             <TripDetails plan={plan} setPlan={setPlan} ctx={ctx} today={today} markFlag={markFlag} />
+            {group && <GroupDetails plan={plan} setPlan={setPlan} />}
           </div>
         </div>
       )}
@@ -588,12 +611,20 @@ export function Builder({
       {step === 1 && <ConfirmStep plan={plan} setPlan={setPlan} ctx={ctx} confirmed={confirmed} onConfirm={onNext} onEdited={() => setConfirmEdited(true)} />}
 
       {step === 2 && <PlanStep plan={plan} setPlan={setPlan} ctx={ctx} result={result} isAdmin={isAdmin} />}
+      {step === 2 && group && <GroupCosting plan={plan} setPlan={setPlan} ctx={ctx} today={today} />}
 
       {step === 3 && (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <FinalDraft plan={plan} setPlan={setPlan} ctx={ctx} result={result} onDayEdited={() => setDaysEdited(true)} nameError={nameError} />
           <aside className="space-y-3 lg:sticky lg:top-36 lg:self-start">
-            <PriceBar plan={plan} result={result} blockers={blockers} />
+            {groupSaved ? (
+              <div className={`${ui.card} p-4`}>
+                <p className="mb-2 text-sm font-semibold text-olive-800">What the tour operator sees</p>
+                <GroupPrices g={groupSaved} />
+              </div>
+            ) : (
+              <PriceBar plan={plan} result={result} blockers={blockers} />
+            )}
             <p className="text-xs text-sand-500">
               The client link is created when you save for the guest. Drafts are never shown to guests, and earlier versions are kept.
             </p>

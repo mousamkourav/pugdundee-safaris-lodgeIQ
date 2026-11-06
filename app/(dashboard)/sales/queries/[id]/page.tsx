@@ -19,6 +19,8 @@ import { rupees, fmtDate, fmtDay, fmtRange, daysSince } from "@/lib/sales/format
 import type { QueryStatus } from "@/lib/sales/status";
 import type { Plan } from "@/lib/sales/plan/types";
 import type { PriceResult } from "@/lib/sales/pricing/types";
+import type { GroupSaved } from "@/lib/sales/group/costing";
+import { GroupPrices } from "@/components/sales/group/group-prices";
 
 interface QueryFull {
   id: string;
@@ -100,6 +102,8 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
 
   const plan = current?.plan;
   const pricing = current?.pricing;
+  // a group quote (supabase/sales_group_quotes.sql): its prices by group size replace the one-booking price
+  const group = ((pricing as { group?: GroupSaved } | undefined)?.group ?? null) as GroupSaved | null;
   const canAct = admin || q.assigned_to === user.id;
   const isDraft = q.status === "draft";
   const canEdit = canAct && (q.status === "open" || q.status === "booked");
@@ -113,7 +117,7 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
   const members = admin
     ? memberInfo.members.filter((m) => m.status !== "disabled").map((m) => ({ id: m.id, name: m.full_name || "Unnamed" }))
     : [];
-  const deposit = pricing?.payments?.[0]?.amount ?? null;
+  const deposit = group ? null : pricing?.payments?.[0]?.amount ?? null; // a group pays in US dollars
 
   // flights in the latest version, with the team's booking details
   const flightItems = (plan?.days ?? []).flatMap((d, i) => (d.items ?? []).filter((it) => it.type === "flight" && it.flight).map((it) => ({ it, d, i })));
@@ -194,7 +198,48 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
 
       <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
         <div className="min-w-0 space-y-6">
-          {pricing && pricing.byProperty && (
+          {group && (
+            <section className={`${ui.card} p-5`}>
+              <div className="flex flex-wrap items-end justify-between gap-2">
+                <h2 className="text-lg">Group prices (version {current.version_no})</h2>
+                <p className="text-xs text-sand-500">US dollar rate {group.fx ? `Rs ${group.fx}` : "not typed"}</p>
+              </div>
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="bg-sand-100 text-xs font-semibold uppercase tracking-wide text-sand-500">
+                      <th className="px-3 py-2">Group</th>
+                      <th className="px-3 py-2 text-right">Jeeps</th>
+                      <th className="px-3 py-2 text-right">Vehicles</th>
+                      <th className="px-3 py-2 text-right">Cost per guest</th>
+                      <th className="px-3 py-2 text-right">Cost US$</th>
+                      <th className="px-3 py-2 text-right">Selling US$</th>
+                      <th className="px-3 py-2 text-right">Margin</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {group.rows.map((r, i) => (
+                      <tr key={i} className="border-t border-sand-100">
+                        <td className="px-3 py-2">{r.paying} + {r.tls}</td>
+                        <td className="tabular px-3 py-2 text-right">{r.jeeps}</td>
+                        <td className="tabular px-3 py-2 text-right">{r.vehicles}</td>
+                        <td className="tabular px-3 py-2 text-right">{rupees(r.inr)}</td>
+                        <td className="tabular px-3 py-2 text-right">{r.usd == null ? "-" : r.usd.toFixed(2)}</td>
+                        <td className="tabular px-3 py-2 text-right font-semibold">{r.sell == null ? "-" : r.sell.toLocaleString("en-US")}</td>
+                        <td className="tabular px-3 py-2 text-right">{r.sell != null && r.usd != null && r.sell > 0 ? `${(((r.sell - r.usd) / r.sell) * 100).toFixed(1)}%` : "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-4 border-t border-sand-100 pt-4">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-sand-500">What the tour operator sees</p>
+                <GroupPrices g={group} />
+              </div>
+            </section>
+          )}
+
+          {!group && pricing && pricing.byProperty && (
             <section className={`${ui.card} p-5`}>
               <div className="flex flex-wrap items-end justify-between gap-2">
                 <h2 className="text-lg">Price (version {current.version_no})</h2>

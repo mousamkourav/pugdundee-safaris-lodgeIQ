@@ -54,6 +54,7 @@ export function QueriesTable({
                     <p className="text-xs capitalize text-sand-500">
                       {r.nationality}
                       {r.query_type === "red_panda" && <span className="ml-1.5 rounded-md border border-gold-200 bg-gold-50 px-1.5 py-0.5 text-[11px] font-semibold normal-case text-gold-800">Red Panda</span>}
+                      {r.query_type === "group" && <span className="ml-1.5 rounded-md border border-olive-200 bg-olive-50 px-1.5 py-0.5 text-[11px] font-semibold normal-case text-olive-800">Group</span>}
                     </p>
                   </td>
                   <td className="whitespace-nowrap px-4 py-3">{fmtRange(r.arrival_date, r.departure_date)}</td>
