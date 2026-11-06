@@ -82,9 +82,11 @@ test("every Red Panda page checks access on the server; Master data and access: 
     else assert.match(s, /await requireRpUser\(\)/, rel);
   }
   // every exported server action checks the caller first
-  const actions = src("app/(dashboard)/red-panda/actions.ts");
-  const fns = [...actions.matchAll(/export async function (\w+)\([^)]*\)[^{]*\{([\s\S]*?)\n\}/g)];
-  assert.ok(fns.length >= 9);
+  const actions = src("app/(dashboard)/red-panda/actions.ts") + "\n" + src("app/(dashboard)/red-panda/ai-actions.ts");
+  const fns = [...actions.replace(/\r/g, "").matchAll(/export async function (\w+)\([^)]*\)[^{]*\{([\s\S]*?)\n\}/g)];
+  assert.ok(fns.length >= 10);
+  // the assistant: names, emails and phones are taken out before the AI; the evidence rule checks its answer
+  assert.match(src("app/(dashboard)/red-panda/ai-actions.ts"), /scrubRp\(message[\s\S]*checkRpEvidence\(/);
   for (const [, name, body] of fns) assert.match(body, /await (guard|editor)\(\)/, `${name}() does not check the caller`);
   // the service role is used only on the server
   for (const f of ["components/redpanda/builder.tsx", "components/redpanda/master-editor.tsx", "components/redpanda/access-editor.tsx"]) assert.doesNotMatch(src(f), /supabase\/admin/);

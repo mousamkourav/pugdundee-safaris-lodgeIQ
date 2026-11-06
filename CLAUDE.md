@@ -153,6 +153,14 @@ builder, quotes/[id], master, access), components `components/redpanda/*`.
   after markup and discount; adjustment last. Mayfair (the hotel named in settings) before / after:
   its `sales_room_rates` + the Bagdogra transfer from `sales_transfer_rates`, with their own tax.
   Payment 50% at booking, 50% 45 days before arrival. Cancellation: the Sales cancellation policy.
+- Builder: the Safari builder's four steps (`components/redpanda/builder.tsx`): Trip (the trip
+  assistant `rp-chat.tsx` + the form), Confirm (`tripSummary`, one-click fixes; "Correct, continue"
+  stores `rpConfirmKey`, checked again in `saveRpQuote`), Plan & price, Final draft (guest text for
+  this quote: `plan.text` intro / day texts / notes). Assistant (`ai-actions.ts` `rpAssist`): its own
+  reader `lib/redpanda/reader.ts` (never the Safari reader) and Gemini first when AI reading is on,
+  with its own evidence rule (`lib/redpanda/ai.ts` `checkRpEvidence`), `scrubRp` before sending,
+  `mergeReadings` (AI first, reader fills gaps), one question at a time (`assist.ts`), logged in
+  `sales_chat_log` as "[Red Panda] ...". Tests: `reader.test.ts`.
 - Guest page and PDF: own template and colours (the brochure's cream and bark brown, page-scoped
   variables), text from `rp_settings.data` (`lib/redpanda/content.ts`, placeholders like {airport}),
   photos `rp_images` (bucket sales-media, `red-panda/...`; one cover).

@@ -81,6 +81,11 @@ export function rpGuestContent(plan: RpPlan, price: RpPrice, s: RpSettings): RpG
     push("Departure", `Transfer to ${outAir?.name ?? "the airport"} for your onward flight.`, null);
   } else push(departText?.title ?? "Departure", fill(departText?.text ?? "", vars), null);
 
+  // the Final draft's changes for this quote (day number -> text)
+  for (const d of days) {
+    const own = plan.text?.days?.[String(d.n)];
+    if (own) d.text = own;
+  }
   const totalNights = before + nights + after;
   const guestsText = `${price.guests} guest${price.guests === 1 ? "" : "s"}`;
   const glance = [
@@ -105,13 +110,13 @@ export function rpGuestContent(plan: RpPlan, price: RpPrice, s: RpSettings): RpG
   return {
     title: s.title,
     tagline: s.tagline,
-    intro: s.intro,
+    intro: plan.text?.intro || s.intro,
     stayText: s.stay_text,
     glance,
     days,
     inclusions: [...inclusions, ...hotelInc, ...price.lines.filter((l) => l.group === "extra").map((l) => l.label)],
     exclusions: s.exclusions,
-    goodToKnow: s.good_to_know,
+    goodToKnow: [...(plan.text?.notes ?? []), ...s.good_to_know],
     whatToCarry: s.what_to_carry,
     paymentTerms: fill(s.payment_terms, vars),
     arrival: price.arrival,

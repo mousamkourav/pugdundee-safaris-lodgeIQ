@@ -34,6 +34,9 @@ export function emptyRpPlan(): RpPlan {
     discount: 0,
     adjustment: { amount: 0, reason: "" },
     notes: "",
+    enquiry: "",
+    confirmed: null,
+    text: { intro: "", days: {}, notes: [] },
   };
 }
 
@@ -82,7 +85,23 @@ export function sanitizeRpPlan(raw: unknown): RpPlan {
     discount: money(r.discount),
     adjustment: { amount: money(adj.amount), reason: str(adj.reason, 300) },
     notes: str(r.notes, 2000),
+    enquiry: typeof r.enquiry === "string" ? r.enquiry.replace(/\r/g, "").slice(0, 6000) : "",
+    confirmed: typeof r.confirmed === "string" && r.confirmed.length <= 1000 ? r.confirmed : null,
+    text: guestText(r.text),
   };
+}
+
+// the Final draft's text for this quote: plain text, limited
+const long = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/\r/g, "").replace(/[\u0000-\u0008\u000b-\u001f]/g, "").trim().slice(0, max) : "");
+function guestText(v: unknown): RpPlan["text"] {
+  const x = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+  const days: Record<string, string> = {};
+  if (x.days && typeof x.days === "object")
+    for (const [k, t] of Object.entries(x.days as Record<string, unknown>).slice(0, 40)) {
+      if (/^\d{1,2}$/.test(k) && long(t, 3000)) days[k] = long(t, 3000);
+    }
+  const notes = Array.isArray(x.notes) ? x.notes.map((n) => long(n, 500)).filter(Boolean).slice(0, 20) : [];
+  return { intro: long(x.intro, 4000), days, notes };
 }
 
 export const DEFAULT_SETTINGS: RpSettings = {

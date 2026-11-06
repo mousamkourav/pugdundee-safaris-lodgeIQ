@@ -123,6 +123,10 @@ export interface RpPlan {
   discount: number;
   adjustment: { amount: number; reason: string };
   notes: string; // internal, never on the guest page
+  enquiry: string; // the enquiry as written in the chat (internal)
+  confirmed: string | null; // rpConfirmKey(plan) when the Confirm step said "Correct, continue"
+  // Final draft: the guest text changed for this quote only (empty = Master data's text)
+  text: { intro: string; days: Record<string, string>; notes: string[] };
 }
 
 export interface RpLine {

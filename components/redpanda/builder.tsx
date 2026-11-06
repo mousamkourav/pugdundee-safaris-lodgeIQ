@@ -1,8 +1,15 @@
 "use client";
 
-// The Red Panda quote builder: guest, dates, airports, the hotel near Bagdogra, extras, then the
-// price at once (the same pure pricing the server runs again when saving).
+// The Red Panda quote builder, in the Safari builder's four steps: Trip (the assistant reads the
+// enquiry, or fill the form), Confirm (the trip in plain words, one-click fixes), Plan & price
+// (rooms, extras, price changes) and Final draft (the guest text for this quote, then save). The
+// price is the same pure pricing the server runs again when saving.
 import { useMemo, useState, useTransition } from "react";
+import { RpChat, type RpChatMessage } from "./rp-chat";
+import { applyReading, isRpConfirmed, nextQuestion, replyText, rpConfirmKey, tripSummary } from "@/lib/redpanda/assist";
+import { rpGuestContent } from "@/lib/redpanda/content";
+import { rpAssist } from "@/app/(dashboard)/red-panda/ai-actions";
+import type { RpPending } from "@/lib/redpanda/reader";
 import { useRouter } from "next/navigation";
 import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
@@ -24,9 +31,49 @@ function Field({ label, children, hint }: { label: string; children: React.React
   );
 }
 
+const STEPS = ["Trip", "Confirm", "Plan & price", "Final draft"];
+
+function Stepper({ step, canGo, go }: { step: number; canGo: (n: number) => boolean; go: (n: number) => void }) {
+  return (
+    <ol className={`${ui.card} flex items-center gap-2 overflow-x-auto px-3 py-2`}>
+      {STEPS.map((label, i) => {
+        const done = i < step;
+        const active = i === step;
+        return (
+          <li key={label} className="flex flex-1 items-center gap-2 last:flex-none">
+            <button type="button" disabled={!canGo(i)} onClick={() => go(i)} className="flex items-center gap-2 whitespace-nowrap text-sm disabled:cursor-not-allowed disabled:opacity-60">
+              <span
+                className={
+                  "grid h-7 w-7 place-items-center rounded-full border text-xs font-semibold " +
+                  (done ? "border-olive-600 bg-olive-600 text-white" : active ? "border-olive-600 bg-white text-olive-600 ring-4 ring-olive-100" : "border-sand-300 bg-white text-sand-500")
+                }
+              >
+                {done ? <Icon name="check" className="h-4 w-4" /> : i + 1}
+              </span>
+              <span className={active || done ? "font-semibold text-olive-800" : "text-sand-500"}>{label}</span>
+            </button>
+            {i < STEPS.length - 1 && <span className={"h-px min-w-6 flex-1 " + (done ? "bg-olive-600" : "bg-sand-200")} />}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+const QUICK: Partial<Record<NonNullable<RpPending>, string[]>> = { nationality: ["Indian", "Foreign"], hotel_side: ["Before", "After"] };
+const HELLO: RpChatMessage = {
+  role: "assistant",
+  text: "Paste the enquiry as it came in (email, WhatsApp, an agent's mail). I read the guests and their ages, nationality, an agent, the arrival date, nights, the airports (Bagdogra or Bhadrapur), rooms, a tour leader and nights at the hotel near Bagdogra, and ask for anything missing. You can also fill the form.",
+};
+
 export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: { master: RpMaster; initial: RpPlan; queryId: string | null; queryNo: string | null; status: string | null }) {
   const router = useRouter();
   const [plan, setPlan] = useState<RpPlan>(initial);
+  const [step, setStep] = useState(isRpConfirmed(initial) ? 2 : initial.arrival ? 1 : 0);
+  const [messages, setMessages] = useState<RpChatMessage[]>([HELLO]);
+  const [asking, setAsking] = useState<RpPending>(null);
+  const [busy, setBusy] = useState(false);
+  const [formRev, setFormRev] = useState(0);
   const [msg, setMsg] = useState<{ error?: string; problems?: string[] } | null>(null);
   const [pending, start] = useTransition();
   const price = useMemo(() => priceRedPanda(plan, master), [plan, master]);
@@ -35,6 +82,35 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
   const setG = (g: Partial<RpPlan["guest"]>) => setPlan((x) => ({ ...x, guest: { ...x.guest, ...g } }));
   const n = guestCount(plan);
   const hotel = master.hotel;
+
+  const rooms = useMemo(() => (master.hotel?.rooms ?? []).map((r) => ({ id: r.id, name: r.name })), [master.hotel]);
+  const confirmed = isRpConfirmed(plan);
+  const content = useMemo(() => rpGuestContent(plan, price, s), [plan, price, s]);
+  const tripReady = !!plan.arrival && plan.guest.adults >= 1 && plan.nights >= 1;
+  const canGo = (n: number) => n === 0 || (n === 1 && tripReady) || (n >= 2 && tripReady && confirmed);
+  const go = (n: number) => canGo(n) && setStep(n);
+
+  async function onSend(text: string) {
+    setMessages((m) => [...m, { role: "user", text }]);
+    setBusy(true);
+    try {
+      const r = await rpAssist({ message: text, pending: asking, guestName: plan.guest.name, hotelRooms: rooms.map((x) => x.name) });
+      if (r.error || !r.reading) {
+        setMessages((m) => [...m, { role: "assistant", text: r.error ?? "Something went wrong; fill the form, or try again." }]);
+        return;
+      }
+      const a = applyReading({ ...plan, enquiry: [plan.enquiry, text].filter(Boolean).join("\n---\n").slice(-6000) }, r.reading, s, rooms);
+      setPlan(a.plan);
+      setFormRev((x) => x + 1);
+      setAsking(a.pending);
+      setMessages((m) => [...m, { role: "assistant", text: replyText(a, ""), source: r.note || undefined, quick: a.pending === "hotel_room" ? rooms.map((x) => x.name) : a.pending ? QUICK[a.pending] : a.ready ? ["Check the trip"] : undefined }]);
+    } catch {
+      setMessages((m) => [...m, { role: "assistant", text: "Could not reach the server. Check the connection and try again." }]);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const send = (text: string) => (text === "Check the trip" && tripReady ? setStep(1) : void onSend(text));
 
   function save(mode: "draft" | "final") {
     setMsg(null);
@@ -52,9 +128,88 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
   const num = (v: string) => (v === "" ? 0 : Number(v));
   const canDraft = !status || status === "draft";
 
+  const q = nextQuestion(plan, {}, s, rooms);
+  const priceCard = (
+        <section className={`${ui.card} p-5`}>
+          <p className="eyebrow">{queryNo ? `Quote ${queryNo}` : "New quote"}</p>
+          <p className="mt-1 tabular font-display text-3xl font-semibold text-olive-800">{inr(price.totals.grand)}</p>
+          <p className="text-sm text-sand-500">
+            {price.guests} guest{price.guests === 1 ? "" : "s"} &middot; {inr(price.perPerson)} per person &middot; {price.rooms} room{price.rooms === 1 ? "" : "s"}
+          </p>
+          <p className="mt-1 text-xs text-sand-500">
+            {fmt(price.arrival)} to {fmt(price.departure)}
+            {price.season ? ` - Tariff ${price.season}` : ""}
+          </p>
+          <ul className="mt-4 space-y-2 border-t border-sand-200 pt-3 text-sm">
+            {price.lines.map((l) => (
+              <li key={l.key} className="flex justify-between gap-3">
+                <span className="min-w-0">
+                  <span className="block font-medium text-olive-800">{l.label}</span>
+                  <span className="block text-xs text-sand-500">{l.detail}</span>
+                </span>
+                <span className="tabular shrink-0">{inr(l.amount)}</span>
+              </li>
+            ))}
+            {price.totals.markup > 0 && <li className="flex justify-between"><span>Markup</span><span className="tabular">{inr(price.totals.markup)}</span></li>}
+            {price.totals.discount > 0 && <li className="flex justify-between"><span>Discount</span><span className="tabular">-{inr(price.totals.discount)}</span></li>}
+            <li className="flex justify-between"><span>GST {s.gst_pct}% on the package</span><span className="tabular">{inr(price.totals.package_gst)}</span></li>
+            {price.lines.filter((l) => l.group !== "package" && l.gst > 0).map((l) => (
+              <li key={`${l.key}-tax`} className="flex justify-between text-sand-600"><span>Tax on {l.label.split(",")[0]} ({l.gst_pct}%)</span><span className="tabular">{inr(l.gst)}</span></li>
+            ))}
+            {price.totals.adjustment !== 0 && <li className="flex justify-between"><span>Adjustment</span><span className="tabular">{inr(price.totals.adjustment)}</span></li>}
+            <li className="flex justify-between border-t border-sand-200 pt-2 font-semibold text-olive-800"><span>Total</span><span className="tabular">{inr(price.totals.grand)}</span></li>
+          </ul>
+          {price.payments.length > 0 && (
+            <ul className="mt-3 space-y-1 text-xs text-sand-600">
+              {price.payments.map((p) => (
+                <li key={p.label} className="flex justify-between"><span>{p.label} ({p.pct}%), {p.due ? `by ${fmt(p.due)}` : "at booking"}</span><span className="tabular">{inr(p.amount)}</span></li>
+              ))}
+            </ul>
+          )}
+        </section>);
+  const alerts = (
+        <>
+        {price.errors.length > 0 && (
+          <div className={ui.alertError}>
+            <p className="font-semibold">To fix before sending</p>
+            <ul className="mt-1 list-disc pl-4">{price.errors.map((e) => <li key={e}>{e}</li>)}</ul>
+          </div>
+        )}
+        {price.warnings.length > 0 && (
+          <div className={ui.alertWarning}>
+            <ul className="list-disc pl-4">{price.warnings.map((e) => <li key={e}>{e}</li>)}</ul>
+          </div>
+        )}
+        {msg && (
+          <div className={ui.alertError} role="alert">
+            {msg.error}
+            {msg.problems && <ul className="mt-1 list-disc pl-4">{msg.problems.map((e) => <li key={e}>{e}</li>)}</ul>}
+          </div>
+        )}
+        </>
+  );
+  const fixes = (key: string) => {
+    const b = (label: string, fn: () => void, disabled = false) => (
+      <button key={label} type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} disabled={disabled} onClick={fn}>{label}</button>
+    );
+    if (key === "guests") return [b("- adult", () => setG({ adults: Math.max(1, plan.guest.adults - 1) }), plan.guest.adults <= 1), b("+ adult", () => setG({ adults: plan.guest.adults + 1 }), n >= s.max_guests), b(plan.guest.nationality === "indian" ? "Make foreign" : "Make Indian", () => setG({ nationality: plan.guest.nationality === "indian" ? "foreign" : "indian", country: plan.guest.nationality === "indian" ? "" : "India" })), b(plan.guest.booked_by === "agent" ? "Make direct" : "Through an agent", () => setG({ booked_by: plan.guest.booked_by === "agent" ? "direct" : "agent" }))];
+    if (key === "arrive") return s.airports.filter((a) => a.code !== plan.arrive_airport).map((a) => b(`Land at ${a.code}`, () => set({ arrive_airport: a.code })));
+    if (key === "depart") return s.airports.filter((a) => a.code !== plan.depart_airport).map((a) => b(`Fly out of ${a.code}`, () => set({ depart_airport: a.code })));
+    if (key === "outpost") return [b("- night", () => set({ nights: plan.nights - 1 }), plan.nights <= s.min_nights), b("+ night", () => set({ nights: plan.nights + 1 }), plan.nights >= s.max_nights)];
+    if (key === "hotel_before" || key === "hotel_after") return [b("Remove", () => set({ [key]: { nights: 0, room_id: null } } as Partial<RpPlan>))];
+    return [];
+  };
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
-      <div className="min-w-0 space-y-6">
+    <div className="space-y-6">
+      <Stepper step={step} canGo={canGo} go={go} />
+
+      {step === 0 && (
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+          <div className="space-y-4 lg:sticky lg:top-24 lg:self-start">
+            <RpChat messages={messages} busy={busy} onSend={send} />
+          </div>
+          <div className="min-w-0 space-y-6">
         <section className={`${ui.card} space-y-4 p-5`}>
           <h2 className="text-lg">Guest</h2>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -95,6 +250,7 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
             <Field label={`Children (${s.min_age}+)`} hint="Ages, comma separated. Full tariff.">
               <input
                 className={ui.input}
+                key={formRev}
                 defaultValue={plan.guest.child_ages.join(", ")}
                 onChange={(e) => setG({ child_ages: e.target.value.split(/[,\s]+/).filter(Boolean).map(Number).filter((x) => Number.isFinite(x)) })}
                 placeholder="e.g. 16, 17"
@@ -109,7 +265,6 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
             Tour leader travelling with the group (charged up to 3 guests, complimentary from 4)
           </label>
         </section>
-
         <section className={`${ui.card} space-y-4 p-5`}>
           <h2 className="text-lg">Dates and airports</h2>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -135,7 +290,6 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
             </Field>
           </div>
         </section>
-
         <section className={`${ui.card} space-y-4 p-5`}>
           <h2 className="text-lg">Hotel near Bagdogra (add-on)</h2>
           {!hotel ? (
@@ -160,7 +314,51 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
             </div>
           )}
         </section>
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              {!tripReady && <p className="text-sm text-sand-500">{q.question ?? "Add the arrival date and the guests."}</p>}
+              <button type="button" className={ui.btnPrimary} disabled={!tripReady} onClick={() => setStep(1)}>Next: Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
 
+      {step === 1 && (
+        <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
+          <section className={`${ui.card} space-y-4 p-5`}>
+            <div>
+              <h2 className="text-lg">Is this the trip?</h2>
+              <p className="text-sm text-sand-500">Read it as the guest would. Fix anything here, or go back to Trip.</p>
+            </div>
+            <ol className="space-y-3">
+              {tripSummary(plan, s, hotel?.name ?? null).map((l, i) => (
+                <li key={l.key} className="flex flex-col gap-2 rounded-lg border border-sand-200 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="flex gap-3"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-olive-100 text-xs font-semibold text-olive-700">{i + 1}</span><span className="text-sm text-olive-800">{l.text}</span></span>
+                  <span className="flex flex-wrap gap-1.5">{fixes(l.key)}</span>
+                </li>
+              ))}
+            </ol>
+            {price.errors.length > 0 && (
+              <div className={ui.alertError}>
+                <p className="font-semibold">Before you continue</p>
+                <ul className="mt-1 list-disc pl-4">{price.errors.map((e) => <li key={e}>{e}</li>)}</ul>
+              </div>
+            )}
+            <div className="flex flex-wrap justify-between gap-2">
+              <button type="button" className={ui.btnSecondary} onClick={() => setStep(0)}>Back to Trip</button>
+              <button type="button" className={ui.btnPrimary} disabled={!tripReady} onClick={() => { set({ confirmed: rpConfirmKey(plan) }); setStep(2); }}>
+                <Icon name="check" className="h-[18px] w-[18px]" /> Correct, continue
+              </button>
+            </div>
+          </section>
+          <aside className="space-y-4">{priceCard}</aside>
+        </div>
+      )}
+
+      {step >= 2 && (
+    <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
+      <div className="min-w-0 space-y-6">
+        {step === 2 && (
+          <>
         <section className={`${ui.card} space-y-4 p-5`}>
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-lg">Extra items</h2>
@@ -180,7 +378,6 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
             </div>
           ))}
         </section>
-
         <section className={`${ui.card} space-y-4 p-5`}>
           <h2 className="text-lg">Price changes</h2>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -206,64 +403,58 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
             <textarea className={ui.input} rows={3} maxLength={2000} value={plan.notes} onChange={(e) => set({ notes: e.target.value })} />
           </Field>
         </section>
+            <div className="flex justify-end">
+              <button type="button" className={ui.btnPrimary} onClick={() => setStep(3)}>Next: Final draft</button>
+            </div>
+          </>
+        )}
+        {step === 3 && (
+          <section className={`${ui.card} space-y-5 p-5`}>
+            <div>
+              <h2 className="text-lg">Final draft: what the guest reads</h2>
+              <p className="text-sm text-sand-500">Change the text for this quote only. Empty = the text from Master data.</p>
+            </div>
+            <Field label="Introduction">
+              <textarea className={ui.input} rows={5} value={plan.text.intro || s.intro} onChange={(e) => set({ text: { ...plan.text, intro: e.target.value === s.intro ? "" : e.target.value } })} />
+            </Field>
+            <div className="space-y-3">
+              <p className={ui.label}>Day by day</p>
+              {content.days.map((d) => (
+                <div key={d.n} className="rounded-lg border border-sand-200 p-3">
+                  <p className="text-sm font-semibold text-olive-800">Day {d.n}{d.dateText ? `, ${d.dateText}` : ""}: {d.title}</p>
+                  <textarea
+                    className={`${ui.input} mt-2`}
+                    rows={3}
+                    value={d.text}
+                    onChange={(e) => set({ text: { ...plan.text, days: { ...plan.text.days, [String(d.n)]: e.target.value } } })}
+                  />
+                  {plan.text.days[String(d.n)] && (
+                    <button type="button" className="mt-1 text-xs text-olive-700 underline" onClick={() => { const rest = { ...plan.text.days }; delete rest[String(d.n)]; set({ text: { ...plan.text, days: rest } }); }}>Back to the standard text</button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <Field label="Notes for this guest (one per line; shown first under Good to know)">
+              <textarea className={ui.input} rows={3} value={plan.text.notes.join("\n")} onChange={(e) => set({ text: { ...plan.text, notes: e.target.value.split("\n") } })} />
+            </Field>
+            <details className="rounded-lg border border-sand-200 p-3 text-sm">
+              <summary className="cursor-pointer font-semibold text-olive-800">Includes, does not include, good to know (from Master data)</summary>
+              <p className="mt-2 font-medium">Includes</p>
+              <ul className="list-disc pl-5">{content.inclusions.map((x) => <li key={x}>{x}</li>)}</ul>
+              <p className="mt-2 font-medium">Does not include</p>
+              <ul className="list-disc pl-5">{content.exclusions.map((x) => <li key={x}>{x}</li>)}</ul>
+              <p className="mt-2 font-medium">Good to know</p>
+              <ul className="list-disc pl-5">{content.goodToKnow.map((x, i) => <li key={i}>{x}</li>)}</ul>
+            </details>
+          </section>
+        )}
       </div>
 
       <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
-        <section className={`${ui.card} p-5`}>
-          <p className="eyebrow">{queryNo ? `Quote ${queryNo}` : "New quote"}</p>
-          <p className="mt-1 tabular font-display text-3xl font-semibold text-olive-800">{inr(price.totals.grand)}</p>
-          <p className="text-sm text-sand-500">
-            {price.guests} guest{price.guests === 1 ? "" : "s"} &middot; {inr(price.perPerson)} per person &middot; {price.rooms} room{price.rooms === 1 ? "" : "s"}
-          </p>
-          <p className="mt-1 text-xs text-sand-500">
-            {fmt(price.arrival)} to {fmt(price.departure)}
-            {price.season ? ` - Tariff ${price.season}` : ""}
-          </p>
-          <ul className="mt-4 space-y-2 border-t border-sand-200 pt-3 text-sm">
-            {price.lines.map((l) => (
-              <li key={l.key} className="flex justify-between gap-3">
-                <span className="min-w-0">
-                  <span className="block font-medium text-olive-800">{l.label}</span>
-                  <span className="block text-xs text-sand-500">{l.detail}</span>
-                </span>
-                <span className="tabular shrink-0">{inr(l.amount)}</span>
-              </li>
-            ))}
-            {price.totals.markup > 0 && <li className="flex justify-between"><span>Markup</span><span className="tabular">{inr(price.totals.markup)}</span></li>}
-            {price.totals.discount > 0 && <li className="flex justify-between"><span>Discount</span><span className="tabular">-{inr(price.totals.discount)}</span></li>}
-            <li className="flex justify-between"><span>GST {s.gst_pct}% on the package</span><span className="tabular">{inr(price.totals.package_gst)}</span></li>
-            {price.lines.filter((l) => l.group !== "package" && l.gst > 0).map((l) => (
-              <li key={`${l.key}-tax`} className="flex justify-between text-sand-600"><span>Tax on {l.label.split(",")[0]} ({l.gst_pct}%)</span><span className="tabular">{inr(l.gst)}</span></li>
-            ))}
-            {price.totals.adjustment !== 0 && <li className="flex justify-between"><span>Adjustment</span><span className="tabular">{inr(price.totals.adjustment)}</span></li>}
-            <li className="flex justify-between border-t border-sand-200 pt-2 font-semibold text-olive-800"><span>Total</span><span className="tabular">{inr(price.totals.grand)}</span></li>
-          </ul>
-          {price.payments.length > 0 && (
-            <ul className="mt-3 space-y-1 text-xs text-sand-600">
-              {price.payments.map((p) => (
-                <li key={p.label} className="flex justify-between"><span>{p.label} ({p.pct}%), {p.due ? `by ${fmt(p.due)}` : "at booking"}</span><span className="tabular">{inr(p.amount)}</span></li>
-              ))}
-            </ul>
-          )}
-        </section>
-        {price.errors.length > 0 && (
-          <div className={ui.alertError}>
-            <p className="font-semibold">To fix before sending</p>
-            <ul className="mt-1 list-disc pl-4">{price.errors.map((e) => <li key={e}>{e}</li>)}</ul>
-          </div>
-        )}
-        {price.warnings.length > 0 && (
-          <div className={ui.alertWarning}>
-            <ul className="list-disc pl-4">{price.warnings.map((e) => <li key={e}>{e}</li>)}</ul>
-          </div>
-        )}
-        {msg && (
-          <div className={ui.alertError} role="alert">
-            {msg.error}
-            {msg.problems && <ul className="mt-1 list-disc pl-4">{msg.problems.map((e) => <li key={e}>{e}</li>)}</ul>}
-          </div>
-        )}
-        <div className="flex flex-col gap-2">
+        {priceCard}
+        {alerts}
+        {step === 3 ? (
+          <div className="flex flex-col gap-2">
           <button type="button" className={ui.btnPrimary} disabled={pending || !price.ok || !plan.guest.name.trim()} onClick={() => save("final")}>
             <Icon name="send" className="h-[18px] w-[18px]" />
             {pending ? "Saving..." : queryId && status !== "draft" ? "Save a new version" : "Save and get the guest link"}
@@ -274,7 +465,10 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
             </button>
           )}
         </div>
+        ) : null}
       </aside>
+    </div>
+      )}
     </div>
   );
 }

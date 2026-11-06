@@ -15,6 +15,7 @@ import { todayIST } from "@/lib/sales/plan/load-context";
 import { loadRpMaster, rpActor, rpEditor } from "@/lib/redpanda/server";
 import { priceRedPanda } from "@/lib/redpanda/pricing";
 import { readSettings, sanitizeRpPlan } from "@/lib/redpanda/plan";
+import { isRpConfirmed } from "@/lib/redpanda/assist";
 import { checkSettingsInput, checkMoneyInput, RP_IMAGE_PREFIX } from "@/lib/redpanda/master";
 import { RP_GRANTABLE_ROLES } from "@/lib/redpanda/access";
 
@@ -59,6 +60,8 @@ export async function saveRpQuote(planJson: string, queryId: string | null, mode
     if (mode === "final") {
       if (!plan.guest.name) return { error: "Enter the guest name." };
       if (!price.ok) return { problems: price.errors };
+      // the trip checked on the Confirm step, unchanged since (as in the Safari builder)
+      if (!isRpConfirmed(plan)) return { problems: ["Check the trip on the Confirm step (Correct, continue) before saving it for the guest."] };
     }
     const queryFields = {
       guest_name: plan.guest.name || `Untitled draft ${today}`,
