@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requireUser, isSalesAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ui } from "@/components/ui";
@@ -7,6 +7,7 @@ import { Builder } from "@/components/sales/builder/builder";
 import { loadBuilderContext, todayIST } from "@/lib/sales/plan/load-context";
 import { defaultVehicle, emptyPlan } from "@/lib/sales/plan/planner";
 import { sanitizePlan } from "@/lib/sales/plan/sanitize";
+import { isRedPandaPlan } from "@/lib/redpanda/plan";
 import type { Plan } from "@/lib/sales/plan/types";
 import { aiEnabled } from "./ai-actions";
 import { logTiming } from "@/lib/timing";
@@ -41,6 +42,8 @@ export default async function NewItineraryPage({
   let queryStatus: string | null = null;
   if (fromId) {
     if (!q?.data) notFound();
+    // a Red Panda quote has its own builder (never the Safari planner or reader)
+    if (isRedPandaPlan((v?.data as { plan?: unknown } | null)?.plan)) redirect(`/red-panda/new?from=${fromId}`);
     const plan = sanitizePlan((v?.data as { plan?: unknown } | null)?.plan);
     if (plan) initial = plan;
     queryNo = (q.data as { query_no: string }).query_no;

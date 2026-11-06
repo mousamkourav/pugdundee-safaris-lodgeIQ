@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { paxLines } from "@/lib/sales/pricing/pax";
 import { loadClientView } from "@/lib/sales/client-view";
+import { loadRpClientView } from "@/lib/redpanda/client-view";
+import { RedPandaGuestPage } from "@/components/redpanda/guest-page";
 import { DownloadPdfButton } from "@/components/sales/download-pdf";
 import { ShareButtons } from "@/components/sales/share-buttons";
 import { PhotoCarousel } from "@/components/sales/photo-carousel";
@@ -14,7 +16,11 @@ import { fmtDay } from "@/lib/sales/format";
 
 // Guest-facing itinerary. Public: opened from a share link without signing in.
 export async function generateMetadata({ params }: { params: Promise<{ token: string }> }): Promise<Metadata> {
-  const view = await loadClientView((await params).token);
+  const token = (await params).token;
+  const view = await loadClientView(token);
+  // a Red Panda quote (only looked up when it is not a Safari quote)
+  const rp = view ? null : await loadRpClientView(token);
+  if (rp) return { title: `Red Panda Outpost - ${rp.guestName} - Pugdundee Safaris`, robots: { index: false, follow: false } };
   return {
     title: view ? `${view.routeLine || view.title} safari - ${view.guestName} - Pugdundee Safaris` : "Your safari itinerary - Pugdundee Safaris",
     robots: { index: false, follow: false },
@@ -100,8 +106,14 @@ const SOCIAL = [
 ];
 
 export default async function ClientItineraryPage({ params }: { params: Promise<{ token: string }> }) {
-  const view = await loadClientView((await params).token);
-  if (!view) notFound();
+  const token = (await params).token;
+  const view = await loadClientView(token);
+  if (!view) {
+    // a Red Panda quote has its own template (lib/redpanda); anything else: not found
+    const rp = await loadRpClientView(token);
+    if (rp) return <RedPandaGuestPage view={rp} />;
+    notFound();
+  }
   const { plan } = view;
   // the rooms the quote is priced for (every stay; owner, 4 Nov 2026: shown on the page and the PDF)
   const rooms = Math.max(1, plan.guest.rooms || 1);

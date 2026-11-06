@@ -4,7 +4,7 @@ import type { Role } from "@/lib/auth";
 // module the current page is in, so Lodge Reporting and Sales each get a clean
 // sidebar. To add a future module: add it to Module, give its groups that
 // module, and teach moduleForPath() its URL prefix.
-export type Module = "reporting" | "sales" | "sop";
+export type Module = "reporting" | "sales" | "sop" | "redpanda";
 
 export interface NavItem {
   label: string;
@@ -97,6 +97,19 @@ export const NAV: NavGroup[] = [
   // ---------------- SOP ----------------
   // Shown only to people with SOP access (the layout decides; see modulesFor). The super admin
   // edits, imports and exports on the SOP page itself.
+  // ---------------- Red Panda ----------------
+  // Shown only to Sales users given Red Panda access (the layout decides; see modulesFor). Master
+  // data and access: the super admin.
+  {
+    title: "Red Panda",
+    module: "redpanda",
+    items: [
+      { label: "Quotes", href: "/red-panda", icon: "list", exact: true },
+      { label: "New quote", href: "/red-panda/new", icon: "plus" },
+      { label: "Master data", href: "/red-panda/master", icon: "building", roles: SOP_EDITOR },
+      { label: "Access", href: "/red-panda/access", icon: "shield", roles: SOP_EDITOR },
+    ],
+  },
   {
     title: "SOP",
     module: "sop",
@@ -109,6 +122,7 @@ export const NAV: NavGroup[] = [
 
 export function moduleForPath(pathname: string, role: Role): Module {
   if (pathname === "/sop" || pathname.startsWith("/sop/")) return "sop";
+  if (pathname === "/red-panda" || pathname.startsWith("/red-panda/")) return "redpanda";
   if (role === "sales_member" || role === "sales_admin") return "sales";
   return pathname === "/sales" || pathname.startsWith("/sales/") ? "sales" : "reporting";
 }
@@ -125,15 +139,18 @@ export const canSwitchModules = (role: Role) => SUPER.includes(role);
 // The tabs of the module switcher. Super roles: Lodge Reporting and Sales, plus SOP when they
 // may read it. Anyone else given SOP access: their own module and SOP. Without SOP access the
 // tabs are what they always were (none for those who cannot switch).
-export function modulesFor(role: Role, sopAccess: boolean): { key: Module; label: string; href: string }[] {
+// Red Panda (a fourth tab, for Sales users given access; lib/redpanda/access.ts) comes last.
+export const RED_PANDA_MODULE = { key: "redpanda" as const, label: "Red Panda", href: "/red-panda" };
+export function modulesFor(role: Role, sopAccess: boolean, rpAccess = false): { key: Module; label: string; href: string }[] {
   const sop = MODULES.filter((m) => m.key === "sop");
-  if (canSwitchModules(role)) return [...MODULES.filter((m) => m.key !== "sop"), ...(sopAccess ? sop : [])];
-  if (!sopAccess) return [];
+  const rp = rpAccess ? [RED_PANDA_MODULE] : [];
+  if (canSwitchModules(role)) return [...MODULES.filter((m) => m.key !== "sop"), ...(sopAccess ? sop : []), ...rp];
+  if (!sopAccess && !rpAccess) return [];
   const own =
     role === "sales_member" || role === "sales_admin"
       ? { key: "sales" as const, label: "Sales & Itinerary", href: "/sales" }
       : role === "task_creator"
         ? { key: "reporting" as const, label: "Trip reports", href: "/trip-reports" }
         : { key: "reporting" as const, label: "Lodge Reporting", href: "/dashboard" };
-  return [own, ...sop];
+  return [own, ...(sopAccess ? sop : []), ...rp];
 }

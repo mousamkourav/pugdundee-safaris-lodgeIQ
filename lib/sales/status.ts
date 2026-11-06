@@ -44,6 +44,7 @@ export interface QueryRow {
   assigned_to: string | null;
   created_at: string;
   updated_at: string;
+  query_type?: "safari" | "red_panda"; // supabase/red_panda.sql; lists that do not ask for it: Safari
 }
 
 // The status workflow, the same as the database trigger (sales_queries_guard_update), so the

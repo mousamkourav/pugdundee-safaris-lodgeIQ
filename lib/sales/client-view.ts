@@ -92,6 +92,8 @@ async function loadClientViewUncached(link: string): Promise<ClientView | null> 
     .maybeSingle();
   if (!v) return null;
   const version = v as { query_id: string; version_no: number; plan: Plan; pricing: PriceResult; created_at: string };
+  // a Red Panda quote has its own guest page (lib/redpanda/client-view.ts)
+  if ((version.plan as unknown as { kind?: string })?.kind === "red_panda") return null;
   const plan = version.plan;
   const pricing = version.pricing;
 
@@ -280,7 +282,7 @@ async function loadClientViewUncached(link: string): Promise<ClientView | null> 
 
 // The safari consultant (who the query is assigned to) and the emergency contact:
 // the member they chose in Sales > Team, else another active sales member.
-async function contactsFor(
+export async function contactsFor(
   db: ReturnType<typeof createAdminClient>,
   consultantId: string | null,
   consultantRow: { full_name?: string; phone?: string; extra?: Record<string, unknown> } | null

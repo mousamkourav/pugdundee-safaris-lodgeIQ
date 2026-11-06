@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { paxText } from "@/lib/sales/pricing/pax";
 import { requireUser, isSalesAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -62,6 +62,8 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
 
   const { data: qData } = await supabase.from("sales_queries").select("*").eq("id", id).is("deleted_at", null).maybeSingle();
   if (!qData) notFound();
+  // a Red Panda quote has its own page (its own plan and price; never the Safari views)
+  if ((qData as { query_type?: string }).query_type === "red_panda") redirect(`/red-panda/quotes/${id}`);
   const q = qData as unknown as QueryFull;
 
   // the version list without its plans (small), the latest version in full, events and

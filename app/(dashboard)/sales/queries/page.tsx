@@ -10,7 +10,7 @@ import { QUERY_LIST_COLUMNS, QUERY_STATUSES, STATUS_LABEL, isQueryStatus, type Q
 export default async function QueriesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; member?: string; q?: string }>;
+  searchParams: Promise<{ status?: string; member?: string; q?: string; type?: string }>;
 }) {
   const { user, profile } = await requireUser();
   const admin = isSalesAdmin(profile?.role);
@@ -18,18 +18,26 @@ export default async function QueriesPage({
   const status = isQueryStatus(sp.status) ? sp.status : null;
   const member = admin && sp.member ? sp.member : null;
   const search = (sp.q ?? "").trim();
+  const type = sp.type === "safari" || sp.type === "red_panda" ? sp.type : null;
 
   const supabase = await createClient();
-  let query = supabase.from("sales_queries").select(QUERY_LIST_COLUMNS).is("deleted_at", null);
-  if (!admin) query = query.eq("assigned_to", user.id);
-  if (member) query = query.eq("assigned_to", member);
-  if (status) query = query.eq("status", status);
-  if (search) {
-    // Commas and brackets would break the .or() filter syntax.
-    const s = search.replace(/[,()]/g, " ");
-    query = query.or(`guest_name.ilike.%${s}%,query_no.ilike.%${s}%`);
-  }
-  const { data, error } = await query.order("created_at", { ascending: false }).limit(200);
+  // the quote type (Safari / Red Panda) comes with supabase/red_panda.sql: without it, the list as before
+  const load = (withType: boolean) => {
+    let query = supabase.from("sales_queries").select(withType ? `${QUERY_LIST_COLUMNS}, query_type` : QUERY_LIST_COLUMNS).is("deleted_at", null);
+    if (!admin) query = query.eq("assigned_to", user.id);
+    if (member) query = query.eq("assigned_to", member);
+    if (status) query = query.eq("status", status);
+    if (withType && type) query = query.eq("query_type", type);
+    if (search) {
+      // Commas and brackets would break the .or() filter syntax.
+      const s = search.replace(/[,()]/g, " ");
+      query = query.or(`guest_name.ilike.%${s}%,query_no.ilike.%${s}%`);
+    }
+    return query.order("created_at", { ascending: false }).limit(200);
+  };
+  let res = await load(true);
+  if (res.error && /query_type/.test(res.error.message)) res = await load(false);
+  const { data, error } = res;
   const rows = (data ?? []) as unknown as QueryRow[];
 
   const memberInfo = admin ? await getMemberNames(rows.map((r) => r.assigned_to).filter((x): x is string => !!x).concat(member ? [member] : [])) : null;
@@ -46,6 +54,7 @@ export default async function QueriesPage({
     if (s) p.set("status", s);
     if (member) p.set("member", member);
     if (search) p.set("q", search);
+    if (type) p.set("type", type);
     const qs = p.toString();
     return "/sales/queries" + (qs ? "?" + qs : "");
   };
@@ -65,10 +74,12 @@ export default async function QueriesPage({
           </h1>
         </div>
         <div className="flex w-full flex-col gap-2 sm:flex-row md:w-auto">
+        <FilterSelect param="type" value={type} options={[{ value: "safari", label: "Safari" }, { value: "red_panda", label: "Red Panda" }]} allLabel="All types" ariaLabel="Quote type" />
         {admin && memberOptions.length > 0 && <FilterSelect param="member" value={member} options={memberOptions} allLabel="All members" ariaLabel="Member" />}
         <form action="/sales/queries" className="flex w-full gap-2 md:w-auto">
           {status && <input type="hidden" name="status" value={status} />}
           {member && <input type="hidden" name="member" value={member} />}
+          {type && <input type="hidden" name="type" value={type} />}
           <input name="q" defaultValue={search} placeholder="Guest name or query no." className={`${ui.inputSm} md:w-64`} />
           <button className={`${ui.btnSecondary} ${ui.btnSm}`}>Search</button>
         </form>

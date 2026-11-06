@@ -56,12 +56,14 @@ export function AppShell({
   name,
   sopAccess = false,
   sopUnread = null,
+  rpAccess = false,
   children,
 }: {
   role: Role;
   name: string;
   sopAccess?: boolean; // may read the SOP (adds the SOP tab)
   sopUnread?: number | null; // a published SOP version this person has not marked as read
+  rpAccess?: boolean; // may use Red Panda (adds the Red Panda tab)
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -71,7 +73,7 @@ export function AppShell({
   useEffect(() => setMobileOpen(false), [pathname]);
 
   const currentModule = moduleForPath(pathname, role);
-  const modules = modulesFor(role, sopAccess);
+  const modules = modulesFor(role, sopAccess, rpAccess);
   const switcher = modules.length > 1;
 
   const groups = NAV.filter((g) => g.module === currentModule)

@@ -5,7 +5,7 @@
 
 ## What we're building
 LodgeIQ is the internal app of **Pugdundee Safaris** (wildlife lodges in Central India).
-One app, three modules:
+One app, three modules (plus Red Panda, a small fourth tab; see "Red Panda" below):
 - **Lodge Reporting**: monthly reports, occupancy, expenses, energy, vehicles, assets and
   service log, staff and payroll, bar, stock and purchases, compliance, notifications,
   trip reports. Lodges: Kings Lodge, Tree House Hideaway, Kanha Earth Lodge, Pench Tree
@@ -129,6 +129,33 @@ pages `app/(dashboard)/sales/payments/*`, routes `app/api/sales/payments/{export
   change. "Make bookings for booked queries" (admins) fills in older ones.
 - Import (`import-sheet.ts`): headings found by name; PAL / website in a date cell = the mode; the
   same guest within 45 days = one booking; odd years and sums that do not add up are reported.
+
+## Red Panda (fourth tab, 5 Nov 2026)
+A separate, simple product: quotes for Red Panda Outpost (Jaubari, Nepal; Singalila). SQL
+`supabase/red_panda.sql`; code `lib/redpanda/*`, pages `app/(dashboard)/red-panda/*` (quotes, new =
+builder, quotes/[id], master, access), components `components/redpanda/*`.
+- Who: `rp_my_access()` (super admin, or `rp_access` by person or role) AND a Sales role (a quote is a
+  Sales query; `readAccess`). Only the super admin edits Master data and access (`rp_is_editor`).
+  `requireRpUser` / `requireRpEditor` on pages, `guard()` / `editor()` in actions; RLS on every `rp_*`
+  table; `rp_audit` (trigger) logs every change. `/red-panda` is in middleware SALES_MEMBER_PATHS.
+- A quote = `sales_queries.query_type = 'red_panda'` (default 'safari'), parks ["Red Panda Outpost"],
+  versions with `plan.kind = "red_panda"` (`RpPlan`) and `pricing` = `RpPrice`. Same list (filter
+  "type"), status workflow and Payments tracker (`from-version.ts` -> `rpBookingLines`).
+- Never in Safari logic: /sales/new redirects a Red Panda plan to /red-panda/new; the Safari query page
+  redirects to /red-panda/quotes/[id]; `loadClientView` returns null and /i/[token] renders
+  `RedPandaGuestPage` (`lib/redpanda/client-view.ts`). `redpanda.test.ts` checks these doors and that
+  no Red Panda file imports the Safari engine, planner, reader or AI (and the reverse).
+- Price (`lib/redpanda/pricing.ts`, pure): `rp_tariff` per person for the 5-night package by year,
+  market (agent = b2b, else foreign / indian by nationality) and guests together (1-10); a rate can be
+  typed by hand. Rooms: 2 per room, odd guest single (in the tariff); each room more = one single
+  room supplement. Tour leader: charged up to 3 guests, complimentary from 4. Nights other than 5 =
+  pro rata (min 4, warning). Guests 16+ at full tariff. Closed June - September. GST 5% on the package
+  after markup and discount; adjustment last. Mayfair (the hotel named in settings) before / after:
+  its `sales_room_rates` + the Bagdogra transfer from `sales_transfer_rates`, with their own tax.
+  Payment 50% at booking, 50% 45 days before arrival. Cancellation: the Sales cancellation policy.
+- Guest page and PDF: own template and colours (the brochure's cream and bark brown, page-scoped
+  variables), text from `rp_settings.data` (`lib/redpanda/content.ts`, placeholders like {airport}),
+  photos `rp_images` (bucket sales-media, `red-panda/...`; one cover).
 
 ## AI assistant (Sales builder)
 One reading flow, AI first (`lib/sales/plan/reading.ts`):

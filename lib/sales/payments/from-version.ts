@@ -5,6 +5,8 @@
 import type { Plan } from "@/lib/sales/plan/types";
 import type { PriceResult } from "@/lib/sales/pricing/types";
 import { addDays, type PaymentMode } from "./money";
+import { rpBookingLines } from "@/lib/redpanda/booking";
+import type { RpPrice } from "@/lib/redpanda/types";
 
 export interface QueryForBooking {
   id: string;
@@ -53,7 +55,10 @@ export function bookingFromVersion(q: QueryForBooking, v: VersionForBooking, tod
   const rooms = Math.max(1, Number(plan.guest?.rooms) || 1);
 
   const lines: BookingDraft["lines"] = [];
-  for (const t of pr.byProperty ?? []) {
+  // a Red Panda quote (its own plan and price, lib/redpanda): the Outpost and the hotel near Bagdogra
+  const redPanda = (plan as unknown as { kind?: string }).kind === "red_panda";
+  if (redPanda) lines.push(...rpBookingLines(pr as unknown as RpPrice));
+  for (const t of redPanda ? [] : pr.byProperty ?? []) {
     if (!t.property_id) continue; // not billed to a lodge: on the booking (below)
     const nights = nightsAt(t.property_id);
     // the lodge's discount comes off its room amount (amounts are never below 0)

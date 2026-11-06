@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Icon } from "@/components/icons";
 import { ui } from "@/components/ui";
 import { sopStatus } from "@/lib/sop/server";
+import { rpStatus } from "@/lib/redpanda/server";
 
 // Module picker shown after sign-in to super roles. Everyone else is sent
 // straight to their own module.
@@ -21,7 +22,7 @@ export default async function HubPage() {
     .is("deleted_at", null)
     .eq("status", "open");
 
-  const sop = await sopStatus();
+  const [sop, rp] = await Promise.all([sopStatus(), rpStatus(role)]);
 
   const name: string = profile?.full_name || "there";
   const first = name.split(" ")[0];
@@ -57,6 +58,19 @@ export default async function HubPage() {
             icon: "fileText",
             band: "bg-gold-700",
             stat: sop.version ? `Version ${sop.version}` : "",
+          },
+        ]
+      : []),
+    // Red Panda Outpost quotes, for those given access
+    ...(rp.canUse
+      ? [
+          {
+            href: "/red-panda",
+            title: "Red Panda",
+            body: "Quotes for Red Panda Outpost (Singalila, Nepal): price, guest page and PDF.",
+            icon: "route",
+            band: "bg-olive-700",
+            stat: "",
           },
         ]
       : []),
