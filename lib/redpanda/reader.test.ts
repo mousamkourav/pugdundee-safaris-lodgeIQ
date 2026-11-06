@@ -157,3 +157,19 @@ test("Confirm: the trip in plain words; the confirmation holds only for that tri
   assert.equal(isRpConfirmed(back), true);
   assert.deepEqual(back.text, { intro: "Hello", days: { "2": "Our day" }, notes: ["Bring a hat"] });
 });
+
+test("the test enquiry on the real Mayfair room names (Master data export of 2 Nov 2026)", () => {
+  const real = [{ id: "J", name: "Jungle View Room (double bed)" }, { id: "M", name: "Mountain View Room (twin beds, balcony)" }];
+  const msg = "Hi team, Mr David Clarke and his wife from the UK want to see the red panda. They land at Bagdogra on 12 Feb 2027 and want 5 nights at the Outpost, then 1 night at Mayfair (mountain view) before flying out of Bagdogra. david.clarke@example.com";
+  const r = readEnquiry(msg, TODAY, { hotelRooms: real.map((x) => x.name) });
+  assert.deepEqual(
+    [r.name, r.email, r.adults, r.country, r.arrival, r.nights, r.arrive_airport, r.depart_airport, r.hotel_after, r.hotel_before],
+    ["Mr David Clarke", "david.clarke@example.com", 2, "United Kingdom", "2027-02-12", 5, "IXB", "IXB", { nights: 1, room: "Mountain View Room (twin beds, balcony)" }, undefined]
+  );
+  const a = applyReading(emptyRpPlan(), r, S, real);
+  assert.equal(a.plan.hotel_after.room_id, "M");
+  assert.equal(a.ready, true);
+  // a tap on the room's name, or a word of it
+  assert.equal(readEnquiry("Jungle View Room (double bed)", TODAY, { pending: "hotel_room", hotelRooms: real.map((x) => x.name) }).hotel_room, "Jungle View Room (double bed)");
+  assert.equal(readEnquiry("jungle", TODAY, { pending: "hotel_room", hotelRooms: real.map((x) => x.name) }).hotel_room, "Jungle View Room (double bed)");
+});

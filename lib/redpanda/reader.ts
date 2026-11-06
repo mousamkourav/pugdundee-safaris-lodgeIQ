@@ -112,6 +112,9 @@ export function datesIn(text: string, today: string): { date: string; at: number
   return out.sort((a, b) => a.at - b.at);
 }
 
+// a room type's words as people write them: "Mountain View Room (twin beds, balcony)" -> "mountain view"
+const roomKey = (name: string) => name.toLowerCase().replace(/\(.*$/, "").replace(/\brooms?\b/g, "").replace(/\s+/g, " ").trim();
+
 const HOTEL_WORDS = "(?:mayfair(?:\\s+chumta)?|siliguri|bagdogra|hotel(?:\\s+near\\s+bagdogra)?)";
 
 export function readEnquiry(text: string, today: string, opts: { pending?: RpPending; hotelRooms?: string[] } = {}): RpReading {
@@ -139,7 +142,7 @@ export function readEnquiry(text: string, today: string, opts: { pending?: RpPen
       const around = lower().slice(Math.max(0, m.index! - 40), m.index! + m[0].length + 30);
       const after = /\b(after|end|last|before (?:the )?(?:departure|flight|leaving|fly(?:ing)?)|on (?:the )?way back|return)\b/.test(span) || /\b(after (?:the )?(?:outpost|red panda|trip|stay)|at the end|before (?:departure|flying|the flight))\b/.test(around);
       const room = (opts.hotelRooms ?? []).find((rn) => {
-        const k = rn.toLowerCase().replace(/\s*room\s*$/, "");
+        const k = roomKey(rn);
         return k.length >= 4 && around.includes(k);
       });
       const v = { nights: n, ...(room ? { room } : {}) };
@@ -156,7 +159,7 @@ export function readEnquiry(text: string, today: string, opts: { pending?: RpPen
   const groupOf = new RegExp(`\\bgroup of\\s*${NUM_RE}\\b`, "i").exec(l);
   if (adults) r.adults = toNum(adults[1]);
   else if (groupOf) r.adults = toNum(groupOf[1]);
-  else if (/\b(couple|honeymoon(?:ers)?|husband and wife|me and my (?:wife|husband|partner))\b/.test(l)) r.adults = 2;
+  else if (/\b(couple|honeymoon(?:ers)?|husband and wife|(?:me |and |with )(?:my |his |her |their )?(?:wife|husband|partner|spouse))\b/.test(l)) r.adults = 2;
   else if (/\b(solo|alone|single traveller|single guest|one person|1 person)\b/.test(l)) r.adults = 1;
 
   // children: "2 kids aged 16 and 17", "son 17", "children (16, 18)", "teenager of 16"
@@ -237,7 +240,7 @@ export function readEnquiry(text: string, today: string, opts: { pending?: RpPen
   }
   if (opts.pending === "hotel_room") {
     const room = (opts.hotelRooms ?? []).find((rn) => {
-      const k = rn.toLowerCase().replace(/\s*room\s*$/, "");
+      const k = roomKey(rn);
       return bare.includes(k) || (k.split(" ")[0].length >= 4 && bare.includes(k.split(" ")[0]));
     });
     if (room) r.hotel_room = room;
