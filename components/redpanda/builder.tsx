@@ -6,7 +6,7 @@
 // price is the same pure pricing the server runs again when saving.
 import { useMemo, useState, useTransition } from "react";
 import { RpChat, type RpChatMessage } from "./rp-chat";
-import { applyReading, isRpConfirmed, mentionsOtherPlaces, nextQuestion, replyText, rpConfirmKey, salesHandoffText, tripSummary } from "@/lib/redpanda/assist";
+import { applyReading, isRpConfirmed, mentionsOtherPlaces, nextQuestion, replyText, rpConfirmKey, tripSummary } from "@/lib/redpanda/assist";
 import { rpGuestContent } from "@/lib/redpanda/content";
 import { rpAssist } from "@/app/(dashboard)/red-panda/ai-actions";
 import type { RpPending } from "@/lib/redpanda/reader";
@@ -63,7 +63,7 @@ function Stepper({ step, canGo, go }: { step: number; canGo: (n: number) => bool
 const QUICK: Partial<Record<NonNullable<RpPending>, string[]>> = { nationality: ["Indian", "Foreign"], hotel_side: ["Before", "After"] };
 const HELLO: RpChatMessage = {
   role: "assistant",
-  text: "Paste the enquiry as it came in (email, WhatsApp, an agent's mail). I read the guests and their ages, nationality, an agent, the arrival date, nights, the airports (Bagdogra or Bhadrapur), rooms, a tour leader and nights at the hotel near Bagdogra, and ask for anything missing. You can also fill the form. A trip with Delhi, Kaziranga or our lodges too opens in the Sales builder by itself.",
+  text: "Paste the enquiry as it came in (email, WhatsApp, an agent's mail). I read the guests and their ages, nationality, an agent, Delhi (nights and the flight to Bagdogra), the arrival date, nights, the airports (Bagdogra or Bhadrapur), rooms, a tour leader and nights at the hotel near Bagdogra, and ask for anything missing. You can also fill the form.",
 };
 
 export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: { master: RpMaster; initial: RpPlan; queryId: string | null; queryNo: string | null; status: string | null }) {
@@ -82,6 +82,7 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
   const setG = (g: Partial<RpPlan["guest"]>) => setPlan((x) => ({ ...x, guest: { ...x.guest, ...g } }));
   const n = guestCount(plan);
   const hotel = master.hotel;
+  const delhiHotels = useMemo(() => (master.delhi?.hotels ?? []).map((h) => ({ id: h.property_id, name: h.name, rooms: h.rooms.map((r) => ({ id: r.id, name: r.name })) })), [master.delhi]);
 
   const rooms = useMemo(() => (master.hotel?.rooms ?? []).map((r) => ({ id: r.id, name: r.name })), [master.hotel]);
   const confirmed = isRpConfirmed(plan);
@@ -94,24 +95,21 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
     setMessages((m) => [...m, { role: "user", text }]);
     // Delhi, Kaziranga, our lodges: one place builds mixed trips (the Sales builder, Red Panda as a
     // stop). Not read here (the Red Panda reader would take Delhi's dates or nights as the Outpost's).
-    if (mentionsOtherPlaces(text)) {
-      setMessages((m) => [...m, { role: "assistant", text: "This trip has other places too (Delhi, Kaziranga or our lodges): opening it in the Sales builder, where Red Panda Outpost is a stop at the same tariff..." }]);
-      const enquiry = [plan.enquiry, text].filter(Boolean).join("\n---\n");
-      router.push(`/sales/new?text=${encodeURIComponent(salesHandoffText({ ...plan, enquiry }, s))}`);
-      return;
-    }
     setBusy(true);
     try {
-      const r = await rpAssist({ message: text, pending: asking, guestName: plan.guest.name, hotelRooms: rooms.map((x) => x.name) });
+      const r = await rpAssist({ message: text, pending: asking, guestName: plan.guest.name, hotelRooms: rooms.map((x) => x.name), delhiHotels: delhiHotels.map((x) => x.name) });
       if (r.error || !r.reading) {
         setMessages((m) => [...m, { role: "assistant", text: r.error ?? "Something went wrong; fill the form, or try again." }]);
         return;
       }
-      const a = applyReading({ ...plan, enquiry: [plan.enquiry, text].filter(Boolean).join("\n---\n").slice(-6000) }, r.reading, s, rooms);
+      const a = applyReading({ ...plan, enquiry: [plan.enquiry, text].filter(Boolean).join("\n---\n").slice(-6000) }, r.reading, s, rooms, delhiHotels);
       setPlan(a.plan);
       setFormRev((x) => x + 1);
       setAsking(a.pending);
-      setMessages((m) => [...m, { role: "assistant", text: replyText(a, ""), source: r.note || undefined, quick: a.pending === "hotel_room" ? rooms.map((x) => x.name) : a.pending ? QUICK[a.pending] : a.ready ? ["Check the trip"] : undefined }]);
+      setMessages((m) => [...m, { role: "assistant", text: replyText(a, ""), source: r.note || undefined, quick: a.pending === "hotel_room" ? rooms.map((x) => x.name) : a.pending === "delhi_hotel" ? delhiHotels.map((x) => x.name) : a.pending ? QUICK[a.pending] : a.ready ? ["Check the trip"] : undefined }]);
+      // Kaziranga, our tiger lodges: not part of a Red Panda quote (Delhi is)
+      if (mentionsOtherPlaces(text))
+        setMessages((m) => [...m, { role: "assistant", text: "A Red Panda quote covers Delhi, Bagdogra / Siliguri and Red Panda Outpost. Other places in the message (Kaziranga, our tiger lodges...) are not added here: quote them separately in Sales." }]);
 
     } catch {
       setMessages((m) => [...m, { role: "assistant", text: "Could not reach the server. Check the connection and try again." }]);
@@ -202,10 +200,20 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
       <button key={label} type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} disabled={disabled} onClick={fn}>{label}</button>
     );
     if (key === "guests") return [b("- adult", () => setG({ adults: Math.max(1, plan.guest.adults - 1) }), plan.guest.adults <= 1), b("+ adult", () => setG({ adults: plan.guest.adults + 1 }), n >= s.max_guests), b(plan.guest.nationality === "indian" ? "Make foreign" : "Make Indian", () => setG({ nationality: plan.guest.nationality === "indian" ? "foreign" : "indian", country: plan.guest.nationality === "indian" ? "" : "India" })), b(plan.guest.booked_by === "agent" ? "Make direct" : "Through an agent", () => setG({ booked_by: plan.guest.booked_by === "agent" ? "direct" : "agent" }))];
+    if (key === "arrive" && plan.delhi_before.flight) return [];
+    if (key === "depart" && plan.delhi_after.flight) return [];
     if (key === "arrive") return s.airports.filter((a) => a.code !== plan.arrive_airport).map((a) => b(`Land at ${a.code}`, () => set({ arrive_airport: a.code })));
     if (key === "depart") return s.airports.filter((a) => a.code !== plan.depart_airport).map((a) => b(`Fly out of ${a.code}`, () => set({ depart_airport: a.code })));
     if (key === "outpost") return [b("- night", () => set({ nights: plan.nights - 1 }), plan.nights <= s.min_nights), b("+ night", () => set({ nights: plan.nights + 1 }), plan.nights >= s.max_nights)];
     if (key === "hotel_before" || key === "hotel_after") return [b("Remove", () => set({ [key]: { nights: 0, room_id: null } } as Partial<RpPlan>))];
+    if (key === "delhi_before" || key === "delhi_after") {
+      const d = plan[key];
+      return [
+        b("- night", () => set({ [key]: { ...d, nights: d.nights - 1 } } as Partial<RpPlan>), d.nights <= 0),
+        b("+ night", () => set({ [key]: { ...d, nights: d.nights + 1, hotel_id: d.hotel_id ?? delhiHotels[0]?.id ?? null, room_id: d.room_id ?? delhiHotels[0]?.rooms[0]?.id ?? null } } as Partial<RpPlan>), d.nights >= 5),
+        b("Remove Delhi", () => set({ [key]: { flight: false, nights: 0, hotel_id: null, room_id: null } } as Partial<RpPlan>)),
+      ];
+    }
     return [];
   };
 
@@ -300,6 +308,48 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
           </div>
         </section>
         <section className={`${ui.card} space-y-4 p-5`}>
+          <div>
+            <h2 className="text-lg">Delhi (optional)</h2>
+            <p className="text-sm text-sand-500">Foreign guests usually land in Delhi: the flight Delhi - Bagdogra, and nights at a Delhi hotel (0 = connect the same day).</p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {(["delhi_before", "delhi_after"] as const).map((k) => {
+              const d = plan[k];
+              const h = delhiHotels.find((x) => x.id === d.hotel_id);
+              const setD = (x: Partial<RpPlan["delhi_before"]>) => set({ [k]: { ...d, ...x } } as Partial<RpPlan>);
+              return (
+                <div key={k} className="space-y-2 rounded-lg border border-sand-200 p-3">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-olive-800">
+                    <input type="checkbox" className="h-4 w-4 accent-olive-600" checked={d.flight} onChange={(e) => (e.target.checked ? set({ [k]: { ...d, flight: true }, ...(k === "delhi_before" ? { arrive_airport: "IXB" } : { depart_airport: "IXB" }) } as Partial<RpPlan>) : setD({ flight: false, nights: 0, hotel_id: null, room_id: null }))} />
+                    {k === "delhi_before" ? "Land in Delhi first, fly to Bagdogra" : "Fly back to Delhi at the end"}
+                  </label>
+                  {d.flight && (
+                    <div className="grid grid-cols-[80px_1fr] gap-2">
+                      <input className={ui.inputSm} type="number" min={0} max={5} aria-label="Nights in Delhi" value={d.nights} onChange={(e) => setD({ nights: num(e.target.value), ...(num(e.target.value) > 0 && !d.hotel_id && delhiHotels[0] ? { hotel_id: delhiHotels[0].id, room_id: delhiHotels[0].rooms[0]?.id ?? null } : {}) })} />
+                      <select className={`${ui.select} w-full py-2`} aria-label="Delhi hotel" disabled={d.nights <= 0} value={d.hotel_id ?? ""} onChange={(e) => { const x = delhiHotels.find((y) => y.id === e.target.value); setD({ hotel_id: x?.id ?? null, room_id: x?.rooms[0]?.id ?? null }); }}>
+                        <option value="">{delhiHotels.length ? "Delhi hotel" : "No Delhi hotel in Master data"}</option>
+                        {delhiHotels.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                      </select>
+                      {h && h.rooms.length > 1 && d.nights > 0 && (
+                        <select className={`${ui.select} col-span-2 w-full py-2`} aria-label="Delhi room" value={d.room_id ?? ""} onChange={(e) => setD({ room_id: e.target.value || null })}>
+                          {h.rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                        </select>
+                      )}
+                    </div>
+                  )}
+                  {d.flight && <p className="text-xs text-sand-500">Nights in Delhi (0 = connect the same day), with the Delhi Airport transfers.</p>}
+                </div>
+              );
+            })}
+          </div>
+          {(plan.delhi_before.flight || plan.delhi_after.flight) && (
+            <Field label="Flight fare per person, one way" hint={master.delhi?.out || master.delhi?.back ? `Empty = Sales Master data (Delhi - Bagdogra ${inr(master.delhi?.out?.fare ?? master.delhi?.back?.fare ?? 0)})` : "Not in Sales Master data > Flight routes: type it"}>
+              <input className={ui.input} type="number" min={0} value={plan.flight_fare_pp ?? ""} placeholder={String(master.delhi?.out?.fare ?? master.delhi?.back?.fare ?? "")} onChange={(e) => set({ flight_fare_pp: e.target.value === "" ? null : num(e.target.value) })} />
+            </Field>
+          )}
+        </section>
+
+        <section className={`${ui.card} space-y-4 p-5`}>
           <h2 className="text-lg">Hotel near Bagdogra (add-on)</h2>
           {!hotel ? (
             <p className="text-sm text-sand-500">No partner hotel &quot;{s.hotel_property}&quot; in Sales Master data.</p>
@@ -339,7 +389,7 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
               <p className="text-sm text-sand-500">Read it as the guest would. Fix anything here, or go back to Trip.</p>
             </div>
             <ol className="space-y-3">
-              {tripSummary(plan, s, hotel?.name ?? null).map((l, i) => (
+              {tripSummary(plan, s, hotel?.name ?? null, delhiHotels).map((l, i) => (
                 <li key={l.key} className="flex flex-col gap-2 rounded-lg border border-sand-200 p-3 sm:flex-row sm:items-center sm:justify-between">
                   <span className="flex gap-3"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-olive-100 text-xs font-semibold text-olive-700">{i + 1}</span><span className="text-sm text-olive-800">{l.text}</span></span>
                   <span className="flex flex-wrap gap-1.5">{fixes(l.key)}</span>

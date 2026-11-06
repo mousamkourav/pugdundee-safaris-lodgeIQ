@@ -14,7 +14,6 @@
 // A rate entered in either direction covers the road (the engine uses it both ways).
 // Sorted by how often quotes needed it. Pure, so it is tested without a database.
 // =====================================================================
-import { isRedPandaName } from "@/lib/redpanda/in-sales";
 
 export interface MtProperty {
   id: string;
@@ -110,8 +109,7 @@ export function missingTransferPairs(input: { properties: MtProperty[]; location
   };
 
   // lodge <-> lodge (our own lodges)
-  // (Red Panda Outpost, Nepal, is reached by air from our other lodges: no road to ask for)
-  const own = properties.filter((p) => p.kind === "own_lodge" && locOfProperty.has(p.id) && !isRedPandaName(p.name));
+  const own = properties.filter((p) => p.kind === "own_lodge" && locOfProperty.has(p.id));
   for (let i = 0; i < own.length; i++) for (let j = i + 1; j < own.length; j++) add(locOfProperty.get(own[i].id)!.id, locOfProperty.get(own[j].id)!.id, "lodge-lodge");
 
   // lodge <-> the gateways of its park

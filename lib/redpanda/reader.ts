@@ -28,10 +28,14 @@ export interface RpReading {
   hotel_before?: { nights: number; room?: string };
   hotel_after?: { nights: number; room?: string };
   hotel_room?: string; // the room type alone (an answer to "which room?")
+  // Delhi before / after Red Panda (the flight Delhi - Bagdogra), nights there (0 = same-day connection)
+  delhi_before?: { nights: number; hotel?: string };
+  delhi_after?: { nights: number; hotel?: string };
+  delhi_hotel?: string; // the Delhi hotel alone (an answer to "which hotel?")
 }
 
 // the field a bare answer ("3", "indian", "20 nov") fills: the assistant's last question
-export type RpPending = "arrival" | "adults" | "nationality" | "nights" | "ages" | "hotel_side" | "hotel_room" | null;
+export type RpPending = "arrival" | "adults" | "nationality" | "nights" | "ages" | "hotel_side" | "hotel_room" | "delhi_hotel" | null;
 
 const NUM: Record<string, number> = {
   a: 1, an: 1, one: 1, single: 1, ek: 1, two: 2, couple: 2, do: 2, three: 3, teen: 3, four: 4, char: 4, five: 5, paanch: 5, six: 6, seven: 7, saat: 7,
@@ -115,9 +119,12 @@ export function datesIn(text: string, today: string): { date: string; at: number
 // a room type's words as people write them: "Mountain View Room (twin beds, balcony)" -> "mountain view"
 const roomKey = (name: string) => name.toLowerCase().replace(/\(.*$/, "").replace(/\brooms?\b/g, "").replace(/\s+/g, " ").trim();
 
+// a hotel's own word, as people write it: "Roseate House" -> "roseate", "The Leela Palace" -> "leela"
+const hotelWord = (name: string) => name.toLowerCase().split(/[^a-z]+/).find((w) => w.length >= 4 && !["hotel", "house", "palace", "resort", "delhi", "taj"].includes(w)) ?? name.toLowerCase();
+
 const HOTEL_WORDS = "(?:mayfair(?:\\s+chumta)?|siliguri|bagdogra|hotel(?:\\s+near\\s+bagdogra)?)";
 
-export function readEnquiry(text: string, today: string, opts: { pending?: RpPending; hotelRooms?: string[] } = {}): RpReading {
+export function readEnquiry(text: string, today: string, opts: { pending?: RpPending; hotelRooms?: string[]; delhiHotels?: string[] } = {}): RpReading {
   const r: RpReading = {};
   let t = ` ${text.replace(/\s+/g, " ").trim()} `;
   const lower = () => t.toLowerCase();
@@ -130,6 +137,34 @@ export function readEnquiry(text: string, today: string, opts: { pending?: RpPen
   const name =
     /\b(?:[Mm]r|[Mm]rs|[Mm]s|[Mm]iss|[Dd]r)\.?\s+((?:&\s*(?:[Mm]rs?|[Mm]s)\.?\s+)?[A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+)?)/.exec(t) ?? /\bname\s*(?:is|:|-)\s*([A-Za-z][A-Za-z .'-]{1,58}?)(?=[,.;\n]|\s+(?:and|from|with)\b|$)/i.exec(t);
   if (name) r.name = name[0].replace(/^name\s*(?:is|:|-)\s*/i, "").trim();
+
+  // ---- Delhi (before the flight to Bagdogra, or after the flight back): its nights are not the Outpost's
+  {
+    const lw = lower();
+    const rp = lw.search(/\b(red\s*panda|outpost|singalila|bagdogra|ixb|siliguri|mayfair)\b/);
+    const delhiHotel = (span: string) => (opts.delhiHotels ?? []).find((h) => span.includes(hotelWord(h)));
+    const side = (at: number, span: string): "before" | "after" => {
+      const around = lw.slice(Math.max(0, at - 30), at + span.length);
+      if (/\b(back|return\w*|after|end|last|before (?:departure|flying home|the flight home)|fly(?:ing)? home|homebound)\b/.test(around)) return "after";
+      if (/\b(arriv\w*|land\w*|first|start|via|before)\b/.test(around)) return "before";
+      return rp >= 0 && at > rp ? "after" : "before";
+    };
+    const nightsRe = new RegExp(`\\b${NUM_RE}\\s*(?:n\\b|nights?|nts?|raat)\\s*(?:stay\\s+)?(?:in|at|@)?\\s*(?:the\\s+)?(?:new\\s+)?delhi\\b[^,.;\\n]*|\\b(?:new\\s+)?delhi\\s*(?:for\\s+)?${NUM_RE}\\s*(?:n\\b|nights?|nts?|raat)[^,.;\\n]*`, "gi");
+    for (const m of [...t.matchAll(nightsRe)]) {
+      const n = toNum(m[1] ?? m[2]);
+      if (!Number.isFinite(n) || n < 1 || n > 5) continue;
+      const span = m[0].toLowerCase();
+      const hotel = delhiHotel(lw.slice(m.index!, m.index! + m[0].length + 40));
+      r[side(m.index!, span) === "after" ? "delhi_after" : "delhi_before"] = { nights: n, ...(hotel ? { hotel } : {}) };
+      t = t.slice(0, m.index!) + " ".repeat(m[0].length) + t.slice(m.index! + m[0].length);
+    }
+    // the flight alone: "arriving delhi", "via delhi", "fly back to delhi"
+    const lw2 = lower();
+    for (const m of lw2.matchAll(/\b(?:new\s+)?delhi\b/g)) {
+      const k = side(m.index!, m[0]) === "after" ? "delhi_after" : "delhi_before";
+      if (!r[k]) r[k] = { nights: 0 };
+    }
+  }
 
   // ---- the hotel near Bagdogra first (its nights are not the Outpost's)
   const hotelRe = new RegExp(`\\b${NUM_RE}\\s*(?:n\\b|nights?|nts?)\\s*(?:stay\\s+)?(?:at|in|@)?\\s*(?:the\\s+)?${HOTEL_WORDS}[^,.;\\n]*`, "gi");
@@ -244,6 +279,10 @@ export function readEnquiry(text: string, today: string, opts: { pending?: RpPen
       return bare.includes(k) || (k.split(" ")[0].length >= 4 && bare.includes(k.split(" ")[0]));
     });
     if (room) r.hotel_room = room;
+  }
+  if (opts.pending === "delhi_hotel") {
+    const h = (opts.delhiHotels ?? []).find((x) => bare.includes(hotelWord(x)));
+    if (h) r.delhi_hotel = h;
   }
   // keep only sensible numbers
   if (r.adults != null && !(r.adults >= 1 && r.adults <= 20)) delete r.adults;

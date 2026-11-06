@@ -28,6 +28,9 @@ export function emptyRpPlan(): RpPlan {
     tour_leader: false,
     hotel_before: { nights: 0, room_id: null },
     hotel_after: { nights: 0, room_id: null },
+    delhi_before: { flight: false, nights: 0, hotel_id: null, room_id: null },
+    delhi_after: { flight: false, nights: 0, hotel_id: null, room_id: null },
+    flight_fare_pp: null,
     custom_items: [],
     per_pax_override: null,
     markup_pct: 0,
@@ -56,6 +59,12 @@ export function sanitizeRpPlan(raw: unknown): RpPlan {
     const x = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
     return { nights: int(x.nights, 0, 10, 0), room_id: uuidOrNull(x.room_id) };
   };
+  const delhi = (v: unknown) => {
+    const x = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+    const nights = int(x.nights, 0, 10, 0);
+    return { flight: x.flight === true || nights > 0, nights, hotel_id: uuidOrNull(x.hotel_id), room_id: uuidOrNull(x.room_id) };
+  };
+  const fare = r.flight_fare_pp === null || r.flight_fare_pp === undefined || r.flight_fare_pp === "" ? null : money(r.flight_fare_pp);
   const adj = (r.adjustment && typeof r.adjustment === "object" ? r.adjustment : {}) as Record<string, unknown>;
   const override = r.per_pax_override === null || r.per_pax_override === undefined || r.per_pax_override === "" ? null : money(r.per_pax_override);
   return {
@@ -79,6 +88,9 @@ export function sanitizeRpPlan(raw: unknown): RpPlan {
     tour_leader: r.tour_leader === true,
     hotel_before: stay(r.hotel_before),
     hotel_after: stay(r.hotel_after),
+    delhi_before: delhi(r.delhi_before),
+    delhi_after: delhi(r.delhi_after),
+    flight_fare_pp: fare,
     custom_items: items,
     per_pax_override: override,
     markup_pct: money(r.markup_pct),

@@ -84,7 +84,7 @@ export function RpChat({ messages, busy, onSend }: { messages: RpChatMessage[]; 
                 send(text);
               }
             }}
-            placeholder="e.g. 2 adults from the UK, arriving Bagdogra 20 Nov, 5 nights, 1 night Mayfair after"
+            placeholder="e.g. 2 adults from the UK, arriving Delhi 10 Feb, 1 night Delhi, fly to Bagdogra, red panda 5 nights, back to Delhi"
             className={`${ui.input} min-h-[72px] flex-1 resize-none`}
             aria-label="Message"
           />

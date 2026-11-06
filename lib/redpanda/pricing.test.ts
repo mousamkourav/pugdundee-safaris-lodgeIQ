@@ -216,3 +216,55 @@ test("the plan from the browser is checked: text, numbers, airports, dates", () 
   assert.equal(p.custom_items[0].label.length, 120);
   assert.equal(p.custom_items[0].amount, 0);
 });
+
+// Delhi (owner, 6 Nov 2026): the real Sales Master data rows (Roseate House CP Rs 23,000 + 18% to
+// 31 Mar 2027; Delhi Airport (IGI) - Roseate House Innova Rs 3,000 + 5%; Delhi - Bagdogra Rs 15,000)
+const ROSEATE = {
+  property_id: "H_roseate",
+  name: "Roseate House",
+  rooms: [{ id: "R_roseate", name: "AC Deluxe", rates: [
+    { valid_from: "2026-10-01", valid_to: "2027-03-31", meal_plan: "CP", rate_single: 23000, rate_double: 23000, tax_pct: 18, rates_include_tax: false },
+    { valid_from: "2027-04-01", valid_to: "2027-09-30", meal_plan: "CP", rate_single: 17000, rate_double: 17000, tax_pct: 18, rates_include_tax: false },
+  ] }],
+  transfer: { rate: 3000, tax_pct: 5, capacity: 6, vehicle_type: "Innova / Crysta", valid_from: null, valid_to: "2027-09-30" },
+};
+const FLIGHT = (from: string, to: string) => ({ from, to, fare: 15000, airline: "IndiGo", flight_no: "", depart: "", arrive: "" });
+const WITH_DELHI: RpMaster = { ...MASTER, delhi: { hotels: [ROSEATE], out: FLIGHT("Delhi", "Bagdogra"), back: FLIGHT("Bagdogra", "Delhi") } };
+const delhi = (nights: number) => ({ flight: true, nights, hotel_id: nights ? "H_roseate" : null, room_id: nights ? "R_roseate" : null });
+
+test("Delhi 1 night - Red Panda 5 nights - Delhi 1 night: every line from Master data, exact", () => {
+  const p = priceRedPanda(plan({ arrival: "2027-02-10", delhi_before: delhi(1), delhi_after: delhi(1), g: { adults: 2 } }), WITH_DELHI);
+  assert.deepEqual(p.errors, []);
+  assert.deepEqual(p.lines.map((l) => [l.key, l.amount + l.gst]), [
+    ["package", 531300],
+    ["delhi_before", 27140], // 23,000 + 18%
+    ["delhi_before_transfer", 3150], // IGI to the hotel
+    ["delhi_before_transfer_1", 3150], // the hotel to IGI
+    ["flight_out", 30000], // 15,000 x 2
+    ["flight_back", 30000],
+    ["delhi_after", 27140],
+    ["delhi_after_transfer", 3150],
+    ["delhi_after_transfer_1", 3150],
+  ]);
+  assert.equal(p.totals.grand, 658180);
+  assert.deepEqual([p.arrival, p.outpost.check_in, p.outpost.check_out, p.departure], ["2027-02-10", "2027-02-11", "2027-02-16", "2027-02-17"]);
+  // the balance is due 45 days before they land in Delhi
+  assert.equal(p.payments[1].due, "2026-12-27");
+});
+
+test("Delhi: same-day connection (0 nights) = the flight only; a typed fare; no flight in Master data = an error", () => {
+  const p = priceRedPanda(plan({ arrival: "2027-02-10", delhi_before: delhi(0), g: { adults: 2 } }), WITH_DELHI);
+  assert.deepEqual(p.lines.map((l) => l.key), ["package", "flight_out"]);
+  assert.equal(p.outpost.check_in, "2027-02-10");
+  assert.equal(p.totals.grand, 531300 + 30000);
+  const typed = priceRedPanda(plan({ arrival: "2027-02-10", delhi_before: delhi(0), flight_fare_pp: 12500, g: { adults: 2 } }), WITH_DELHI);
+  assert.equal(typed.totals.grand, 531300 + 25000);
+  const none = priceRedPanda(plan({ arrival: "2027-02-10", delhi_before: delhi(0), g: { adults: 2 } }), { ...WITH_DELHI, delhi: { hotels: [ROSEATE], out: null, back: null } });
+  assert.match(none.errors.join(), /No Delhi - Bagdogra flight in Sales Master data/);
+  // Delhi nights need a hotel; the flight lands at Bagdogra (not Bhadrapur)
+  assert.match(priceRedPanda(plan({ delhi_before: { flight: true, nights: 1, hotel_id: null, room_id: null } }), WITH_DELHI).errors.join(), /choose the Delhi hotel/);
+  assert.match(priceRedPanda(plan({ arrive_airport: "BDP", delhi_before: delhi(0) }), WITH_DELHI).errors.join(), /lands at Bagdogra/);
+  // Delhi from April: the April rate (17,000 + 18%)
+  const apr = priceRedPanda(plan({ arrival: "2027-04-05", delhi_before: delhi(1), g: { adults: 2 } }), WITH_DELHI);
+  assert.equal(apr.lines.find((l) => l.key === "delhi_before")!.amount, 17000);
+});

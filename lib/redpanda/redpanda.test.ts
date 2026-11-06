@@ -217,13 +217,40 @@ test("a Red Panda quote never reaches the Safari pricing engine, planner, reader
     const walk = (x: string): string[] => readdirSync(join(ROOT, x)).flatMap((f) => (statSync(join(ROOT, x, f)).isDirectory() ? walk(join(x, f)) : /\.tsx?$/.test(f) && !/\.test\.ts$/.test(f) ? [join(x, f)] : []));
     for (const f of walk(d)) assert.doesNotMatch(src(f), /lib\/sales\/(pricing\/engine|plan\/(planner|parse-text|chat|ai|reading|sanitize))/, f);
   }
-  // and the Safari engine / planner use only the Red Panda stop's pricing and name rule (a Red Panda
-  // stop in a Sales trip, lib/redpanda/in-sales.ts, 6 Nov 2026); the reader and plan check none
-  for (const f of ["lib/sales/pricing/engine.ts", "lib/sales/plan/planner.ts"]) {
-    const imports = [...src(f).matchAll(/from "(@\/lib\/redpanda\/[^"]+)"/g)].map((m) => m[1]);
-    assert.deepEqual([...new Set(imports)], ["@/lib/redpanda/in-sales"], f);
-  }
-  for (const f of ["lib/sales/plan/parse-text.ts", "lib/sales/plan/sanitize.ts"]) assert.doesNotMatch(src(f), /redpanda/, f);
+  // and the Safari engine / reader never import Red Panda code
+  for (const f of ["lib/sales/pricing/engine.ts", "lib/sales/plan/planner.ts", "lib/sales/plan/parse-text.ts", "lib/sales/plan/sanitize.ts"]) assert.doesNotMatch(src(f), /redpanda/, f);
   // the browser's plan is checked field by field
   assert.equal(sanitizeRpPlan({ kind: "red_panda", guest: { adults: 2 } }).guest.adults, 2);
+});
+
+test("Delhi - Red Panda - Delhi: the guest's days, the Payments lines (a Delhi hotel line each side)", () => {
+  const ROSEATE = { property_id: "H_roseate", name: "Roseate House", rooms: [{ id: "R_roseate", name: "AC Deluxe", rates: [{ valid_from: "2026-10-01", valid_to: "2027-03-31", meal_plan: "CP", rate_single: 23000, rate_double: 23000, tax_pct: 18, rates_include_tax: false }] }], transfer: { rate: 3000, tax_pct: 5, capacity: 6, vehicle_type: "Innova", valid_from: null, valid_to: null } };
+  const F = (from: string, to: string) => ({ from, to, fare: 15000, airline: "", flight_no: "", depart: "", arrive: "" });
+  const M2: RpMaster = { ...MASTER, delhi: { hotels: [ROSEATE], out: F("Delhi", "Bagdogra"), back: F("Bagdogra", "Delhi") } };
+  const d1 = { flight: true, nights: 1, hotel_id: "H_roseate", room_id: "R_roseate" };
+  const p = plan({ arrival: "2027-02-10", delhi_before: d1, delhi_after: d1 });
+  const price = priceRedPanda(p, M2);
+  assert.deepEqual(price.errors, []);
+  const c = rpGuestContent(p, price, SETTINGS);
+  assert.deepEqual(c.days.map((d) => `${d.dateText}: ${d.title} [${d.stay ?? "-"}]`), [
+    "Wed, 10 Feb 2027: Arrival in Delhi, Roseate House [Roseate House]",
+    "Thu, 11 Feb 2027: Arrive and on to Red Panda Outpost [Red Panda Outpost]".replace("Arrive and on to Red Panda Outpost", SETTINGS.days[0].title),
+    "Fri, 12 Feb 2027: In search of the red panda / birding [Red Panda Outpost]",
+    "Sat, 13 Feb 2027: In search of the red panda / birding [Red Panda Outpost]",
+    "Sun, 14 Feb 2027: In search of the red panda / birding [Red Panda Outpost]",
+    "Mon, 15 Feb 2027: In search of the red panda / birding [Red Panda Outpost]",
+    "Tue, 16 Feb 2027: Goodbye to the mountains, fly to Delhi [Roseate House]",
+    "Wed, 17 Feb 2027: Departure [-]",
+  ]);
+  assert.match(c.days[1].text, /^After breakfast, transfer to Delhi Airport for the morning flight to Bagdogra\. Fly to Bagdogra Airport/);
+  assert.ok(c.inclusions.some((x) => /Roseate House, AC Deluxe \(CP\), 1 night in Delhi on arrival, with the Delhi Airport transfers/.test(x)));
+  assert.ok(c.inclusions.some((x) => /^Flight Delhi to Bagdogra \(economy\)$/.test(x)));
+  assert.equal(c.glance.find((g) => g.label === "Duration")?.value, "7 nights / 8 days");
+  const b = bookingFromVersion({ id: "q", guest_name: "A", assigned_to: null, booked_at: null, booked_amount: null, payment_ref: null }, { version_no: 1, currency: "INR", plan: p as never, pricing: price as never }, "2026-11-06");
+  assert.deepEqual(b.lines.map((l) => [l.lodge_name, l.check_in, l.check_out, l.room_amount, l.transfer_amount]), [
+    ["Roseate House", "2027-02-10", "2027-02-11", 27140, 6300],
+    ["Red Panda Outpost", "2027-02-11", "2027-02-16", 531300, 0],
+    ["Roseate House", "2027-02-16", "2027-02-17", 27140, 6300],
+  ]);
+  assert.equal(b.booking.other_amount, 60000); // the two flights
 });

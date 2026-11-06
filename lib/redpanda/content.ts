@@ -65,36 +65,61 @@ export function rpGuestContent(plan: RpPlan, price: RpPrice, s: RpSettings): RpG
     const d = date(days.length);
     days.push({ n: days.length + 1, date: d, dateText: fmtDay(d), title, text, stay });
   };
+  // Delhi first: arrive in Delhi, nights there, then the flight to Bagdogra
+  const delhiLine = (k: "delhi_before" | "delhi_after") => price.lines.find((l) => l.key === k);
+  const dIn = plan.delhi_before.flight ? (delhiLine("delhi_before") ? plan.delhi_before.nights : 0) : 0;
+  const dOut = plan.delhi_after.flight ? (delhiLine("delhi_after") ? plan.delhi_after.nights : 0) : 0;
+  const dIn1 = delhiLine("delhi_before")?.label.split(",")[0] ?? null;
+  const dOut1 = delhiLine("delhi_after")?.label.split(",")[0] ?? null;
+  for (let i = 0; i < dIn; i++)
+    push(
+      i === 0 ? `Arrival in Delhi, ${dIn1}` : `Delhi, ${dIn1}`,
+      i === 0 ? `Arrive in Delhi and transfer to ${dIn1}. The day at leisure; overnight in Delhi.` : "A day at leisure in Delhi.",
+      dIn1
+    );
+  // the day they reach Bagdogra: the flight from Delhi first
+  const flightIn = plan.delhi_before.flight ? (dIn > 0 ? `After breakfast, transfer to Delhi Airport for the morning flight to Bagdogra. ` : `On landing in Delhi, connect to the flight to Bagdogra. `) : "";
+
   const h1 = hotelName("before");
   for (let i = 0; i < before; i++)
     push(
       i === 0 ? `Arrival at ${vars.airport}, ${h1}` : `At leisure, ${h1}`,
-      i === 0 ? `Arrive at ${inAir?.name ?? "the airport"} and transfer to ${h1} for the night.` : "A day at leisure.",
+      i === 0 ? `${flightIn}Arrive at ${inAir?.name ?? "the airport"} and transfer to ${h1} for the night.` : "A day at leisure.",
       h1
     );
-  push(arriveText?.title ?? "Arrival and transfer to Red Panda Outpost", fill(arriveText?.text ?? "", vars), "Red Panda Outpost");
+  push(arriveText?.title ?? "Arrival and transfer to Red Panda Outpost", (before ? "" : flightIn) + fill(arriveText?.text ?? "", vars), "Red Panda Outpost");
   for (let i = 1; i < nights; i++) push(stayDay?.title ?? "At Red Panda Outpost", fill(stayDay?.text ?? "", vars), "Red Panda Outpost");
   const h2 = hotelName("after");
+  const toDelhi = plan.delhi_after.flight;
+  const flyDelhi = (lead: string) =>
+    `${lead}transfer to Bagdogra Airport for the flight to Delhi${dOut > 0 ? `; on arrival, transfer to ${dOut1}. Overnight in Delhi.` : ", and your onward flight from Delhi."}`;
   if (after > 0) {
     push(`Return to ${h2}`, `After an early breakfast, we say goodbye to the mountains and drive back to ${h2}, close to Bagdogra.`, h2);
     for (let i = 1; i < after; i++) push(`At leisure, ${h2}`, "A day at leisure.", h2);
-    push("Departure", `Transfer to ${outAir?.name ?? "the airport"} for your onward flight.`, null);
+    if (toDelhi) push(dOut > 0 ? "Fly to Delhi" : "Departure", flyDelhi("After breakfast, "), dOut > 0 ? dOut1 : null);
+    else push("Departure", `Transfer to ${outAir?.name ?? "the airport"} for your onward flight.`, null);
+  } else if (toDelhi) {
+    push(dOut > 0 ? "Goodbye to the mountains, fly to Delhi" : departText?.title ?? "Departure", `After an early breakfast, we say goodbye to the mountains and drive to Bagdogra Airport (about 5 hours, crossing back into India) for the afternoon flight to Delhi${dOut > 0 ? `; on arrival, transfer to ${dOut1}. Overnight in Delhi.` : ", and your onward flight from Delhi."}`, dOut > 0 ? dOut1 : null);
   } else push(departText?.title ?? "Departure", fill(departText?.text ?? "", vars), null);
+  if (toDelhi && dOut > 0) {
+    for (let i = 1; i < dOut; i++) push(`Delhi, ${dOut1}`, "A day at leisure in Delhi.", dOut1);
+    push("Departure", `Transfer to Delhi Airport for your onward flight.`, null);
+  }
 
   // the Final draft's changes for this quote (day number -> text)
   for (const d of days) {
     const own = plan.text?.days?.[String(d.n)];
     if (own) d.text = own;
   }
-  const totalNights = before + nights + after;
+  const totalNights = dIn + before + nights + after + dOut;
   const guestsText = `${price.guests} guest${price.guests === 1 ? "" : "s"}`;
   const glance = [
     { label: "Dates", value: price.arrival && price.departure ? `${fmtDay(price.arrival)} to ${fmtDay(price.departure)}` : "To be confirmed" },
     { label: "Duration", value: `${totalNights} nights / ${totalNights + 1} days` },
-    { label: "Stay", value: [h1 ? `${h1}, ${before} night${before === 1 ? "" : "s"}` : "", `Red Panda Outpost, ${nights} nights`, h2 ? `${h2}, ${after} night${after === 1 ? "" : "s"}` : ""].filter(Boolean).join(" - ") },
+    { label: "Stay", value: [dIn1 && dIn ? `${dIn1}, Delhi, ${dIn} night${dIn === 1 ? "" : "s"}` : "", h1 ? `${h1}, ${before} night${before === 1 ? "" : "s"}` : "", `Red Panda Outpost, ${nights} nights`, h2 ? `${h2}, ${after} night${after === 1 ? "" : "s"}` : "", dOut1 && dOut ? `${dOut1}, Delhi, ${dOut} night${dOut === 1 ? "" : "s"}` : ""].filter(Boolean).join(" - ") },
     { label: "Guests", value: `${guestsText}, ${price.rooms} room${price.rooms === 1 ? "" : "s"} (twin beds)` },
-    { label: "Arrival", value: inAir?.name ?? "" },
-    { label: "Departure", value: outAir?.name ?? "" },
+    { label: "Arrival", value: plan.delhi_before.flight ? `Delhi, then the flight to ${inAir?.name ?? "Bagdogra"}` : inAir?.name ?? "" },
+    { label: "Departure", value: plan.delhi_after.flight ? `${outAir?.name ?? "Bagdogra"}, flight to Delhi${dOut ? "" : " and your onward flight"}` : outAir?.name ?? "" },
     { label: "Drive to the Outpost", value: inAir ? `About ${inAir.hours} hours${plan.arrive_airport === "IXB" ? ", plus the border crossing" : ""}` : "" },
   ].filter((g) => g.value);
 
@@ -107,6 +132,11 @@ export function rpGuestContent(plan: RpPlan, price: RpPrice, s: RpSettings): RpG
     const l = hotelLine(k);
     if (l) hotelInc.push(`${l.label}${price.lines.some((x) => x.key === `hotel_${k}_transfer`) ? ", with the Bagdogra Airport transfer" : ""}`);
   }
+  for (const k of ["delhi_before", "delhi_after"] as const) {
+    const l = delhiLine(k);
+    if (l) hotelInc.unshift(`${l.label}, with the Delhi Airport transfers`);
+  }
+  for (const l of price.lines.filter((x) => x.group === "flight")) hotelInc.push(`${l.label.replace(/, \d{1,2} \w{3} \d{4}$/, "")} (economy)`);
   return {
     title: s.title,
     tagline: s.tagline,

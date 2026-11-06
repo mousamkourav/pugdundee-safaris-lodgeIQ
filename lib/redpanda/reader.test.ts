@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readEnquiry } from "./reader";
 import { checkRpEvidence, mergeReadings, scrubRp } from "./ai";
-import { applyReading, isRpConfirmed, mentionsOtherPlaces, replyText, rpConfirmKey, salesHandoffText, tripSummary } from "./assist";
+import { applyReading, isRpConfirmed, mentionsOtherPlaces, replyText, rpConfirmKey, tripSummary } from "./assist";
 import { emptyRpPlan, readSettings, sanitizeRpPlan } from "./plan";
 
 const TODAY = "2026-11-06";
@@ -174,12 +174,35 @@ test("the test enquiry on the real Mayfair room names (Master data export of 2 N
   assert.equal(readEnquiry("jungle", TODAY, { pending: "hotel_room", hotelRooms: real.map((x) => x.name) }).hotel_room, "Jungle View Room (double bed)");
 });
 
-test("other places (Delhi, Kaziranga, our lodges): the trip goes to the Sales builder with the enquiry", () => {
-  assert.equal(mentionsOtherPlaces("2 adults, delhi 1 night then red panda"), true);
+test("Delhi in a Red Panda enquiry: nights before / after, the hotel, a same-day connection; asked when unclear", () => {
+  const DELHI = [{ id: "H_roseate", name: "Roseate House", rooms: [{ id: "R_roseate", name: "AC Deluxe" }] }];
+  const rd = (t: string, pending: Parameters<typeof readEnquiry>[2] extends infer O ? (O extends { pending?: infer P } ? P : never) : never = null) =>
+    readEnquiry(t, TODAY, { pending, hotelRooms: ROOMS.map((r) => r.name), delhiHotels: DELHI.map((h) => h.name) });
+  const r = rd("2 adults from UK, 1 room, arriving delhi on 10 feb 2027, delhi 1 night at roseate house, then fly to bagdogra for red panda outpost 5 nights, then fly back to delhi, 1 night in delhi before the flight home");
+  assert.deepEqual([r.arrival, r.nights, r.delhi_before, r.delhi_after], ["2027-02-10", 5, { nights: 1, hotel: "Roseate House" }, { nights: 1 }]);
+  const a = applyReading(emptyRpPlan(), r, S, ROOMS, DELHI);
+  assert.deepEqual(a.plan.delhi_before, { flight: true, nights: 1, hotel_id: "H_roseate", room_id: "R_roseate" });
+  assert.deepEqual(a.plan.delhi_after, { flight: true, nights: 1, hotel_id: "H_roseate", room_id: "R_roseate" }); // the only Delhi hotel
+  assert.equal(a.ready, true);
+  assert.deepEqual(tripSummary(a.plan, S, "Mayfair Chumta", DELHI).map((l) => l.text), [
+    "2 adults; foreign (United Kingdom); direct guest.",
+    "Wed, 10 Feb 2027: land in Delhi; 1 night in Delhi at Roseate House.",
+    "Fly Delhi to Bagdogra Airport (IXB), Siliguri, India.",
+    "5 nights at Red Panda Outpost, 1 room.",
+    "Fly Bagdogra Airport (IXB), Siliguri, India to Delhi.",
+    "1 night in Delhi at Roseate House, then the flight home.",
+  ]);
+  // landing in Delhi and connecting the same day; Delhi only at the end
+  assert.deepEqual(rd("2 pax uk landing delhi 12 feb 2027, connecting flight to bagdogra, red panda 5n").delhi_before, { nights: 0 });
+  const end = rd("2 adults germany arriving bagdogra 12 feb 2027, red panda 5 nights, then 2 nights delhi before flying home");
+  assert.deepEqual([end.delhi_before, end.delhi_after, end.nights], [undefined, { nights: 2 }, 5]);
+  // two Delhi hotels: asked, answered by a tap
+  const TWO = [...DELHI, { id: "H_leela", name: "The Leela Palace", rooms: [{ id: "R_leela", name: "Deluxe" }] }];
+  const q = applyReading(emptyRpPlan(), rd("2 adults from UK, arriving delhi 10 feb 2027, 1 night delhi, red panda 5 nights"), S, ROOMS, TWO);
+  assert.equal(q.pending, "delhi_hotel");
+  const ans = applyReading(q.plan, readEnquiry("The Leela Palace", TODAY, { pending: "delhi_hotel", delhiHotels: TWO.map((h) => h.name) }), S, ROOMS, TWO);
+  assert.equal(ans.plan.delhi_before.hotel_id, "H_leela");
+  // Kaziranga is not part of a Red Panda quote (the builder says so); Delhi is
   assert.equal(mentionsOtherPlaces("then kaziranga 3 nights"), true);
-  assert.equal(mentionsOtherPlaces("2 adults from UK, bagdogra, 5 nights, mayfair after"), false);
-  const p = { ...emptyRpPlan(), enquiry: "2 adults from UK\n---\nalso delhi 1 night first" };
-  assert.equal(salesHandoffText(p, S), "2 adults from UK\nalso delhi 1 night first");
-  const q = { ...emptyRpPlan(), arrival: "2027-02-12", hotel_after: { nights: 1, room_id: "R1" }, guest: { ...emptyRpPlan().guest, adults: 2, country: "United Kingdom" } };
-  assert.equal(salesHandoffText(q, S), "2 adults, from United Kingdom, arriving bagdogra on 12 Feb 2027, red panda outpost 5 nights, then 1 night at mayfair chumta, fly out from bagdogra");
+  assert.equal(mentionsOtherPlaces("delhi 1 night then red panda"), false);
 });

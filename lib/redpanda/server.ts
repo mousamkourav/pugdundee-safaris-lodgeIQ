@@ -7,8 +7,7 @@ import { requireUser, getCurrentUser, homePathFor, isSalesUser } from "@/lib/aut
 import { createClient } from "@/lib/supabase/server";
 import { NO_RP, readAccess, type RpAccess } from "./access";
 import { readSettings } from "./plan";
-import type { Market, RpHotel, RpMaster, RpSupplementRow, RpTariffRow } from "./types";
-import type { RpSalesPricing } from "./in-sales";
+import type { Market, RpFlight, RpHotel, RpMaster, RpSupplementRow, RpTariffRow } from "./types";
 
 // One call per request (layout and page share it). Tables not there yet (SQL not run) or any
 // failure = no access: the tab stays hidden.
@@ -63,7 +62,7 @@ export async function loadRpMaster(): Promise<{ master: RpMaster | null; error?:
     supabase.from("rp_tariff").select("season, valid_from, valid_to, market, guests, per_pax, active").eq("active", true),
     supabase.from("rp_supplements").select("season, valid_from, valid_to, market, kind, amount, active").eq("active", true),
     supabase.from("rp_settings").select("data").eq("id", 1).maybeSingle(),
-    supabase.from("sales_properties").select("id, name").eq("active", true),
+    supabase.from("sales_properties").select("id, name, kind, city, park_id, fallback_priority").eq("active", true).order("fallback_priority"),
   ]);
   if (t.error || s.error || st.error) return { master: null, error: (t.error ?? s.error ?? st.error)!.message };
   const settings = readSettings((st.data as { data?: unknown } | null)?.data);
@@ -74,49 +73,39 @@ export async function loadRpMaster(): Promise<{ master: RpMaster | null; error?:
     season: String(r.season), valid_from: d10(r.valid_from), valid_to: d10(r.valid_to), market: r.market as Market, kind: r.kind as RpSupplementRow["kind"], amount: Number(r.amount), active: r.active !== false,
   }));
 
-  // the partner hotel: the active Sales property whose name has settings.hotel_property ("Mayfair")
-  let hotel: RpHotel | null = null;
-  const want = settings.hotel_property.trim().toLowerCase();
-  const prop = want ? ((props.data ?? []) as Row[]).find((p) => String(p.name).toLowerCase().includes(want)) : undefined;
-  if (prop) {
+  // Sales Master data: places, the partner hotel near Bagdogra ("Mayfair" in settings), Delhi's city
+  // hotels, their rooms, rates and airport transfers, and the Delhi - Bagdogra flights
+  const [locs, flights, parks] = await Promise.all([
+    supabase.from("sales_locations").select("id, name, type, code, property_id").eq("active", true),
+    supabase.from("sales_flight_routes").select("from_city, to_city, airline, flight_no, depart_time, arrive_time, fare, sort").eq("active", true).order("sort"),
+    supabase.from("sales_parks").select("id, name"),
+  ]);
+  const parkName = new Map(((parks.data ?? []) as Row[]).map((x) => [String(x.id), String(x.name).trim().toLowerCase()]));
+  const propRows: Row[] = ((props.data ?? []) as Row[]).map((p) => ({ ...p, park_name: parkName.get(String(p.park_id ?? "")) ?? "" }));
+  const locRows = (locs.data ?? []) as Row[];
+  const airportIds = (re: RegExp, code: string) => locRows.filter((l) => String(l.code ?? "").toUpperCase() === code || (String(l.type) === "airport" && re.test(String(l.name)))).map((l) => String(l.id));
+  const bagdogra = airportIds(/bagdogra/i, "IXB");
+  const delhiAirport = airportIds(/^delhi/i, "DEL");
+
+  async function loadHotel(prop: Row, airports: string[]): Promise<RpHotel> {
     const pid = String(prop.id);
-    const [rooms, locs] = await Promise.all([
-      supabase.from("sales_room_categories").select("id, name, sort").eq("property_id", pid).eq("active", true).order("sort"),
-      supabase.from("sales_locations").select("id, name, type, code, property_id").eq("active", true),
-    ]);
-    const roomRows = (rooms.data ?? []) as Row[];
+    const { data: rooms } = await supabase.from("sales_room_categories").select("id, name, sort").eq("property_id", pid).eq("active", true).order("sort");
+    const roomRows = (rooms ?? []) as Row[];
     const ids = roomRows.map((r) => String(r.id));
-    const rates = ids.length
-      ? await supabase.from("sales_room_rates").select("room_category_id, valid_from, valid_to, meal_plan, rate_single, rate_double, tax_pct, rates_include_tax, active").in("room_category_id", ids).eq("active", true)
-      : { data: [] };
-    const locRows = (locs.data ?? []) as Row[];
     const hotelLoc = locRows.filter((l) => String(l.property_id ?? "") === pid).map((l) => String(l.id));
-    const bagdogra = locRows.filter((l) => String(l.code ?? "").toUpperCase() === "IXB" || /bagdogra/i.test(String(l.name))).map((l) => String(l.id));
-    let transfer: RpHotel["transfer"] = null;
-    if (hotelLoc.length && bagdogra.length) {
-      const { data: tr } = await supabase
-        .from("sales_transfer_rates")
-        .select("from_location_id, to_location_id, vehicle_type, capacity, rate, tax_pct, valid_from, valid_to, bidirectional, active")
-        .eq("active", true)
-        .in("from_location_id", [...hotelLoc, ...bagdogra]);
-      const joins = ((tr ?? []) as Row[]).filter(
-        (r) =>
-          (hotelLoc.includes(String(r.from_location_id)) && bagdogra.includes(String(r.to_location_id))) ||
-          (bagdogra.includes(String(r.from_location_id)) && hotelLoc.includes(String(r.to_location_id)))
-      );
-      // the cheapest car on that road
-      const pick = joins.sort((a, b) => Number(a.rate) - Number(b.rate))[0];
-      if (pick)
-        transfer = {
-          rate: Number(pick.rate),
-          tax_pct: Number(pick.tax_pct ?? 0),
-          capacity: Math.max(1, Number(pick.capacity) || 4),
-          vehicle_type: String(pick.vehicle_type ?? "car"),
-          valid_from: pick.valid_from ? d10(pick.valid_from) : null,
-          valid_to: pick.valid_to ? d10(pick.valid_to) : null,
-        };
-    }
-    hotel = {
+    const [rates, tr] = await Promise.all([
+      ids.length
+        ? supabase.from("sales_room_rates").select("room_category_id, valid_from, valid_to, meal_plan, rate_single, rate_double, tax_pct, rates_include_tax, active").in("room_category_id", ids).eq("active", true)
+        : Promise.resolve({ data: [] as Row[] }),
+      hotelLoc.length && airports.length
+        ? supabase.from("sales_transfer_rates").select("from_location_id, to_location_id, vehicle_type, capacity, rate, tax_pct, valid_from, valid_to, active").eq("active", true).in("from_location_id", [...hotelLoc, ...airports])
+        : Promise.resolve({ data: [] as Row[] }),
+    ]);
+    const joins = ((tr.data ?? []) as Row[]).filter(
+      (r) => (hotelLoc.includes(String(r.from_location_id)) && airports.includes(String(r.to_location_id))) || (airports.includes(String(r.from_location_id)) && hotelLoc.includes(String(r.to_location_id)))
+    );
+    const pick = joins.sort((x, y) => Number(x.rate) - Number(y.rate))[0]; // the cheapest car on that road
+    return {
       property_id: pid,
       name: String(prop.name),
       rooms: roomRows.map((r) => ({
@@ -134,25 +123,22 @@ export async function loadRpMaster(): Promise<{ master: RpMaster | null; error?:
             rates_include_tax: x.rates_include_tax === true,
           })),
       })),
-      transfer,
+      transfer: pick
+        ? { rate: Number(pick.rate), tax_pct: Number(pick.tax_pct ?? 0), capacity: Math.max(1, Number(pick.capacity) || 4), vehicle_type: String(pick.vehicle_type ?? "car"), valid_from: pick.valid_from ? d10(pick.valid_from) : null, valid_to: pick.valid_to ? d10(pick.valid_to) : null }
+        : null,
     };
   }
-  return { master: { tariff, supplements, settings, hotel } };
-}
 
-// The Red Panda tariff for the Sales builder and its save (a Red Panda stop in a Safari trip):
-// only for people with Red Panda access; anyone else gets null (the stop is then an error).
-export async function loadRpSalesPricing(role: string | null | undefined): Promise<RpSalesPricing | null> {
-  const access = await rpStatus(role);
-  if (!access.canUse) return null;
-  const { master } = await loadRpMaster();
-  if (!master) return null;
-  const s = master.settings;
-  return { tariff: master.tariff, supplements: master.supplements, gst_pct: s.gst_pct, package_nights: s.package_nights, min_nights: s.min_nights, max_guests: s.max_guests, min_age: s.min_age, closed_months: s.closed_months };
-}
-
-// The Sales builder context with the Red Panda tariff (a new object: the cached one is shared).
-export async function withRedPanda<T extends { pricing: object }>(ctx: T, role: string | null | undefined): Promise<T> {
-  const redPanda = await loadRpSalesPricing(role);
-  return { ...ctx, pricing: { ...ctx.pricing, redPanda } };
+  const want = settings.hotel_property.trim().toLowerCase();
+  const prop = want ? propRows.find((p) => String(p.name).toLowerCase().includes(want)) : undefined;
+  // Delhi's hotels: city hotels in Delhi (by their city, or their place in Parks named Delhi)
+  const delhiProps = propRows.filter((p) => String(p.kind) === "city_hotel" && (/^\s*(new\s+)?delhi\b/i.test(String(p.city ?? "")) || String(p.park_name ?? "") === "delhi"));
+  const flightRows = (flights.data ?? []) as Row[];
+  const flight = (from: RegExp, to: RegExp): RpFlight | null => {
+    const f = flightRows.find((x) => from.test(String(x.from_city)) && to.test(String(x.to_city)) && Number(x.fare) >= 0);
+    return f ? { from: String(f.from_city), to: String(f.to_city), fare: Number(f.fare), airline: String(f.airline ?? ""), flight_no: String(f.flight_no ?? ""), depart: String(f.depart_time ?? "").slice(0, 5), arrive: String(f.arrive_time ?? "").slice(0, 5) } : null;
+  };
+  const [hotel, delhiHotels] = await Promise.all([prop ? loadHotel(prop, bagdogra) : Promise.resolve(null), Promise.all(delhiProps.map((p) => loadHotel(p, delhiAirport)))]);
+  const delhi = { hotels: delhiHotels.filter((h) => h.rooms.length > 0), out: flight(/^delhi/i, /^bagdogra/i), back: flight(/^bagdogra/i, /^delhi/i) };
+  return { master: { tariff, supplements, settings, hotel, delhi } };
 }

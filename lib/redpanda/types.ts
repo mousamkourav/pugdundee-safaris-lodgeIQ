@@ -82,11 +82,33 @@ export interface RpHotel {
   transfer: { rate: number; tax_pct: number; capacity: number; vehicle_type: string; valid_from: ISODate | null; valid_to: ISODate | null } | null;
 }
 
+// A flight from Sales Master data > Flight routes (Delhi - Bagdogra, Bagdogra - Delhi).
+export interface RpFlight {
+  from: string;
+  to: string;
+  fare: number; // per person, one way
+  airline: string;
+  flight_no: string;
+  depart: string;
+  arrive: string;
+}
+
 export interface RpMaster {
   tariff: RpTariffRow[];
   supplements: RpSupplementRow[];
   settings: RpSettings;
   hotel: RpHotel | null;
+  // Delhi (owner, 6 Nov 2026: foreign guests land in Delhi, then fly to Bagdogra): its city hotels
+  // (rooms, rates and the Delhi Airport transfer) and the flights, all from Sales Master data
+  delhi?: { hotels: RpHotel[]; out: RpFlight | null; back: RpFlight | null } | null;
+}
+
+// Delhi before or after: the flight Delhi - Bagdogra, and nights at a Delhi hotel (0 = connect the same day)
+export interface RpDelhi {
+  flight: boolean;
+  nights: number;
+  hotel_id: string | null;
+  room_id: string | null;
 }
 
 export interface RpCustomItem {
@@ -117,6 +139,9 @@ export interface RpPlan {
   tour_leader: boolean;
   hotel_before: { nights: number; room_id: string | null };
   hotel_after: { nights: number; room_id: string | null };
+  delhi_before: RpDelhi; // landing in Delhi first
+  delhi_after: RpDelhi; // back to Delhi at the end
+  flight_fare_pp: number | null; // a fare typed by hand, per person one way (empty = Master data)
   custom_items: RpCustomItem[];
   per_pax_override: number | null; // a rate typed by hand (B2C changed for a case)
   markup_pct: number;
@@ -136,7 +161,7 @@ export interface RpLine {
   amount: number; // before GST
   gst_pct: number;
   gst: number;
-  group: "package" | "hotel" | "extra";
+  group: "package" | "hotel" | "flight" | "extra";
 }
 export interface RpPrice {
   ok: boolean;
@@ -155,15 +180,16 @@ export interface RpPrice {
     markup: number;
     discount: number;
     package_gst: number;
-    hotel: number; // incl. its tax
+    hotel: number; // hotels (Delhi, near Bagdogra), their transfers and the flights, incl. tax
     extras: number; // incl. GST
     adjustment: number;
     grand: number;
   };
   perPerson: number;
   arrival: ISODate | null;
-  departure: ISODate | null; // the day they leave Red Panda Outpost (or the hotel after)
+  departure: ISODate | null; // the day they fly out (from Bagdogra, or from Delhi)
   outpost: { check_in: ISODate | null; check_out: ISODate | null };
+  dates?: { bagdogra_in: ISODate | null; delhi_back: ISODate | null }; // when the trip goes through Delhi
   currency: "INR";
   payments: { label: string; pct: number; due: ISODate | null; amount: number; note?: string }[];
 }

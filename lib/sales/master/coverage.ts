@@ -13,7 +13,6 @@
 // Transfers are the "Missing transfer rates" list (missing-transfers.ts).
 // Pure, so it is tested without a database.
 // =====================================================================
-import { isRedPandaName } from "@/lib/redpanda/in-sales";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 import { addDays } from "@/lib/sales/pricing/dates";
 import type { ISODate, PricingData, SafariInput, StayInput, TripInput } from "@/lib/sales/pricing/types";
@@ -71,8 +70,6 @@ export function rateCoverage(d: PricingData, today: ISODate, months = seasonMont
 
   // ---- accommodation, and a child's rate
   for (const p of d.properties) {
-    // Red Panda Outpost: priced from the Red Panda tariff (Red Panda > Master data), not room rates
-    if (isRedPandaName(p.name)) continue;
     const city = isCityHotel(p, cities);
     for (const room of d.rooms.filter((r) => r.property_id === p.id)) {
       const plans = [...new Set(d.roomRates.filter((x) => x.room_category_id === room.id && x.active !== false).map((x) => x.meal_plan))];
@@ -107,8 +104,7 @@ export function rateCoverage(d: PricingData, today: ISODate, months = seasonMont
   }
 
   // ---- safaris, full-day, naturalist: every park with a lodge (not a city)
-  // (Singalila: Red Panda Outpost only, no jeep safaris there)
-  const parks = d.parks.filter((pk) => !cities.has(pk.id) && d.properties.some((p) => p.park_id === pk.id && !isCityHotel(p, cities) && !isRedPandaName(p.name)));
+  const parks = d.parks.filter((pk) => !cities.has(pk.id) && d.properties.some((p) => p.park_id === pk.id && !isCityHotel(p, cities)));
   for (const pk of parks) {
     const lodge = d.properties.find((p) => p.park_id === pk.id && !isCityHotel(p, cities))!;
     const room = d.rooms.find((r) => r.property_id === lodge.id);

@@ -162,20 +162,14 @@ builder, quotes/[id], master, access), components `components/redpanda/*`.
   with its own evidence rule (`lib/redpanda/ai.ts` `checkRpEvidence`), `scrubRp` before sending,
   `mergeReadings` (AI first, reader fills gaps), one question at a time (`assist.ts`), logged in
   `sales_chat_log` as "[Red Panda] ...". Tests: `reader.test.ts`.
-- Red Panda in a Sales trip (6 Nov 2026: Delhi - Red Panda - Kaziranga, or with our lodges):
-  `supabase/red_panda_in_sales.sql` makes the Outpost a Sales lodge (park Singalila, own lodge,
-  "Twin room", roads from Bagdogra / Bhadrapur / Mayfair at Rs 0 = in the package, day texts,
-  includes and good to know as property content blocks, reader rule "redpanda"). No room rates: the
-  engine prices its nights from the Red Panda tariff (`lib/redpanda/in-sales.ts`, by name
-  `isRedPandaName`): (per person x guests + single supplements) / 5 per night + GST 5%, market from
-  `TripInput.b2b` (source "Travel agent") / nationality; errors for under 16, over 10 guests,
-  June - September, under 4 nights, and for anyone without Red Panda access (`withRedPanda` adds the
-  tariff to the builder context and the save only for them). Room lines of our own lodge: lodge and
-  whole-trip discounts, multi-lodge offers and markup apply; the Sales payment schedule applies.
-  Planner: no jeep safaris (no safari rates), the Outpost's day title from its template, the drive
-  from the Siliguri hotel, a note when leaving the Outpost and flying the same day. Coverage, health
-  and missing roads skip it. The Red Panda builder sends trips naming other places to /sales/new?text=
-  (`mentionsOtherPlaces`, `salesHandoffText`). Tests: `mixed-trip.test.ts` on the real Master data.
+- Delhi (owner, 6 Nov 2026: foreign guests land in Delhi, then fly to Bagdogra), in the Red Panda tab
+  only: `plan.delhi_before` / `delhi_after` (`flight`, `nights` 0 = same-day connection, Delhi hotel and
+  room). Priced from Sales Master data (`loadRpMaster` -> `master.delhi`): Delhi city hotels' room
+  rates, the Delhi Airport transfer both ways, the Delhi - Bagdogra flight route fare per person (or
+  `flight_fare_pp` typed). The reader and the AI read "arriving delhi", "delhi 1 night", "back to delhi".
+  Kaziranga and our tiger lodges are NOT in a Red Panda quote (the chat says so). Red Panda is not in
+  the Sales builder (an earlier try was undone: `supabase/red_panda_sales_off.sql` switches its Sales
+  Master data rows off).
 - Guest page and PDF: own template and colours (the brochure's cream and bark brown, page-scoped
   variables), text from `rp_settings.data` (`lib/redpanda/content.ts`, placeholders like {airport}),
   photos `rp_images` (bucket sales-media, `red-panda/...`; one cover).

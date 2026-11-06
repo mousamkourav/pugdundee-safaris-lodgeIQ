@@ -24,7 +24,7 @@ export function scrubRp(text: string, names: string[] = []): string {
 
 // ---------------- the prompt ----------------
 
-export function rpPrompt(message: string, today: string, hotelRooms: string[]): string {
+export function rpPrompt(message: string, today: string, hotelRooms: string[], delhiHotels: string[] = []): string {
   return [
     "You read a travel enquiry for Red Panda Outpost (a homestay near Singalila National Park, Nepal; guests fly into",
     "Bagdogra (IXB, Siliguri, India) or Bhadrapur (BDP, Nepal)). Today is " + today + ".",
@@ -44,6 +44,8 @@ export function rpPrompt(message: string, today: string, hotelRooms: string[]): 
     "  rooms: number of rooms.",
     "  tour_leader: true when a tour leader / tour manager travels with them.",
     "  hotel_before, hotel_after: {\"nights\": n, \"room\": one of [" + hotelRooms.map((r) => JSON.stringify(r)).join(", ") + "] if written} for nights at a hotel near Bagdogra / Siliguri (Mayfair) before or after the Outpost.",
+    "  delhi_before: {\"nights\": n, \"hotel\": one of [" + delhiHotels.map((r) => JSON.stringify(r)).join(", ") + "] if written} when they come through Delhi first (land in Delhi, then fly to Bagdogra); nights 0 = same-day connection.",
+    "  delhi_after: the same for Delhi at the end (fly back from Bagdogra to Delhi).",
     "Names, emails and phone numbers have been removed; do not return them.",
     "",
     "Message:",
@@ -85,7 +87,7 @@ export interface RpDropped {
 }
 
 // The AI's answer -> a reading with only what the message shows.
-export function checkRpEvidence(raw: unknown, message: string, hotelRooms: string[]): { reading: RpReading; dropped: RpDropped[] } {
+export function checkRpEvidence(raw: unknown, message: string, hotelRooms: string[], delhiHotels: string[] = []): { reading: RpReading; dropped: RpDropped[] } {
   const a = (raw && typeof raw === "object" ? raw : {}) as Record<string, { value?: unknown; quote?: unknown } | undefined>;
   const r: RpReading = {};
   const dropped: RpDropped[] = [];
@@ -134,6 +136,19 @@ export function checkRpEvidence(raw: unknown, message: string, hotelRooms: strin
       (v) => {
         const h = v as { nights: number; room?: string };
         r[k] = { nights: h.nights, ...(h.room ? { room: h.room } : {}) };
+      }
+    );
+  }
+  for (const k of ["delhi_before", "delhi_after"] as const) {
+    take(
+      k,
+      (v, s) => {
+        const h = (v && typeof v === "object" ? v : {}) as { nights?: unknown; hotel?: unknown };
+        return int(h.nights, 0, 5) && /\bdelhi\b/.test(q(s)) && ((h.nights as number) === 0 || statesNumber(s, h.nights as number)) && (h.hotel == null || delhiHotels.includes(String(h.hotel)));
+      },
+      (v) => {
+        const h = v as { nights: number; hotel?: string };
+        r[k] = { nights: h.nights, ...(h.hotel ? { hotel: h.hotel } : {}) };
       }
     );
   }

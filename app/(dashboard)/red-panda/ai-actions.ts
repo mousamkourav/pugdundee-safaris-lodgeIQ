@@ -79,16 +79,17 @@ export interface RpAssistResult {
   error?: string;
 }
 
-export async function rpAssist(input: { message: string; pending: RpPending; guestName: string; hotelRooms: string[] }): Promise<RpAssistResult> {
+export async function rpAssist(input: { message: string; pending: RpPending; guestName: string; hotelRooms: string[]; delhiHotels?: string[] }): Promise<RpAssistResult> {
   return safe("red panda assist", async () => {
     const g = await guard();
     if ("error" in g) return g;
     const message = String(input?.message ?? "").slice(0, 4000);
     if (!message.trim()) return { error: "Type the enquiry." };
     const rooms = Array.isArray(input.hotelRooms) ? input.hotelRooms.map(String).slice(0, 10) : [];
-    const pending = (["arrival", "adults", "nationality", "nights", "ages", "hotel_side", "hotel_room"] as const).find((p) => p === input.pending) ?? null;
+    const delhi = Array.isArray(input.delhiHotels) ? input.delhiHotels.map(String).slice(0, 20) : [];
+    const pending = (["arrival", "adults", "nationality", "nights", "ages", "hotel_side", "hotel_room", "delhi_hotel"] as const).find((p) => p === input.pending) ?? null;
     const today = todayIST();
-    const reader = readEnquiry(message, today, { pending, hotelRooms: rooms });
+    const reader = readEnquiry(message, today, { pending, hotelRooms: rooms, delhiHotels: delhi });
 
     // a short reply to the assistant's own question: the reader reads it (no AI call)
     const short = !!pending && message.trim().split(/\s+/).length <= 4;
@@ -97,12 +98,12 @@ export async function rpAssist(input: { message: string; pending: RpPending; gue
     const names = [String(input.guestName ?? ""), reader.name ?? ""].filter(Boolean);
     const sent = scrubRp(message, names);
     const t0 = Date.now();
-    const ai = await callGemini(rpPrompt(sent, today, rooms));
+    const ai = await callGemini(rpPrompt(sent, today, rooms, delhi));
     let dropped: RpDropped[] = [];
     let result: RpAssistResult;
     if (ai.error || ai.json === undefined) result = { reading: reader, source: "reader", note: ai.error ?? "The built-in reader was used." };
     else {
-      const checked = checkRpEvidence(ai.json, sent, rooms);
+      const checked = checkRpEvidence(ai.json, sent, rooms, delhi);
       dropped = checked.dropped;
       const merged = mergeReadings(checked.reading, reader);
       result = { reading: merged.reading, source: "ai", note: `Read by the AI${merged.added.length ? `; the built-in reader added: ${merged.added.join(", ")}` : ""}.` };

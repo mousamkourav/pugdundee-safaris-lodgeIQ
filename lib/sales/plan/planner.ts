@@ -2,7 +2,6 @@
 // TripInput the pricing engine needs. Pure functions; shared by the browser
 // (live builder) and the server (save action).
 
-import { isRedPandaName } from "@/lib/redpanda/in-sales";
 import { addDays, dayName } from "@/lib/sales/pricing/dates";
 import { closureFor } from "@/lib/sales/pricing/engine";
 import type { Addon, ISODate, RateBasis, SafariInput, StayInput, TransferInput, TripInput } from "@/lib/sales/pricing/types";
@@ -151,20 +150,7 @@ function carryItems(oldDays: PlanDay[], days: PlanDay[]): PlanDay[] {
 export function buildDays(plan: Plan, ctx: BuilderContext): PlanDay[] {
   const fresh = buildDaysFresh(plan, ctx).map((d) => ({ ...d, items: [] as PlanItem[] }));
   if (!fresh.length) return fresh;
-  return redPandaFlightDay(noDriveBetweenRegions(carryItems(plan.days ?? [], applyCarPackages(plan, addFlights(plan, addCityDays(plan, applyWants(plan, ctx, fresh), ctx), ctx), ctx)), ctx), ctx);
-}
-
-// Leaving Red Panda Outpost (about 5 hours to Bagdogra, plus the border) and flying the same day:
-// the day says so (book a flight after 5 PM, or add a night in Siliguri). Only for the Outpost.
-function redPandaFlightDay(days: PlanDay[], ctx: BuilderContext): PlanDay[] {
-  const rpLocs = new Set(ctx.properties.filter((p) => isRedPandaName(p.name)).flatMap((p) => ctx.locations.filter((l) => l.property_id === p.id).map((l) => l.id)));
-  if (!rpLocs.size) return days;
-  const NOTE = "Leaving Red Panda Outpost: about 5 hours to Bagdogra plus the border crossing, so book a flight after 5 PM, or add a night in Siliguri before the flight.";
-  return days.map((d) => {
-    const leaves = (d.transfer && rpLocs.has(d.transfer.from_location_id)) || (d.city_transfers ?? []).some((t) => rpLocs.has(t.from_location_id));
-    const flies = d.items.some((i) => i.type === "flight");
-    return leaves && flies && !d.notes.includes(NOTE) ? { ...d, notes: [...d.notes, NOTE] } : d;
-  });
+  return noDriveBetweenRegions(carryItems(plan.days ?? [], applyCarPackages(plan, addFlights(plan, addCityDays(plan, applyWants(plan, ctx, fresh), ctx), ctx), ctx)), ctx);
 }
 
 // The last guard, whatever the reader or the AI made of the message: a road transfer between
@@ -952,8 +938,7 @@ function buildDaysFresh(plan: Plan, ctx: BuilderContext): PlanDay[] {
     } else days.push(
       describe(ctx, {
         date: checkIn,
-        // Red Panda Outpost after the Siliguri hotel: a drive from the hotel, not an arrival
-        kind: (i === 0 && !(fromCity && isRedPandaName(ctx.properties.find((p) => p.id === stop.property_id)?.name))) || viaCity?.flown ? "arrival" : "transfer",
+        kind: i === 0 || viaCity?.flown ? "arrival" : "transfer",
         property_id: stop.property_id,
         park_id: stop.park_id,
         ...(i > 0 && !viaCity ? { morning_park_id: legs[i - 1].stop.park_id } : {}),
@@ -1174,11 +1159,7 @@ export function describe(ctx: BuilderContext, day: PlanDay, vehicle: string | nu
     city: day.title,
   };
 
-  const picked = pickTemplate(ctx, day.kind, day.park_id, day.property_id);
-  // Red Panda Outpost: a day there is not "at leisure" (no jeep safaris; tracking with a naturalist):
-  // its own template's title (Master data, supabase/red_panda_in_sales.sql)
-  if (day.kind === "leisure" && picked?.title && picked.property_id === day.property_id && isRedPandaName(lodge)) titles.leisure = picked.title;
-  const template = (day.own_vehicle ? OWN_TEXT[day.kind] : undefined) ?? picked?.body ?? DEFAULT_TEXT[day.kind];
+  const template = (day.own_vehicle ? OWN_TEXT[day.kind] : undefined) ?? pickTemplate(ctx, day.kind, day.park_id, day.property_id)?.body ?? DEFAULT_TEXT[day.kind];
   const text = template
     .replaceAll("{lodge}", lodge)
     .replaceAll("{park}", park)
@@ -1287,7 +1268,6 @@ export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
     adults: plan.guest.adults,
     children: plan.guest.children,
     nationality: plan.guest.nationality,
-    b2b: plan.guest.source === "Travel agent", // Red Panda Outpost's agent (B2B) tariff
     stays,
     safaris,
     transfers,

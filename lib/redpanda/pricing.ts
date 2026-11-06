@@ -14,7 +14,7 @@
 //   and its airport transfer: from Sales Master data, with their own tax. Adjustment last.
 // - closed June - September (monsoon).
 // - payment: 50% at booking, 50% 45 days before arrival.
-import type { ISODate, Market, RpLine, RpMaster, RpPlan, RpPrice, RpHotelRate } from "./types";
+import type { ISODate, Market, RpDelhi, RpFlight, RpHotel, RpLine, RpMaster, RpPlan, RpPrice, RpHotelRate } from "./types";
 
 const DAY = 86_400_000;
 export const addDays = (d: ISODate, n: number): ISODate => new Date(Date.parse(`${d}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
@@ -33,14 +33,19 @@ export const MARKET_LABEL: Record<Market, string> = { b2b: "B2B (agent)", foreig
 export const guestCount = (plan: Pick<RpPlan, "guest">) => Math.max(0, Math.floor(num(plan.guest.adults))) + (plan.guest.child_ages ?? []).length;
 export const standardRooms = (guests: number) => Math.ceil(guests / 2);
 
-// The dates: the day they land, the Outpost's nights, the day they fly out.
-export function tripDates(plan: Pick<RpPlan, "arrival" | "nights" | "hotel_before" | "hotel_after">) {
-  if (!isDate(plan.arrival)) return { arrival: null, check_in: null, check_out: null, departure: null };
-  const before = Math.max(0, Math.floor(num(plan.hotel_before?.nights)));
-  const after = Math.max(0, Math.floor(num(plan.hotel_after?.nights)));
-  const check_in = addDays(plan.arrival, before);
-  const check_out = addDays(check_in, Math.max(0, Math.floor(num(plan.nights))));
-  return { arrival: plan.arrival, check_in, check_out, departure: addDays(check_out, after) };
+// The dates, in trip order: the day they land (in Delhi when they come through Delhi), Delhi nights,
+// the flight to Bagdogra, the hotel near Bagdogra, the Outpost, the hotel, the flight to Delhi,
+// Delhi nights, the day they fly out.
+export function tripDates(plan: Pick<RpPlan, "arrival" | "nights" | "hotel_before" | "hotel_after"> & Partial<Pick<RpPlan, "delhi_before" | "delhi_after">>) {
+  if (!isDate(plan.arrival)) return { arrival: null, delhi_in: null, bagdogra_in: null, check_in: null, check_out: null, delhi_back: null, departure: null };
+  const n = (x: unknown) => Math.max(0, Math.floor(num(x)));
+  const d1 = plan.delhi_before?.flight ? n(plan.delhi_before.nights) : 0;
+  const d2 = plan.delhi_after?.flight ? n(plan.delhi_after.nights) : 0;
+  const bagdogra_in = addDays(plan.arrival, d1); // the day they reach Bagdogra / Bhadrapur
+  const check_in = addDays(bagdogra_in, n(plan.hotel_before?.nights));
+  const check_out = addDays(check_in, n(plan.nights));
+  const delhi_back = addDays(check_out, n(plan.hotel_after?.nights)); // the day they leave Bagdogra
+  return { arrival: plan.arrival, delhi_in: plan.delhi_before?.flight ? plan.arrival : null, bagdogra_in, check_in, check_out, delhi_back, departure: addDays(delhi_back, d2) };
 }
 
 function hotelRateOn(rates: RpHotelRate[], d: ISODate): RpHotelRate | null {
@@ -147,49 +152,37 @@ export function priceRedPanda(plan: RpPlan, m: RpMaster): RpPrice {
   const pkgGst = rupees(((pkg + markup - discount) * gst) / 100);
   for (const l of lines) l.gst = rupees((l.amount * gst) / 100);
 
-  // ---- the partner hotel near Bagdogra, before and after
+  // ---- hotel nights: Delhi (from Sales Master data) and the partner hotel near Bagdogra (Mayfair),
+  // with their airport transfers. A night with no rate is an error, never 0.
   let hotelTotal = 0;
-  const stays = [
-    { key: "before", h: plan.hotel_before, from: dates.arrival, airport: plan.arrive_airport, when: "on arrival" },
-    { key: "after", h: plan.hotel_after, from: dates.check_out, airport: plan.depart_airport, when: "before departure" },
-  ];
-  for (const st of stays) {
-    const n = Math.floor(num(st.h?.nights));
-    if (n <= 0) continue;
-    if (n > 5) errors.push(`Hotel ${st.when}: at most 5 nights.`);
-    if (st.airport !== "IXB") errors.push(`Hotel ${st.when}: the partner hotel is near Bagdogra; the guests ${st.key === "before" ? "arrive" : "leave"} through Bhadrapur.`);
-    const hotel = m.hotel;
-    if (!hotel) {
-      errors.push(`Hotel ${st.when}: no partner hotel "${s.hotel_property}" in Sales Master data.`);
-      continue;
-    }
-    const room = hotel.rooms.find((r) => r.id === st.h.room_id) ?? null;
+  const addStay = (o: { key: string; hotel: RpHotel; roomId: string | null; from: ISODate | null; n: number; when: string; suffix: string; airport: string; transfers: { on: ISODate | null; label: string }[] }) => {
+    const { hotel } = o;
+    const room = hotel.rooms.find((r) => r.id === o.roomId) ?? null;
     if (!room) {
-      errors.push(`Hotel ${st.when}: choose the room type at ${hotel.name}.`);
-      continue;
+      errors.push(`${o.when}: choose the room type at ${hotel.name}.`);
+      return;
     }
-    if (!st.from) continue;
+    if (!o.from) return;
     let base = 0;
     let tax = 0;
     let missing = 0;
     let meal = "";
-    for (let i = 0; i < n; i++) {
-      const d = addDays(st.from, i);
-      const r = hotelRateOn(room.rates, d);
+    for (let i = 0; i < o.n; i++) {
+      const r = hotelRateOn(room.rates, addDays(o.from, i));
       if (!r) {
         missing++;
         continue;
       }
       meal = r.meal_plan;
-      const night = (guests - singles) / 2 * r.rate_double + singles * (r.rate_single ?? r.rate_double);
+      const night = ((guests - singles) / 2) * r.rate_double + singles * (r.rate_single ?? r.rate_double);
       base += night;
       if (!r.rates_include_tax) tax += (night * num(r.tax_pct)) / 100;
     }
-    if (missing) errors.push(`Hotel ${st.when}: ${hotel.name} ${room.name} has no rate in Sales Master data for ${missing} of the ${n} night${n === 1 ? "" : "s"}.`);
+    if (missing) errors.push(`${o.when}: ${hotel.name} ${room.name} has no rate in Sales Master data for ${missing} of the ${o.n} night${o.n === 1 ? "" : "s"}.`);
     const doubles = (guests - singles) / 2;
     lines.push({
-      key: `hotel_${st.key}`,
-      label: `${hotel.name}, ${room.name}${meal ? ` (${meal})` : ""}, ${n} night${n === 1 ? "" : "s"} ${st.when}`,
+      key: o.key,
+      label: `${hotel.name}, ${room.name}${meal ? ` (${meal})` : ""}, ${o.n} night${o.n === 1 ? "" : "s"} ${o.suffix}`,
       detail: [doubles ? `${doubles} double` : "", singles ? `${singles} single` : ""].filter(Boolean).join(" + ") + ` room${rooms === 1 ? "" : "s"}`,
       amount: rupees(base),
       gst_pct: base ? rupees((tax / base) * 10000) / 100 : 0,
@@ -197,25 +190,80 @@ export function priceRedPanda(plan: RpPlan, m: RpMaster): RpPrice {
       group: "hotel",
     });
     hotelTotal += rupees(base) + rupees(tax);
-    // Bagdogra Airport <> hotel (the Outpost transfer picks up from / drops at the hotel)
     const t = hotel.transfer;
-    const on = st.key === "before" ? st.from : addDays(st.from, n);
-    if (!t || (t.valid_from && on < t.valid_from) || (t.valid_to && on > t.valid_to)) errors.push(`Hotel ${st.when}: no Bagdogra Airport - ${hotel.name} transfer rate in Sales Master data.`);
-    else {
+    o.transfers.forEach((tr, i) => {
+      if (!tr.on) return;
+      if (!t || (t.valid_from && tr.on < t.valid_from) || (t.valid_to && tr.on > t.valid_to)) {
+        errors.push(`${o.when}: no ${o.airport} - ${hotel.name} transfer rate in Sales Master data.`);
+        return;
+      }
       const vehicles = Math.max(1, Math.ceil(guests / Math.max(1, t.capacity)));
       const amt = rupees(t.rate * vehicles);
       const tx = rupees((amt * num(t.tax_pct)) / 100);
-      lines.push({
-        key: `hotel_${st.key}_transfer`,
-        label: st.key === "before" ? `Transfer Bagdogra Airport to ${hotel.name}` : `Transfer ${hotel.name} to Bagdogra Airport`,
-        detail: `${inr(t.rate)} x ${vehicles} ${t.vehicle_type}`,
-        amount: amt,
-        gst_pct: num(t.tax_pct),
-        gst: tx,
-        group: "hotel",
-      });
+      lines.push({ key: `${o.key}_transfer${i ? `_${i}` : ""}`, label: tr.label, detail: `${inr(t.rate)} x ${vehicles} ${t.vehicle_type}`, amount: amt, gst_pct: num(t.tax_pct), gst: tx, group: "hotel" });
       hotelTotal += amt + tx;
+    });
+  };
+
+  // Delhi: the flights Delhi - Bagdogra (fare per person from Master data, or typed), and nights at a Delhi hotel
+  const delhi = m.delhi ?? null;
+  const fareTyped = plan.flight_fare_pp != null && Number.isFinite(plan.flight_fare_pp) ? plan.flight_fare_pp : null;
+  if (fareTyped != null && fareTyped < 0) errors.push("The flight fare cannot be below 0.");
+  const flightLine = (key: string, f: RpFlight | null, from: string, to: string, on: ISODate | null) => {
+    const fare = fareTyped != null ? Math.max(0, fareTyped) : f?.fare ?? null;
+    if (fare == null) {
+      errors.push(`No ${from} - ${to} flight in Sales Master data > Flight routes: add it there, or type the fare here.`);
+      return;
     }
+    const amount = rupees(fare * guests);
+    const no = f && fareTyped == null ? [f.airline, f.flight_no].filter(Boolean).join(" ") : "";
+    lines.push({ key, label: `Flight ${from} to ${to}${on ? `, ${Number(on.slice(8, 10))} ${MONTH[Number(on.slice(5, 7))].slice(0, 3)} ${on.slice(0, 4)}` : ""}`, detail: `${inr(fare)} per person x ${guests}${no ? ` (${no})` : ""}${fareTyped != null ? ", fare typed" : ""}`, amount, gst_pct: 0, gst: 0, group: "flight" });
+    hotelTotal += amount;
+  };
+  const delhiStay = (k: "delhi_before" | "delhi_after", d: RpDelhi, from: ISODate | null, when: string) => {
+    if (!d.flight || d.nights <= 0) return;
+    if (d.nights > 5) errors.push(`${when}: at most 5 nights in Delhi.`);
+    const hotel = delhi?.hotels.find((h) => h.property_id === d.hotel_id) ?? null;
+    if (!hotel) return void errors.push(`${when}: choose the Delhi hotel.`);
+    addStay({
+      key: k, hotel, roomId: d.room_id, from, n: d.nights, when, suffix: k === "delhi_before" ? "in Delhi on arrival" : "in Delhi before departure", airport: "Delhi Airport",
+      transfers: [
+        { on: from, label: `Transfer Delhi Airport to ${hotel.name}` },
+        { on: from ? addDays(from, d.nights) : null, label: `Transfer ${hotel.name} to Delhi Airport` },
+      ],
+    });
+  };
+  if (plan.delhi_before.flight) {
+    if (plan.arrive_airport !== "IXB") errors.push("Coming from Delhi: the flight lands at Bagdogra. Set the arrival airport to Bagdogra.");
+    delhiStay("delhi_before", plan.delhi_before, dates.arrival, "Delhi on arrival");
+    flightLine("flight_out", delhi?.out ?? null, "Delhi", "Bagdogra", dates.bagdogra_in);
+  }
+
+  // the partner hotel near Bagdogra, before and after the Outpost (one transfer: the other leg is in the package)
+  const stays = [
+    { key: "hotel_before", h: plan.hotel_before, from: dates.bagdogra_in, airport: plan.arrive_airport, when: "Hotel on arrival" },
+    { key: "hotel_after", h: plan.hotel_after, from: dates.check_out, airport: plan.depart_airport, when: "Hotel before departure" },
+  ];
+  for (const st of stays) {
+    const n = Math.floor(num(st.h?.nights));
+    if (n <= 0) continue;
+    if (n > 5) errors.push(`${st.when}: at most 5 nights.`);
+    if (st.airport !== "IXB") errors.push(`${st.when}: the partner hotel is near Bagdogra; the guests ${st.key === "hotel_before" ? "arrive" : "leave"} through Bhadrapur.`);
+    const hotel = m.hotel;
+    if (!hotel) {
+      errors.push(`${st.when}: no partner hotel "${s.hotel_property}" in Sales Master data.`);
+      continue;
+    }
+    addStay({
+      key: st.key, hotel, roomId: st.h.room_id, from: st.from, n, when: st.when, suffix: st.key === "hotel_before" ? "on arrival" : "before departure", airport: "Bagdogra Airport",
+      transfers: [st.key === "hotel_before" ? { on: st.from, label: `Transfer Bagdogra Airport to ${hotel.name}` } : { on: st.from ? addDays(st.from, n) : null, label: `Transfer ${hotel.name} to Bagdogra Airport` }],
+    });
+  }
+
+  if (plan.delhi_after.flight) {
+    if (plan.depart_airport !== "IXB") errors.push("Going back to Delhi: the flight leaves from Bagdogra. Set the departure airport to Bagdogra.");
+    flightLine("flight_back", delhi?.back ?? null, "Bagdogra", "Delhi", dates.delhi_back);
+    delhiStay("delhi_after", plan.delhi_after, dates.delhi_back, "Delhi before departure");
   }
 
   // ---- items typed by hand
@@ -268,6 +316,7 @@ export function priceRedPanda(plan: RpPlan, m: RpMaster): RpPrice {
     arrival: dates.arrival,
     departure: dates.departure,
     outpost: { check_in: dates.check_in, check_out: dates.check_out },
+    dates: { bagdogra_in: dates.bagdogra_in, delhi_back: dates.delhi_back },
     currency: "INR",
     payments,
   };

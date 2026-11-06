@@ -1,5 +1,4 @@
 // Finds gaps in master data that would stop the pricing engine from quoting.
-import { isRedPandaName } from "@/lib/redpanda/in-sales";
 import type { ISODate, PricingData } from "./types";
 import { addDays } from "./dates";
 import { cityParkIds, isCityHotel } from "../plan/cities";
@@ -19,8 +18,6 @@ export function checkData(d: PricingData, today: ISODate): HealthIssue[] {
   const cities = cityParkIds({ properties: d.properties, pricing: d });
   for (const p of d.properties) {
     if (isCityHotel(p, cities)) continue;
-    // Red Panda Outpost: priced from the Red Panda tariff (Red Panda > Master data), not room rates
-    if (isRedPandaName(p.name)) continue;
     const rooms = d.rooms.filter((r) => r.property_id === p.id);
     if (!rooms.length) {
       out.push({ level: "error", message: `${p.name}: no room categories.`, href: `/sales/admin/rooms?f_property_id=${p.id}` });
@@ -44,9 +41,6 @@ export function checkData(d: PricingData, today: ISODate): HealthIssue[] {
 
   for (const park of d.parks) {
     if (cities.has(park.id)) continue;
-    // Singalila: Red Panda Outpost only, no jeep safaris (its tracking is in the Red Panda package)
-    const parkLodges = d.properties.filter((p) => p.park_id === park.id);
-    if (parkLodges.length && parkLodges.every((p) => isRedPandaName(p.name))) continue;
     const lodges = d.properties.filter((p) => p.park_id === park.id);
     const rates = d.safariRates.filter((s) => s.park_id === park.id);
     if (!lodges.length) out.push({ level: "warning", message: `${park.name}: no lodge is linked to this park.`, href: "/sales/admin/properties" });
