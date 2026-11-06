@@ -60,11 +60,10 @@ function Stepper({ step, canGo, go }: { step: number; canGo: (n: number) => bool
   );
 }
 
-const OPEN_SALES = "Open in the Sales builder";
 const QUICK: Partial<Record<NonNullable<RpPending>, string[]>> = { nationality: ["Indian", "Foreign"], hotel_side: ["Before", "After"] };
 const HELLO: RpChatMessage = {
   role: "assistant",
-  text: "Paste the enquiry as it came in (email, WhatsApp, an agent's mail). I read the guests and their ages, nationality, an agent, the arrival date, nights, the airports (Bagdogra or Bhadrapur), rooms, a tour leader and nights at the hotel near Bagdogra, and ask for anything missing. You can also fill the form.",
+  text: "Paste the enquiry as it came in (email, WhatsApp, an agent's mail). I read the guests and their ages, nationality, an agent, the arrival date, nights, the airports (Bagdogra or Bhadrapur), rooms, a tour leader and nights at the hotel near Bagdogra, and ask for anything missing. You can also fill the form. A trip with Delhi, Kaziranga or our lodges too opens in the Sales builder by itself.",
 };
 
 export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: { master: RpMaster; initial: RpPlan; queryId: string | null; queryNo: string | null; status: string | null }) {
@@ -96,11 +95,9 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
     // Delhi, Kaziranga, our lodges: one place builds mixed trips (the Sales builder, Red Panda as a
     // stop). Not read here (the Red Panda reader would take Delhi's dates or nights as the Outpost's).
     if (mentionsOtherPlaces(text)) {
-      setPlan((p) => ({ ...p, enquiry: [p.enquiry, text].filter(Boolean).join("\n---\n").slice(-6000) }));
-      setMessages((m) => [
-        ...m,
-        { role: "assistant", text: "This trip has places besides Red Panda Outpost. Trips with Delhi, Kaziranga or our lodges are built in the Sales builder, with Red Panda Outpost as a stop at the same tariff; your enquiry goes with it. For a Red Panda only quote, write the trip without the other places.", quick: [OPEN_SALES] },
-      ]);
+      setMessages((m) => [...m, { role: "assistant", text: "This trip has other places too (Delhi, Kaziranga or our lodges): opening it in the Sales builder, where Red Panda Outpost is a stop at the same tariff..." }]);
+      const enquiry = [plan.enquiry, text].filter(Boolean).join("\n---\n");
+      router.push(`/sales/new?text=${encodeURIComponent(salesHandoffText({ ...plan, enquiry }, s))}`);
       return;
     }
     setBusy(true);
@@ -122,8 +119,7 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
       setBusy(false);
     }
   }
-  const openSales = () => router.push(`/sales/new?text=${encodeURIComponent(salesHandoffText(plan, s))}`);
-  const send = (text: string) => (text === OPEN_SALES ? openSales() : text === "Check the trip" && tripReady ? setStep(1) : void onSend(text));
+  const send = (text: string) => (text === "Check the trip" && tripReady ? setStep(1) : void onSend(text));
 
   function save(mode: "draft" | "final") {
     setMsg(null);
@@ -221,15 +217,6 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
         <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
           <div className="space-y-4 lg:sticky lg:top-24 lg:self-start">
             <RpChat messages={messages} busy={busy} onSend={send} />
-            {!queryId && (
-              <div className={`${ui.muted} space-y-2 p-4 text-sm`}>
-                <p className="font-semibold text-olive-800">Delhi, Kaziranga or our lodges too?</p>
-                <p className="text-sand-600">
-                  Most foreign guests land in Delhi first. Trips with other places are built in the Sales builder, with Red Panda Outpost as a stop at the same tariff. This quote stays Red Panda only.
-                </p>
-                <button type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} onClick={openSales}>{OPEN_SALES}</button>
-              </div>
-            )}
           </div>
           <div className="min-w-0 space-y-6">
         <section className={`${ui.card} space-y-4 p-5`}>

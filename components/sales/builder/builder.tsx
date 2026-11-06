@@ -118,7 +118,7 @@ export function Builder({
   isAdmin?: boolean; // Sales admin: a typed rate is saved straight into Master data
   startStep?: number;
   queryStatus?: string | null;
-  initialText?: string; // an enquiry to start from, in the message box (from the Red Panda builder)
+  initialText?: string; // an enquiry handed over from the Red Panda tab: read at once
 }) {
   const router = useRouter();
   const storageKey = `lq-itinerary-draft:${queryId ?? "new"}`;
@@ -209,6 +209,7 @@ export function Builder({
 
   // ---- autosave on this computer, and offer to restore after a crash or a closed tab
   useEffect(() => {
+    if (initialText) return; // a trip handed over from the Red Panda tab: start fresh, no restore offer
     try {
       const raw = window.localStorage.getItem(storageKey);
       if (!raw) return;
@@ -217,7 +218,19 @@ export function Builder({
     } catch {
       /* storage unavailable or corrupt: ignore */
     }
-  }, [storageKey, initial]);
+  }, [storageKey, initial, initialText]);
+
+  // A trip handed over from the Red Panda tab (Delhi, Kaziranga, our lodges with Red Panda Outpost):
+  // read at once, as if it was typed and sent here. Once only; the address is cleaned so a reload
+  // does not send it again.
+  const handedOver = useRef(false);
+  useEffect(() => {
+    if (!initialText || handedOver.current) return;
+    handedOver.current = true;
+    router.replace("/sales/new");
+    void send(initialText);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!dirty) return;
@@ -575,7 +588,7 @@ export function Builder({
               ))}
             </div>
             {tripMode === "chat" ? (
-              <ChatPanel messages={messages} busy={chatBusy} onSend={send} onQuick={quick} aiAvailable={aiAvailable} initialText={initialText} />
+              <ChatPanel messages={messages} busy={chatBusy} onSend={send} onQuick={quick} aiAvailable={aiAvailable} />
             ) : (
               <TripForm plan={plan} setPlan={setPlan} ctx={ctx} />
             )}

@@ -11,16 +11,14 @@ export function ChatPanel({
   onSend,
   onQuick,
   aiAvailable,
-  initialText = "",
 }: {
   messages: ChatMessage[];
   busy: boolean;
   onSend: (text: string) => void;
   onQuick: (q: QuickReply) => void;
   aiAvailable: boolean;
-  initialText?: string; // put in the message box to start (the Red Panda builder's "add other places")
 }) {
-  const [text, setText] = useState(initialText);
+  const [text, setText] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
