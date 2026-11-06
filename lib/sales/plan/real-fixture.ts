@@ -1,20 +1,38 @@
-// The owner's real Master data (export of 2 Nov 2026, real-master.data.ts) as the builder and the
+// The owner's real Master data (export of 5 Nov 2026, real-master.data.ts) as the builder and the
 // pricing engine see it: the same shape loadBuilderContext / loadPricingData give, so tests run on
 // what Pugdundee actually sells, not on made-up rows. The tariff is compiled the way load.ts does
-// (lodge exceptions win over it). Flight routes are not in the export: none here.
+// (lodge exceptions win over it).
+// With supabase/sales_itinerary_rules_2026-11-05.sql applied the way it changes the rows (owner,
+// 5 Nov 2026): our lodges' "... per BAR policy" rows are for foreign guests only (Indian guests get
+// the published Indian tariff), and the circuit's flight routes are in Master data at Rs 15,000.
 import type { PricingData } from "@/lib/sales/pricing/types";
 import { compileTariff, type TariffRow } from "@/lib/sales/pricing/tariff";
-import type { BuilderContext } from "./types";
+import type { BuilderContext, FlightRoute } from "./types";
 import { REAL_MASTER as M } from "./real-master.data";
+import { CIRCUIT_FLIGHTS, DOMESTIC_FLIGHT_FARE } from "./travel-rules";
 
 const plain = <T>(x: unknown) => JSON.parse(JSON.stringify(x)) as T;
 const rooms = plain<{ id: string; property_id: string; name: string; rate_category_id: string | null }[]>(M.rooms);
 const tariffRates = compileTariff(plain<TariffRow[]>(M.tariff), plain(M.calendar), plain(M.categories), rooms);
 
+// the SQL of 5 Nov: a "... per BAR policy" row of one of our own lodges, for all guests -> foreign guests
+const ownLodge = new Set(M.properties.filter((p) => p.kind === "own_lodge").map((p) => p.id as string));
+const roomLodge = new Map(rooms.map((r) => [r.id, r.property_id]));
+export const isBarRow = (r: { room_category_id: string; notes?: string | null; nationality?: string | null }) =>
+  ownLodge.has(roomLodge.get(r.room_category_id) ?? "") && /per BAR policy/i.test(r.notes ?? "") && (r.nationality ?? "all") === "all";
+// the export exactly as it is (before the SQL of 5 Nov): tests that compare before and after
+export const roomRatesAsExported = plain<PricingData["roomRates"]>(M.roomRates);
+const roomRates = roomRatesAsExported.map((r) => (isBarRow(r as never) ? { ...r, nationality: "foreign" as const } : r));
+
+// Master data > Flight routes after the SQL: every circuit flight at Rs 15,000 per person
+export const circuitRoutes: FlightRoute[] = CIRCUIT_FLIGHTS.map(([from_city, to_city], i) => ({
+  id: `F${i}`, from_city, to_city, airline: "", flight_no: "", depart_time: "", arrive_time: "", fare: DOMESTIC_FLIGHT_FARE, cabin: "Economy",
+}));
+
 const pricing = plain<PricingData>({
   properties: M.properties.map(({ id, name, park_id, kind }) => ({ id, name, park_id, kind })),
   rooms: rooms.map((r) => ({ id: r.id, property_id: r.property_id, name: r.name, max_adults: 2, max_children: 1, extra_bed: true })),
-  roomRates: [...plain<PricingData["roomRates"]>(M.roomRates), ...tariffRates],
+  roomRates: [...roomRates, ...tariffRates],
   parks: M.parks,
   closures: M.closures,
   safariRates: M.safariRates,
@@ -22,7 +40,7 @@ const pricing = plain<PricingData>({
   transferRates: M.transferRates,
   addons: M.addons,
   offers: M.offers,
-  settings: { markup_pct: 0, fx: { USD: 84 }, payment_slabs: null },
+  settings: { markup_pct: 0, fx: { USD: 84 }, payment_slabs: null, flight_fare_pp: DOMESTIC_FLIGHT_FARE },
 });
 
 export const realCtx: BuilderContext = {
@@ -33,6 +51,7 @@ export const realCtx: BuilderContext = {
   templates: [],
   content: [],
   cancellation: [],
+  flightRoutes: circuitRoutes,
 };
 
 // The owner's whole-circuit test enquiry (every destination, activity and transfer he sells).

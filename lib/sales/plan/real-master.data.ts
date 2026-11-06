@@ -1,11 +1,11 @@
-// GENERATED from the owner's Master data export of 2 Nov 2026 (Pugdundee_rates_2026-11-02.xlsx and the
-// add-ons list from sales_export_addons.sql). Do not edit by hand: regenerate from a new export.
-// Read from the export as it is; the only rules applied (not in the export): the lodges' kind (own:
-// CLAUDE.md's list; Iora Retreat partner; the rest city hotels), each city hotel's city, and a room's
-// tariff category from its name (Tree House rooms -> Tree House, Forest Suite, Deluxe Room, Ken River's
-// own categories, any other room of our lodges -> Cottage). Places "Delhi", "Agra", "Jaipur" are
-// airports, as the owner's missing-roads result listed them. Lodge exceptions' child rates come from
-// their note where it states them ("children 25%/40% of double"; free under 5 as the tariff).
+// GENERATED from the owner's Master data export (Pugdundee rates 2026-11-05.xlsx) by
+// scripts/real-master-from-export.ts. Do not edit by hand: regenerate from a new export.
+// Rate sheets come from the export as they are; lodges, rooms, places and parks are carried over
+// (not in the export): the lodges' kind (own: CLAUDE.md's list; Iora Retreat partner; the rest city
+// hotels), each city hotel's city, a room's tariff category from its name, "Delhi" / "Agra" / "Jaipur"
+// as airports (the owner's missing-roads result). Lodge exceptions' child rates come from their note
+// ("children 25%/40% of double"; free under 5 as the tariff). Flight routes are not in the export:
+// real-fixture.ts adds the circuit routes the SQL puts in Master data.
 /* eslint-disable */
 export const REAL_MASTER = {
  "parks": [
@@ -935,7 +935,7 @@ export const REAL_MASTER = {
    "id": "f3dd8924-30ef-4f1a-841c-664fadc5d9b3",
    "room_category_id": "R_denwa_backwater_escape_ac_cottage",
    "valid_from": "2027-02-01",
-   "valid_to": "2027-03-10",
+   "valid_to": "2027-03-18",
    "meal_plan": "AP",
    "rate_single": 18500,
    "rate_double": 22000,
@@ -971,7 +971,7 @@ export const REAL_MASTER = {
   {
    "id": "ee4de295-19e2-4550-93c3-a8d9397d03b5",
    "room_category_id": "R_denwa_backwater_escape_ac_cottage",
-   "valid_from": "2027-03-11",
+   "valid_from": "2027-03-19",
    "valid_to": "2027-03-22",
    "meal_plan": "AP",
    "rate_single": 20000,
@@ -5145,15 +5145,66 @@ export const REAL_MASTER = {
    "id": "4bee8247-9285-4fa6-9d67-82b2a9bf2189",
    "rate_category_id": "C_cottage",
    "nationality": "indian",
-   "season": "all",
+   "season": "high",
    "valid_from": "2026-10-01",
    "valid_to": "2027-09-30",
    "meal_plan": "AP",
-   "rate_single": 27000,
-   "rate_double": 30000,
-   "weekend_rate_single": null,
-   "weekend_rate_double": null,
-   "weekend_days": [],
+   "rate_single": 16500,
+   "rate_double": 19500,
+   "weekend_rate_single": 17500,
+   "weekend_rate_double": 20500,
+   "weekend_days": [
+    5,
+    6
+   ],
+   "extra_adult_pct": 40,
+   "child_free_under": 5,
+   "child_5_12_pct": 25,
+   "child_13_17_pct": 40,
+   "min_nights": 2,
+   "tax_pct": 18,
+   "rates_include_tax": false
+  },
+  {
+   "id": "7738bcc8-12f8-4632-a713-2fa180c4e1b4",
+   "rate_category_id": "C_cottage",
+   "nationality": "indian",
+   "season": "peak",
+   "valid_from": "2026-10-01",
+   "valid_to": "2027-09-30",
+   "rate_double": 22000,
+   "rate_single": 18500,
+   "weekend_rate_double": 22000,
+   "weekend_rate_single": 18500,
+   "weekend_days": [
+    5,
+    6
+   ],
+   "meal_plan": "AP",
+   "extra_adult_pct": 40,
+   "child_free_under": 5,
+   "child_5_12_pct": 25,
+   "child_13_17_pct": 40,
+   "min_nights": 2,
+   "tax_pct": 18,
+   "rates_include_tax": false
+  },
+  {
+   "id": "c6d028a5-f137-484e-880d-a4ba5b2b9363",
+   "rate_category_id": "C_cottage",
+   "nationality": "indian",
+   "season": "shoulder",
+   "valid_from": "2026-10-01",
+   "valid_to": "2027-09-30",
+   "rate_double": 16000,
+   "rate_single": 13000,
+   "weekend_rate_double": 17000,
+   "weekend_rate_single": 14000,
+   "weekend_days": [
+    5,
+    6
+   ],
+   "meal_plan": "AP",
    "extra_adult_pct": 40,
    "child_free_under": 5,
    "child_5_12_pct": 25,
@@ -5229,15 +5280,66 @@ export const REAL_MASTER = {
    "id": "b61cc787-0dbd-4813-80ef-314ac88c9cd8",
    "rate_category_id": "C_deluxe_room",
    "nationality": "indian",
-   "season": "all",
+   "season": "high",
    "valid_from": "2026-10-01",
    "valid_to": "2027-09-30",
    "meal_plan": "AP",
-   "rate_single": 21000,
-   "rate_double": 24000,
-   "weekend_rate_single": null,
-   "weekend_rate_double": null,
-   "weekend_days": [],
+   "rate_single": 20000,
+   "rate_double": 23500,
+   "weekend_rate_single": 21000,
+   "weekend_rate_double": 25000,
+   "weekend_days": [
+    5,
+    6
+   ],
+   "extra_adult_pct": 40,
+   "child_free_under": 5,
+   "child_5_12_pct": 25,
+   "child_13_17_pct": 40,
+   "min_nights": 2,
+   "tax_pct": 18,
+   "rates_include_tax": false
+  },
+  {
+   "id": "5acf6f5a-182f-4ff2-a30c-e8e60d5520b8",
+   "rate_category_id": "C_deluxe_room",
+   "nationality": "indian",
+   "season": "peak",
+   "valid_from": "2026-10-01",
+   "valid_to": "2027-09-30",
+   "rate_double": 18000,
+   "rate_single": 15000,
+   "weekend_rate_double": 18000,
+   "weekend_rate_single": 15000,
+   "weekend_days": [
+    5,
+    6
+   ],
+   "meal_plan": "AP",
+   "extra_adult_pct": 40,
+   "child_free_under": 5,
+   "child_5_12_pct": 25,
+   "child_13_17_pct": 40,
+   "min_nights": 2,
+   "tax_pct": 18,
+   "rates_include_tax": false
+  },
+  {
+   "id": "b8d6d973-dcda-4ceb-9c12-d15ba4b441c5",
+   "rate_category_id": "C_deluxe_room",
+   "nationality": "indian",
+   "season": "shoulder",
+   "valid_from": "2026-10-01",
+   "valid_to": "2027-09-30",
+   "rate_double": 14000,
+   "rate_single": 11000,
+   "weekend_rate_double": 15000,
+   "weekend_rate_single": 12000,
+   "weekend_days": [
+    5,
+    6
+   ],
+   "meal_plan": "AP",
    "extra_adult_pct": 40,
    "child_free_under": 5,
    "child_5_12_pct": 25,
@@ -5310,18 +5412,69 @@ export const REAL_MASTER = {
    "rates_include_tax": false
   },
   {
+   "id": "ccf2592a-fb93-42e6-bf43-842da0a47799",
+   "rate_category_id": "C_forest_suite",
+   "nationality": "indian",
+   "season": "high",
+   "valid_from": "2026-10-01",
+   "valid_to": "2027-09-30",
+   "rate_double": 23500,
+   "rate_single": 20000,
+   "weekend_rate_double": 25000,
+   "weekend_rate_single": 21000,
+   "weekend_days": [
+    5,
+    6
+   ],
+   "meal_plan": "AP",
+   "extra_adult_pct": 40,
+   "child_free_under": 5,
+   "child_5_12_pct": 25,
+   "child_13_17_pct": 40,
+   "min_nights": 2,
+   "tax_pct": 18,
+   "rates_include_tax": false
+  },
+  {
+   "id": "367b0b3f-b053-496c-af6e-4eb15ae3b60f",
+   "rate_category_id": "C_forest_suite",
+   "nationality": "indian",
+   "season": "peak",
+   "valid_from": "2026-10-01",
+   "valid_to": "2027-09-30",
+   "rate_double": 26000,
+   "rate_single": 22000,
+   "weekend_rate_double": 26000,
+   "weekend_rate_single": 22000,
+   "weekend_days": [
+    5,
+    6
+   ],
+   "meal_plan": "AP",
+   "extra_adult_pct": 40,
+   "child_free_under": 5,
+   "child_5_12_pct": 25,
+   "child_13_17_pct": 40,
+   "min_nights": 2,
+   "tax_pct": 18,
+   "rates_include_tax": false
+  },
+  {
    "id": "f5757a92-d3ff-4a4d-b154-8537fbe5697a",
    "rate_category_id": "C_forest_suite",
    "nationality": "indian",
-   "season": "all",
+   "season": "shoulder",
    "valid_from": "2026-10-01",
    "valid_to": "2027-09-30",
    "meal_plan": "AP",
-   "rate_single": 33000,
-   "rate_double": 37000,
-   "weekend_rate_single": null,
-   "weekend_rate_double": null,
-   "weekend_days": [],
+   "rate_single": 17000,
+   "rate_double": 20500,
+   "weekend_rate_single": 18000,
+   "weekend_rate_double": 22000,
+   "weekend_days": [
+    5,
+    6
+   ],
    "extra_adult_pct": 40,
    "child_free_under": 5,
    "child_5_12_pct": 25,
@@ -5342,7 +5495,10 @@ export const REAL_MASTER = {
    "rate_double": 18000,
    "weekend_rate_single": 20000,
    "weekend_rate_double": 20000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "extra_adult_pct": 0,
    "child_free_under": 5,
    "child_5_12_pct": 0,
@@ -5384,7 +5540,10 @@ export const REAL_MASTER = {
    "rate_double": 10500,
    "weekend_rate_single": 11500,
    "weekend_rate_double": 11500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "extra_adult_pct": 0,
    "child_free_under": 5,
    "child_5_12_pct": 0,
@@ -5426,7 +5585,10 @@ export const REAL_MASTER = {
    "rate_double": 10500,
    "weekend_rate_single": 11500,
    "weekend_rate_double": 11500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "extra_adult_pct": 0,
    "child_free_under": 5,
    "child_5_12_pct": 0,
@@ -5468,7 +5630,10 @@ export const REAL_MASTER = {
    "rate_double": 26000,
    "weekend_rate_single": 29000,
    "weekend_rate_double": 29000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "extra_adult_pct": 0,
    "child_free_under": 5,
    "child_5_12_pct": 0,
@@ -5510,7 +5675,10 @@ export const REAL_MASTER = {
    "rate_double": 16500,
    "weekend_rate_single": 17500,
    "weekend_rate_double": 17500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "extra_adult_pct": 0,
    "child_free_under": 5,
    "child_5_12_pct": 0,
@@ -5552,7 +5720,10 @@ export const REAL_MASTER = {
    "rate_double": 24000,
    "weekend_rate_single": 25000,
    "weekend_rate_double": 25000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "extra_adult_pct": 0,
    "child_free_under": 5,
    "child_5_12_pct": 0,
@@ -5649,15 +5820,66 @@ export const REAL_MASTER = {
    "id": "c35f7cf6-e53d-4a2c-91c9-b7bbfde0b32d",
    "rate_category_id": "C_tree_house",
    "nationality": "indian",
-   "season": "all",
+   "season": "high",
    "valid_from": "2026-10-01",
    "valid_to": "2027-09-30",
    "meal_plan": "AP",
-   "rate_single": 30000,
-   "rate_double": 33000,
-   "weekend_rate_single": null,
-   "weekend_rate_double": null,
-   "weekend_days": [],
+   "rate_single": 19000,
+   "rate_double": 22000,
+   "weekend_rate_single": 20000,
+   "weekend_rate_double": 23500,
+   "weekend_days": [
+    5,
+    6
+   ],
+   "extra_adult_pct": 40,
+   "child_free_under": 5,
+   "child_5_12_pct": 25,
+   "child_13_17_pct": 40,
+   "min_nights": 2,
+   "tax_pct": 18,
+   "rates_include_tax": false
+  },
+  {
+   "id": "46111637-1043-4d45-9ee5-69eaff3b00e6",
+   "rate_category_id": "C_tree_house",
+   "nationality": "indian",
+   "season": "peak",
+   "valid_from": "2026-10-01",
+   "valid_to": "2027-09-30",
+   "rate_double": 25000,
+   "rate_single": 21000,
+   "weekend_rate_double": 25000,
+   "weekend_rate_single": 21000,
+   "weekend_days": [
+    5,
+    6
+   ],
+   "meal_plan": "AP",
+   "extra_adult_pct": 40,
+   "child_free_under": 5,
+   "child_5_12_pct": 25,
+   "child_13_17_pct": 40,
+   "min_nights": 2,
+   "tax_pct": 18,
+   "rates_include_tax": false
+  },
+  {
+   "id": "04fd9bec-51da-4f8d-8f02-8cc808c86e68",
+   "rate_category_id": "C_tree_house",
+   "nationality": "indian",
+   "season": "shoulder",
+   "valid_from": "2026-10-01",
+   "valid_to": "2027-09-30",
+   "rate_double": 18500,
+   "rate_single": 15500,
+   "weekend_rate_double": 20000,
+   "weekend_rate_single": 16500,
+   "weekend_days": [
+    5,
+    6
+   ],
+   "meal_plan": "AP",
    "extra_adult_pct": 40,
    "child_free_under": 5,
    "child_5_12_pct": 25,
@@ -5669,136 +5891,271 @@ export const REAL_MASTER = {
  ],
  "calendar": [
   {
-   "calendar": "Ken River Lodge (long weekends)",
+   "calendar": "krl",
+   "nationality": "all",
    "season": "peak",
    "date_from": "2026-10-17",
-   "date_to": "2026-10-20"
+   "date_to": "2026-10-20",
+   "label": "Dussehra long weekend",
+   "active": true
   },
   {
-   "calendar": "Ken River Lodge (long weekends)",
+   "calendar": "krl",
+   "nationality": "all",
    "season": "peak",
    "date_from": "2026-11-06",
-   "date_to": "2026-11-14"
+   "date_to": "2026-11-14",
+   "label": "Diwali long weekend",
+   "active": true
   },
   {
-   "calendar": "Ken River Lodge (long weekends)",
+   "calendar": "krl",
+   "nationality": "all",
    "season": "peak",
    "date_from": "2026-12-21",
-   "date_to": "2027-01-04"
+   "date_to": "2027-01-04",
+   "label": "Christmas and New Year",
+   "active": true
   },
   {
-   "calendar": "Ken River Lodge (long weekends)",
+   "calendar": "krl",
+   "nationality": "all",
    "season": "peak",
    "date_from": "2027-03-19",
-   "date_to": "2027-03-22"
+   "date_to": "2027-03-22",
+   "label": "Holi long weekend",
+   "active": true
   },
   {
-   "calendar": "Pugdundee lodges",
+   "calendar": "pugdundee",
+   "nationality": "all",
    "season": "shoulder",
    "date_from": "2026-10-01",
-   "date_to": "2026-10-31"
+   "date_to": "2026-10-31",
+   "label": null,
+   "active": true
   },
   {
-   "calendar": "Pugdundee lodges",
+   "calendar": "pugdundee",
+   "nationality": "all",
    "season": "peak",
    "date_from": "2026-10-17",
-   "date_to": "2026-10-20"
+   "date_to": "2026-10-20",
+   "label": "Dussehra long weekend",
+   "active": true
   },
   {
-   "calendar": "Pugdundee lodges",
+   "calendar": "pugdundee",
+   "nationality": "all",
    "season": "high",
    "date_from": "2026-11-01",
-   "date_to": "2026-11-30"
+   "date_to": "2026-11-30",
+   "label": null,
+   "active": true
   },
   {
-   "calendar": "Pugdundee lodges",
+   "calendar": "pugdundee",
+   "nationality": "all",
    "season": "peak",
    "date_from": "2026-11-06",
-   "date_to": "2026-11-14"
+   "date_to": "2026-11-14",
+   "label": "Diwali long weekend",
+   "active": true
   },
   {
-   "calendar": "Pugdundee lodges",
+   "calendar": "pugdundee",
+   "nationality": "all",
    "season": "shoulder",
    "date_from": "2026-12-01",
-   "date_to": "2026-12-20"
+   "date_to": "2026-12-20",
+   "label": null,
+   "active": true
   },
   {
-   "calendar": "Pugdundee lodges",
+   "calendar": "pugdundee",
+   "nationality": "all",
    "season": "peak",
    "date_from": "2026-12-21",
-   "date_to": "2027-01-04"
+   "date_to": "2027-01-04",
+   "label": "Christmas and New Year",
+   "active": true
   },
   {
-   "calendar": "Pugdundee lodges",
+   "calendar": "pugdundee",
+   "nationality": "all",
    "season": "shoulder",
    "date_from": "2027-01-05",
-   "date_to": "2027-01-31"
+   "date_to": "2027-01-31",
+   "label": null,
+   "active": true
   },
   {
-   "calendar": "Pugdundee lodges",
+   "calendar": "pugdundee",
+   "nationality": "all",
    "season": "high",
    "date_from": "2027-02-01",
-   "date_to": "2027-03-09"
+   "date_to": "2027-03-10",
+   "label": null,
+   "active": true
   },
   {
-   "calendar": "Pugdundee lodges",
+   "calendar": "pugdundee",
+   "nationality": "all",
    "season": "peak",
-   "date_from": "2027-03-10",
-   "date_to": "2027-04-30"
+   "date_from": "2027-03-11",
+   "date_to": "2027-04-30",
+   "label": null,
+   "active": true
   },
   {
-   "calendar": "Pugdundee lodges",
+   "calendar": "pugdundee",
+   "nationality": "all",
    "season": "high",
    "date_from": "2027-05-01",
-   "date_to": "2027-05-15"
+   "date_to": "2027-05-15",
+   "label": null,
+   "active": true
   },
   {
-   "calendar": "Pugdundee lodges",
+   "calendar": "pugdundee",
+   "nationality": "all",
    "season": "shoulder",
    "date_from": "2027-05-16",
-   "date_to": "2027-06-30"
+   "date_to": "2027-06-30",
+   "label": null,
+   "active": true
+  },
+  {
+   "calendar": "pugdundee",
+   "nationality": "indian",
+   "season": "shoulder",
+   "date_from": "2026-10-01",
+   "date_to": "2026-10-31",
+   "label": null,
+   "active": true
+  },
+  {
+   "calendar": "pugdundee",
+   "nationality": "indian",
+   "season": "peak",
+   "date_from": "2026-10-17",
+   "date_to": "2026-10-20",
+   "label": "Dussehra long weekend",
+   "active": true
+  },
+  {
+   "calendar": "pugdundee",
+   "nationality": "indian",
+   "season": "high",
+   "date_from": "2026-11-01",
+   "date_to": "2026-11-30",
+   "label": null,
+   "active": true
+  },
+  {
+   "calendar": "pugdundee",
+   "nationality": "indian",
+   "season": "peak",
+   "date_from": "2026-11-06",
+   "date_to": "2026-11-14",
+   "label": "Diwali long weekend",
+   "active": true
+  },
+  {
+   "calendar": "pugdundee",
+   "nationality": "indian",
+   "season": "shoulder",
+   "date_from": "2026-12-01",
+   "date_to": "2026-12-20",
+   "label": null,
+   "active": true
+  },
+  {
+   "calendar": "pugdundee",
+   "nationality": "indian",
+   "season": "peak",
+   "date_from": "2026-12-21",
+   "date_to": "2027-01-04",
+   "label": "Christmas and New Year",
+   "active": true
+  },
+  {
+   "calendar": "pugdundee",
+   "nationality": "indian",
+   "season": "shoulder",
+   "date_from": "2027-01-05",
+   "date_to": "2027-01-31",
+   "label": null,
+   "active": true
+  },
+  {
+   "calendar": "pugdundee",
+   "nationality": "indian",
+   "season": "high",
+   "date_from": "2027-02-01",
+   "date_to": "2027-05-15",
+   "label": null,
+   "active": true
+  },
+  {
+   "calendar": "pugdundee",
+   "nationality": "indian",
+   "season": "peak",
+   "date_from": "2027-03-19",
+   "date_to": "2027-03-22",
+   "label": "Holi long weekend",
+   "active": true
+  },
+  {
+   "calendar": "pugdundee",
+   "nationality": "indian",
+   "season": "shoulder",
+   "date_from": "2027-05-16",
+   "date_to": "2027-06-30",
+   "label": null,
+   "active": true
   }
  ],
  "categories": [
   {
    "id": "C_cottage",
-   "calendar": "Pugdundee lodges"
+   "calendar": "pugdundee"
   },
   {
    "id": "C_deluxe_room",
-   "calendar": "Pugdundee lodges"
+   "calendar": "pugdundee"
   },
   {
    "id": "C_forest_suite",
-   "calendar": "Pugdundee lodges"
+   "calendar": "pugdundee"
   },
   {
    "id": "C_ken_river_ac_family_cottage_2_bedrooms",
-   "calendar": "Ken River Lodge (long weekends)"
+   "calendar": "krl"
   },
   {
    "id": "C_ken_river_ac_mud_house_jhinna_camp",
-   "calendar": "Ken River Lodge (long weekends)"
+   "calendar": "krl"
   },
   {
    "id": "C_ken_river_ac_premium_hut",
-   "calendar": "Ken River Lodge (long weekends)"
+   "calendar": "krl"
   },
   {
    "id": "C_ken_river_ac_villa_cottage_3_bedrooms",
-   "calendar": "Ken River Lodge (long weekends)"
+   "calendar": "krl"
   },
   {
    "id": "C_ken_river_stilted_river_facing_cottage",
-   "calendar": "Ken River Lodge (long weekends)"
+   "calendar": "krl"
   },
   {
    "id": "C_ken_river_stilted_river_facing_family_cottage",
-   "calendar": "Ken River Lodge (long weekends)"
+   "calendar": "krl"
   },
   {
    "id": "C_tree_house",
-   "calendar": "Pugdundee lodges"
+   "calendar": "pugdundee"
   }
  ],
  "safariRates": [
@@ -5858,7 +6215,10 @@ export const REAL_MASTER = {
    "valid_to": "2026-12-20",
    "weekday_rate": 14500,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -5880,7 +6240,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-01-02",
    "weekday_rate": 15000,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -5902,7 +6265,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 14500,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -5924,7 +6290,10 @@ export const REAL_MASTER = {
    "valid_to": "2026-12-20",
    "weekday_rate": 14500,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -5946,7 +6315,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-01-02",
    "weekday_rate": 15000,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -5968,7 +6340,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 14500,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -5990,7 +6365,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 15000,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 2500,
    "includes_naturalist": false,
@@ -6012,7 +6390,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 15000,
    "weekend_rate": null,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6034,7 +6415,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 15000,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 2500,
    "includes_naturalist": false,
@@ -6056,7 +6440,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 15000,
    "weekend_rate": null,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6078,7 +6465,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 17500,
    "weekend_rate": 18500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 2500,
    "includes_naturalist": false,
@@ -6100,7 +6490,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 17500,
    "weekend_rate": 18500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6122,7 +6515,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 17500,
    "weekend_rate": 18500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 2500,
    "includes_naturalist": false,
@@ -6144,7 +6540,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 17500,
    "weekend_rate": 18500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6166,7 +6565,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 13500,
    "weekend_rate": null,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6188,7 +6590,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 13500,
    "weekend_rate": null,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6210,7 +6615,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 14500,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6232,7 +6640,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 14500,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6298,7 +6709,10 @@ export const REAL_MASTER = {
    "valid_to": "2026-12-20",
    "weekday_rate": 14500,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6320,7 +6734,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-01-02",
    "weekday_rate": 15000,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6342,7 +6759,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 14500,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6364,7 +6784,10 @@ export const REAL_MASTER = {
    "valid_to": "2026-12-20",
    "weekday_rate": 14500,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6386,7 +6809,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-01-02",
    "weekday_rate": 15000,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6408,7 +6834,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 14500,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6430,7 +6859,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 15000,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 2500,
    "includes_naturalist": false,
@@ -6452,7 +6884,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 15000,
    "weekend_rate": null,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6474,7 +6909,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 15000,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 2500,
    "includes_naturalist": false,
@@ -6496,7 +6934,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 15000,
    "weekend_rate": null,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6518,7 +6959,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 17500,
    "weekend_rate": 18500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 2500,
    "includes_naturalist": false,
@@ -6540,7 +6984,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 17500,
    "weekend_rate": 18500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6562,7 +7009,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 17500,
    "weekend_rate": 18500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 2500,
    "includes_naturalist": false,
@@ -6584,7 +7034,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 17500,
    "weekend_rate": 18500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6606,7 +7059,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 13500,
    "weekend_rate": null,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6628,7 +7084,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 13500,
    "weekend_rate": null,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6650,7 +7109,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 14500,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6672,7 +7134,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 14500,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6727,6 +7192,31 @@ export const REAL_MASTER = {
    "book_max_days": null
   },
   {
+   "id": "22f3a499-1d37-4f82-a30b-68d05cb0b629",
+   "park_id": "P_panna_tiger_reserve",
+   "zone": "core",
+   "session": "afternoon",
+   "vehicle_type": "exclusive_jeep",
+   "pricing_unit": "per_vehicle",
+   "nationality": "all",
+   "valid_from": "2026-07-01",
+   "valid_to": "2027-06-30",
+   "weekday_rate": 9400,
+   "weekend_rate": 10000,
+   "weekend_days": [
+    0,
+    6
+   ],
+   "max_pax": 6,
+   "includes_naturalist": false,
+   "naturalist_fee": 0,
+   "guide_fee": 0,
+   "book_min_days": null,
+   "book_max_days": null,
+   "tax_pct": 0,
+   "active": false
+  },
+  {
    "id": "59c6add2-2cf2-43ae-9024-f234659d3b0c",
    "park_id": "P_panna_tiger_reserve",
    "zone": "core",
@@ -6738,7 +7228,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-09-30",
    "weekday_rate": 15000,
    "weekend_rate": 16000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": true,
@@ -6747,6 +7240,31 @@ export const REAL_MASTER = {
    "active": true,
    "book_min_days": null,
    "book_max_days": null
+  },
+  {
+   "id": "bcc4b2f1-cd52-4e0c-b1e5-375009ad234d",
+   "park_id": "P_panna_tiger_reserve",
+   "zone": "core",
+   "session": "morning",
+   "vehicle_type": "exclusive_jeep",
+   "pricing_unit": "per_vehicle",
+   "nationality": "all",
+   "valid_from": "2026-07-01",
+   "valid_to": "2027-06-30",
+   "weekday_rate": 9400,
+   "weekend_rate": 10000,
+   "weekend_days": [
+    0,
+    6
+   ],
+   "max_pax": 6,
+   "includes_naturalist": false,
+   "naturalist_fee": 0,
+   "guide_fee": 0,
+   "book_min_days": null,
+   "book_max_days": null,
+   "tax_pct": 0,
+   "active": false
   },
   {
    "id": "f15e5c40-6675-47ef-8aef-041145ec6aae",
@@ -6760,7 +7278,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-09-30",
    "weekday_rate": 15000,
    "weekend_rate": 16000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": true,
@@ -6826,7 +7347,10 @@ export const REAL_MASTER = {
    "valid_to": "2026-12-20",
    "weekday_rate": 14500,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6848,7 +7372,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-01-02",
    "weekday_rate": 15000,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6870,7 +7397,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 14500,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6892,7 +7422,10 @@ export const REAL_MASTER = {
    "valid_to": "2026-12-20",
    "weekday_rate": 14500,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6914,7 +7447,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-01-02",
    "weekday_rate": 15000,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6936,7 +7472,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 14500,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -6958,7 +7497,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 15000,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 2500,
    "includes_naturalist": false,
@@ -6980,7 +7522,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 15000,
    "weekend_rate": null,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7002,7 +7547,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 15000,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 2500,
    "includes_naturalist": false,
@@ -7024,7 +7572,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 15000,
    "weekend_rate": null,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7046,7 +7597,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 17500,
    "weekend_rate": 18500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 2500,
    "includes_naturalist": false,
@@ -7068,7 +7622,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 17500,
    "weekend_rate": 18500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7090,7 +7647,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 17500,
    "weekend_rate": 18500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 2500,
    "includes_naturalist": false,
@@ -7112,7 +7672,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 17500,
    "weekend_rate": 18500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7134,7 +7697,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 13500,
    "weekend_rate": null,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7156,7 +7722,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 13500,
    "weekend_rate": null,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7178,7 +7747,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 14500,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7200,7 +7772,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 14500,
    "weekend_rate": 15000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7266,7 +7841,10 @@ export const REAL_MASTER = {
    "valid_to": "2026-12-20",
    "weekday_rate": 13500,
    "weekend_rate": 14000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7288,7 +7866,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-01-02",
    "weekday_rate": 14000,
    "weekend_rate": 14000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7310,7 +7891,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 13500,
    "weekend_rate": 14000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7332,7 +7916,10 @@ export const REAL_MASTER = {
    "valid_to": "2026-12-20",
    "weekday_rate": 13500,
    "weekend_rate": 14000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7354,7 +7941,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-01-02",
    "weekday_rate": 14000,
    "weekend_rate": 14000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7376,7 +7966,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 13500,
    "weekend_rate": 14000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7398,7 +7991,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 14000,
    "weekend_rate": 14000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 2500,
    "includes_naturalist": false,
@@ -7420,7 +8016,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 14000,
    "weekend_rate": null,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7442,7 +8041,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 14000,
    "weekend_rate": 14000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 2500,
    "includes_naturalist": false,
@@ -7464,7 +8066,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 14000,
    "weekend_rate": null,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7486,7 +8091,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 16500,
    "weekend_rate": 17500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 2500,
    "includes_naturalist": false,
@@ -7508,7 +8116,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 16500,
    "weekend_rate": 17500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7530,7 +8141,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 16500,
    "weekend_rate": 17500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 2500,
    "includes_naturalist": false,
@@ -7552,7 +8166,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 16500,
    "weekend_rate": 17500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7574,7 +8191,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 12500,
    "weekend_rate": null,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7596,7 +8216,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 12500,
    "weekend_rate": null,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7618,7 +8241,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 13500,
    "weekend_rate": 14000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7640,7 +8266,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 13500,
    "weekend_rate": 14000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7662,7 +8291,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 13500,
    "weekend_rate": 14500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 2500,
    "includes_naturalist": false,
@@ -7684,7 +8316,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 13500,
    "weekend_rate": 14500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7706,7 +8341,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 13500,
    "weekend_rate": 14500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 2500,
    "includes_naturalist": false,
@@ -7728,7 +8366,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 13500,
    "weekend_rate": 14500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7737,28 +8378,6 @@ export const REAL_MASTER = {
    "active": true,
    "book_min_days": null,
    "book_max_days": null
-  },
-  {
-   "id": "4aae6e8a-08ea-45b8-abc9-47e2f1df37bf",
-   "park_id": "P_tadoba_andhari_tiger_reserve",
-   "zone": "core",
-   "vehicle_type": "exclusive_jeep",
-   "session": "afternoon",
-   "pricing_unit": "per_vehicle",
-   "nationality": "foreign",
-   "valid_from": "2026-10-01",
-   "valid_to": "2027-06-30",
-   "weekday_rate": 14500,
-   "weekend_rate": 19000,
-   "weekend_days": [],
-   "max_pax": 6,
-   "naturalist_fee": 2500,
-   "includes_naturalist": false,
-   "guide_fee": 0,
-   "tax_pct": 5,
-   "active": true,
-   "book_min_days": 60,
-   "book_max_days": 120
   },
   {
    "id": "9ee1eb3a-2a49-4739-a4ea-91970bf8b893",
@@ -7772,37 +8391,43 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 11500,
    "weekend_rate": 12500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 2500,
    "includes_naturalist": false,
    "guide_fee": 0,
    "tax_pct": 5,
    "active": true,
-   "book_min_days": 4,
+   "book_min_days": 1,
    "book_max_days": 59
   },
   {
-   "id": "4fce0b11-fd6b-4152-8916-4b469a63f5d0",
+   "id": "4aae6e8a-08ea-45b8-abc9-47e2f1df37bf",
    "park_id": "P_tadoba_andhari_tiger_reserve",
    "zone": "core",
    "vehicle_type": "exclusive_jeep",
    "session": "afternoon",
    "pricing_unit": "per_vehicle",
    "nationality": "foreign",
-   "valid_from": "2027-07-01",
-   "valid_to": "2028-06-30",
-   "weekday_rate": 11500,
-   "weekend_rate": 12500,
-   "weekend_days": [],
+   "valid_from": "2026-10-01",
+   "valid_to": "2027-06-30",
+   "weekday_rate": 14500,
+   "weekend_rate": 19000,
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
-   "naturalist_fee": 0,
+   "naturalist_fee": 2500,
    "includes_naturalist": false,
    "guide_fee": 0,
    "tax_pct": 5,
    "active": true,
-   "book_min_days": 4,
-   "book_max_days": 59
+   "book_min_days": 60,
+   "book_max_days": 120
   },
   {
    "id": "03495ab9-9da7-4286-a73c-1e37edfe107c",
@@ -7816,7 +8441,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 14500,
    "weekend_rate": 19000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7827,26 +8455,29 @@ export const REAL_MASTER = {
    "book_max_days": 120
   },
   {
-   "id": "31f30638-7f85-49ca-837b-3cab4c088da0",
+   "id": "4fce0b11-fd6b-4152-8916-4b469a63f5d0",
    "park_id": "P_tadoba_andhari_tiger_reserve",
    "zone": "core",
    "vehicle_type": "exclusive_jeep",
-   "session": "morning",
+   "session": "afternoon",
    "pricing_unit": "per_vehicle",
    "nationality": "foreign",
-   "valid_from": "2026-10-01",
-   "valid_to": "2027-06-30",
-   "weekday_rate": 14500,
-   "weekend_rate": 19000,
-   "weekend_days": [],
+   "valid_from": "2027-07-01",
+   "valid_to": "2028-06-30",
+   "weekday_rate": 11500,
+   "weekend_rate": 12500,
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
-   "naturalist_fee": 2500,
+   "naturalist_fee": 0,
    "includes_naturalist": false,
    "guide_fee": 0,
    "tax_pct": 5,
    "active": true,
-   "book_min_days": 60,
-   "book_max_days": 120
+   "book_min_days": 1,
+   "book_max_days": 59
   },
   {
    "id": "b636975d-a257-4a01-8d8c-290cdee368d3",
@@ -7860,37 +8491,43 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 11500,
    "weekend_rate": 12500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 2500,
    "includes_naturalist": false,
    "guide_fee": 0,
    "tax_pct": 5,
    "active": true,
-   "book_min_days": 4,
+   "book_min_days": 1,
    "book_max_days": 59
   },
   {
-   "id": "86e7c9d3-2194-4889-b756-8909c76b8dfe",
+   "id": "31f30638-7f85-49ca-837b-3cab4c088da0",
    "park_id": "P_tadoba_andhari_tiger_reserve",
    "zone": "core",
    "vehicle_type": "exclusive_jeep",
    "session": "morning",
    "pricing_unit": "per_vehicle",
    "nationality": "foreign",
-   "valid_from": "2027-07-01",
-   "valid_to": "2028-06-30",
-   "weekday_rate": 11500,
-   "weekend_rate": 12500,
-   "weekend_days": [],
+   "valid_from": "2026-10-01",
+   "valid_to": "2027-06-30",
+   "weekday_rate": 14500,
+   "weekend_rate": 19000,
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
-   "naturalist_fee": 0,
+   "naturalist_fee": 2500,
    "includes_naturalist": false,
    "guide_fee": 0,
    "tax_pct": 5,
    "active": true,
-   "book_min_days": 4,
-   "book_max_days": 59
+   "book_min_days": 60,
+   "book_max_days": 120
   },
   {
    "id": "4dcb9fe8-c9e5-429c-bfe3-371cbc0a0403",
@@ -7904,7 +8541,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 14500,
    "weekend_rate": 19000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7913,6 +8553,31 @@ export const REAL_MASTER = {
    "active": true,
    "book_min_days": 60,
    "book_max_days": 120
+  },
+  {
+   "id": "86e7c9d3-2194-4889-b756-8909c76b8dfe",
+   "park_id": "P_tadoba_andhari_tiger_reserve",
+   "zone": "core",
+   "vehicle_type": "exclusive_jeep",
+   "session": "morning",
+   "pricing_unit": "per_vehicle",
+   "nationality": "foreign",
+   "valid_from": "2027-07-01",
+   "valid_to": "2028-06-30",
+   "weekday_rate": 11500,
+   "weekend_rate": 12500,
+   "weekend_days": [
+    0,
+    6
+   ],
+   "max_pax": 6,
+   "naturalist_fee": 0,
+   "includes_naturalist": false,
+   "guide_fee": 0,
+   "tax_pct": 5,
+   "active": true,
+   "book_min_days": 1,
+   "book_max_days": 59
   },
   {
    "id": "c8c5946e-823f-4c66-95e4-2491792a3c72",
@@ -7926,7 +8591,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 13000,
    "weekend_rate": 14000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7948,7 +8616,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 13000,
    "weekend_rate": 14000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7970,7 +8641,10 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 13000,
    "weekend_rate": 14000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -7992,7 +8666,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 13000,
    "weekend_rate": 14000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -8014,14 +8691,17 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 11000,
    "weekend_rate": 12000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
    "guide_fee": 0,
    "tax_pct": 5,
    "active": true,
-   "book_min_days": 4,
+   "book_min_days": 1,
    "book_max_days": 59
   },
   {
@@ -8036,37 +8716,18 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 14000,
    "weekend_rate": 18500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
    "guide_fee": 0,
    "tax_pct": 5,
    "active": true,
-   "book_min_days": null,
-   "book_max_days": null
-  },
-  {
-   "id": "43938b02-3f09-46a1-a978-449d2fc45e52",
-   "park_id": "P_tadoba_andhari_tiger_reserve",
-   "zone": "core",
-   "vehicle_type": "exclusive_jeep",
-   "session": "afternoon",
-   "pricing_unit": "per_vehicle",
-   "nationality": "indian",
-   "valid_from": "2027-07-01",
-   "valid_to": "2028-06-30",
-   "weekday_rate": 11000,
-   "weekend_rate": 12000,
-   "weekend_days": [],
-   "max_pax": 6,
-   "naturalist_fee": 0,
-   "includes_naturalist": false,
-   "guide_fee": 0,
-   "tax_pct": 5,
-   "active": true,
-   "book_min_days": 4,
-   "book_max_days": 59
+   "book_min_days": 60,
+   "book_max_days": 120
   },
   {
    "id": "f8eeedaf-13a1-4feb-acd4-78aed524b350",
@@ -8080,7 +8741,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 14000,
    "weekend_rate": 18500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -8089,6 +8753,31 @@ export const REAL_MASTER = {
    "active": true,
    "book_min_days": 60,
    "book_max_days": 120
+  },
+  {
+   "id": "43938b02-3f09-46a1-a978-449d2fc45e52",
+   "park_id": "P_tadoba_andhari_tiger_reserve",
+   "zone": "core",
+   "vehicle_type": "exclusive_jeep",
+   "session": "afternoon",
+   "pricing_unit": "per_vehicle",
+   "nationality": "indian",
+   "valid_from": "2027-07-01",
+   "valid_to": "2028-06-30",
+   "weekday_rate": 11000,
+   "weekend_rate": 12000,
+   "weekend_days": [
+    0,
+    6
+   ],
+   "max_pax": 6,
+   "naturalist_fee": 0,
+   "includes_naturalist": false,
+   "guide_fee": 0,
+   "tax_pct": 5,
+   "active": true,
+   "book_min_days": 1,
+   "book_max_days": 59
   },
   {
    "id": "dce483c4-35aa-443d-b8f5-6d63e4406968",
@@ -8102,14 +8791,17 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 11000,
    "weekend_rate": 12000,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
    "guide_fee": 0,
    "tax_pct": 5,
    "active": true,
-   "book_min_days": 4,
+   "book_min_days": 1,
    "book_max_days": 59
   },
   {
@@ -8124,37 +8816,18 @@ export const REAL_MASTER = {
    "valid_to": "2027-06-30",
    "weekday_rate": 14000,
    "weekend_rate": 18500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
    "guide_fee": 0,
    "tax_pct": 5,
    "active": true,
-   "book_min_days": null,
-   "book_max_days": null
-  },
-  {
-   "id": "13798cdd-6d91-41b1-ab6f-a6e7348605c5",
-   "park_id": "P_tadoba_andhari_tiger_reserve",
-   "zone": "core",
-   "vehicle_type": "exclusive_jeep",
-   "session": "morning",
-   "pricing_unit": "per_vehicle",
-   "nationality": "indian",
-   "valid_from": "2027-07-01",
-   "valid_to": "2028-06-30",
-   "weekday_rate": 11000,
-   "weekend_rate": 12000,
-   "weekend_days": [],
-   "max_pax": 6,
-   "naturalist_fee": 0,
-   "includes_naturalist": false,
-   "guide_fee": 0,
-   "tax_pct": 5,
-   "active": true,
-   "book_min_days": 4,
-   "book_max_days": 59
+   "book_min_days": 60,
+   "book_max_days": 120
   },
   {
    "id": "f0043e00-4d6f-4629-aa62-3ce3533bdf29",
@@ -8168,7 +8841,10 @@ export const REAL_MASTER = {
    "valid_to": "2028-06-30",
    "weekday_rate": 14000,
    "weekend_rate": 18500,
-   "weekend_days": [],
+   "weekend_days": [
+    0,
+    6
+   ],
    "max_pax": 6,
    "naturalist_fee": 0,
    "includes_naturalist": false,
@@ -8177,355 +8853,390 @@ export const REAL_MASTER = {
    "active": true,
    "book_min_days": 60,
    "book_max_days": 120
+  },
+  {
+   "id": "13798cdd-6d91-41b1-ab6f-a6e7348605c5",
+   "park_id": "P_tadoba_andhari_tiger_reserve",
+   "zone": "core",
+   "vehicle_type": "exclusive_jeep",
+   "session": "morning",
+   "pricing_unit": "per_vehicle",
+   "nationality": "indian",
+   "valid_from": "2027-07-01",
+   "valid_to": "2028-06-30",
+   "weekday_rate": 11000,
+   "weekend_rate": 12000,
+   "weekend_days": [
+    0,
+    6
+   ],
+   "max_pax": 6,
+   "naturalist_fee": 0,
+   "includes_naturalist": false,
+   "guide_fee": 0,
+   "tax_pct": 5,
+   "active": true,
+   "book_min_days": 1,
+   "book_max_days": 59
   }
  ],
  "closures": [
   {
    "park_id": "P_bandhavgarh_national_park",
-   "zone": "core",
    "closure_type": "weekly",
-   "weekday": 3,
+   "zone": "core",
    "session": "afternoon",
+   "weekday": 3,
    "date_from": null,
    "date_to": null,
    "label": "Wednesday afternoon closure"
   },
   {
    "park_id": "P_bandhavgarh_national_park",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2026-11-08",
    "date_to": "2026-11-08",
    "label": "Diwali"
   },
   {
    "park_id": "P_bandhavgarh_national_park",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2027-03-22",
    "date_to": "2027-03-22",
    "label": "Holi"
   },
   {
    "park_id": "P_bandhavgarh_national_park",
-   "zone": "core",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "core",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2027-07-01",
    "date_to": "2027-09-30",
    "label": "monsoon closure, July to September"
   },
   {
    "park_id": "P_bandhavgarh_national_park",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2027-10-29",
    "date_to": "2027-10-29",
    "label": "Diwali"
   },
   {
    "park_id": "P_bandhavgarh_national_park",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2028-03-11",
    "date_to": "2028-03-11",
    "label": "Holi"
   },
   {
    "park_id": "P_kanha_national_park",
-   "zone": "core",
    "closure_type": "weekly",
-   "weekday": 3,
+   "zone": "core",
    "session": "afternoon",
+   "weekday": 3,
    "date_from": null,
    "date_to": null,
    "label": "Wednesday afternoon closure"
   },
   {
    "park_id": "P_kanha_national_park",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2026-11-08",
    "date_to": "2026-11-08",
    "label": "Diwali"
   },
   {
    "park_id": "P_kanha_national_park",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2027-03-22",
    "date_to": "2027-03-22",
    "label": "Holi"
   },
   {
    "park_id": "P_kanha_national_park",
-   "zone": "core",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "core",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2027-07-01",
    "date_to": "2027-09-30",
    "label": "monsoon closure, July to September"
   },
   {
    "park_id": "P_kanha_national_park",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2027-10-29",
    "date_to": "2027-10-29",
    "label": "Diwali"
   },
   {
    "park_id": "P_kanha_national_park",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2028-03-11",
    "date_to": "2028-03-11",
    "label": "Holi"
   },
   {
+   "park_id": "P_kaziranga_national_park",
+   "closure_type": "date_range",
+   "zone": "all",
+   "session": "full_day",
+   "weekday": null,
+   "date_from": "2027-06-01",
+   "date_to": "2027-09-30",
+   "label": "Monsoon closure (reopens 1 October)"
+  },
+  {
    "park_id": "P_panna_tiger_reserve",
-   "zone": "core",
    "closure_type": "weekly",
-   "weekday": 3,
+   "zone": "core",
    "session": "afternoon",
+   "weekday": 3,
    "date_from": null,
    "date_to": null,
    "label": "Wednesday afternoon closure"
   },
   {
    "park_id": "P_panna_tiger_reserve",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2026-11-08",
    "date_to": "2026-11-08",
    "label": "Diwali"
   },
   {
    "park_id": "P_panna_tiger_reserve",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2027-03-22",
    "date_to": "2027-03-22",
    "label": "Holi"
   },
   {
    "park_id": "P_panna_tiger_reserve",
-   "zone": "core",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "core",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2027-07-01",
    "date_to": "2027-09-30",
    "label": "monsoon closure, July to September"
   },
   {
    "park_id": "P_panna_tiger_reserve",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2027-10-29",
    "date_to": "2027-10-29",
    "label": "Diwali"
   },
   {
    "park_id": "P_panna_tiger_reserve",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2028-03-11",
    "date_to": "2028-03-11",
    "label": "Holi"
   },
   {
    "park_id": "P_pench_national_park",
-   "zone": "core",
    "closure_type": "weekly",
-   "weekday": 3,
+   "zone": "core",
    "session": "afternoon",
+   "weekday": 3,
    "date_from": null,
    "date_to": null,
    "label": "Wednesday afternoon closure"
   },
   {
    "park_id": "P_pench_national_park",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2026-11-08",
    "date_to": "2026-11-08",
    "label": "Diwali"
   },
   {
    "park_id": "P_pench_national_park",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2027-03-22",
    "date_to": "2027-03-22",
    "label": "Holi"
   },
   {
    "park_id": "P_pench_national_park",
-   "zone": "core",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "core",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2027-07-01",
    "date_to": "2027-09-30",
    "label": "monsoon closure, July to September"
   },
   {
    "park_id": "P_pench_national_park",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2027-10-29",
    "date_to": "2027-10-29",
    "label": "Diwali"
   },
   {
    "park_id": "P_pench_national_park",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2028-03-11",
    "date_to": "2028-03-11",
    "label": "Holi"
   },
   {
    "park_id": "P_satpura_tiger_reserve",
-   "zone": "core",
    "closure_type": "weekly",
-   "weekday": 3,
+   "zone": "core",
    "session": "afternoon",
+   "weekday": 3,
    "date_from": null,
    "date_to": null,
    "label": "Wednesday afternoon closure"
   },
   {
    "park_id": "P_satpura_tiger_reserve",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2026-11-08",
    "date_to": "2026-11-08",
    "label": "Diwali"
   },
   {
    "park_id": "P_satpura_tiger_reserve",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2027-03-22",
    "date_to": "2027-03-22",
    "label": "Holi"
   },
   {
    "park_id": "P_satpura_tiger_reserve",
-   "zone": "core",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "core",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2027-07-01",
    "date_to": "2027-09-30",
    "label": "monsoon closure, July to September"
   },
   {
    "park_id": "P_satpura_tiger_reserve",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2027-10-29",
    "date_to": "2027-10-29",
    "label": "Diwali"
   },
   {
    "park_id": "P_satpura_tiger_reserve",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2028-03-11",
    "date_to": "2028-03-11",
    "label": "Holi"
   },
   {
    "park_id": "P_tadoba_andhari_tiger_reserve",
-   "zone": "core",
    "closure_type": "weekly",
-   "weekday": 2,
+   "zone": "core",
    "session": "full_day",
+   "weekday": 2,
    "date_from": null,
    "date_to": null,
    "label": "Core gates closed on Tuesday"
   },
   {
    "park_id": "P_tadoba_andhari_tiger_reserve",
-   "zone": "buffer",
    "closure_type": "weekly",
-   "weekday": 3,
+   "zone": "buffer",
    "session": "full_day",
+   "weekday": 3,
    "date_from": null,
    "date_to": null,
    "label": "Buffer gates closed on Wednesday"
   },
   {
    "park_id": "P_tadoba_andhari_tiger_reserve",
-   "zone": "core",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "core",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2027-07-01",
    "date_to": "2027-09-30",
    "label": "monsoon closure, July to September"
   },
   {
    "park_id": "P_tadoba_andhari_tiger_reserve",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2027-10-29",
    "date_to": "2027-10-29",
    "label": "Diwali"
   },
   {
    "park_id": "P_tadoba_andhari_tiger_reserve",
-   "zone": "all",
    "closure_type": "date_range",
-   "weekday": null,
+   "zone": "all",
    "session": "full_day",
+   "weekday": null,
    "date_from": "2028-03-11",
    "date_to": "2028-03-11",
    "label": "Holi"
@@ -8973,7 +9684,7 @@ export const REAL_MASTER = {
    "to_location_id": "L_pench_tree_lodge",
    "vehicle_type": "Etios / Dzire",
    "capacity": 3,
-   "rate": 8000,
+   "rate": 7500,
    "drive_hours": 4,
    "night_surcharge": 0,
    "valid_from": null,
@@ -9078,7 +9789,7 @@ export const REAL_MASTER = {
    "to_location_id": "L_ken_river_lodge",
    "vehicle_type": "Innova / Crysta",
    "capacity": 6,
-   "rate": 2400,
+   "rate": 3000,
    "drive_hours": 0.5,
    "night_surcharge": 0,
    "valid_from": null,
@@ -9093,7 +9804,7 @@ export const REAL_MASTER = {
    "to_location_id": "L_radisson_hotel_jass_khajuraho",
    "vehicle_type": "Innova / Crysta",
    "capacity": 4,
-   "rate": 3000,
+   "rate": 2500,
    "drive_hours": 0.5,
    "night_surcharge": 0,
    "valid_from": null,
@@ -9798,7 +10509,7 @@ export const REAL_MASTER = {
    "to_location_id": "L_nagpur_airport",
    "vehicle_type": "Etios / Dzire",
    "capacity": 3,
-   "rate": 6500,
+   "rate": 7000,
    "drive_hours": 2.5,
    "night_surcharge": 0,
    "valid_from": null,
@@ -9813,7 +10524,7 @@ export const REAL_MASTER = {
    "to_location_id": "L_nagpur_airport",
    "vehicle_type": "Innova / Crysta",
    "capacity": 6,
-   "rate": 7500,
+   "rate": 8000,
    "drive_hours": 2.5,
    "night_surcharge": 0,
    "valid_from": null,
@@ -9824,6 +10535,78 @@ export const REAL_MASTER = {
   }
  ],
  "addons": [
+  {
+   "id": "5c4565e8-5c37-49a1-a1bf-c14693da0120",
+   "property_id": "H_itc_rajputana",
+   "park_id": null,
+   "name": "Accompanying guide, per day",
+   "pricing_unit": "per_group",
+   "rate": 11000,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": true
+  },
+  {
+   "id": "8cf40952-11ef-421c-8fb3-705b460bae37",
+   "property_id": "H_doubletree_by_hilton_agra",
+   "park_id": null,
+   "name": "Accompanying guide, per day",
+   "pricing_unit": "per_group",
+   "rate": 11000,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": true
+  },
+  {
+   "id": "5d198456-ef97-4f95-b1a7-a9c92626eec3",
+   "property_id": "H_itc_mughal",
+   "park_id": null,
+   "name": "Accompanying guide, per day",
+   "pricing_unit": "per_group",
+   "rate": 11000,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": true
+  },
+  {
+   "id": "b4cfee40-eaff-4968-9e3a-92ad0cbe7873",
+   "property_id": "H_courtyard_by_marriott_agra",
+   "park_id": null,
+   "name": "Accompanying guide, per day",
+   "pricing_unit": "per_group",
+   "rate": 11000,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": true
+  },
   {
    "id": "521b763e-617e-4942-9b41-70f6f661f530",
    "name": "Accompanying guide, per day",
@@ -9861,6 +10644,60 @@ export const REAL_MASTER = {
    "availability_note": null
   },
   {
+   "id": "9c691c88-4cc6-44f3-bc8f-05b0a2f3c37e",
+   "property_id": "H_kings_lodge",
+   "park_id": null,
+   "name": "Accompanying naturalist",
+   "pricing_unit": "per_vehicle",
+   "rate": 2500,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "c0f1dd21-7f2c-4f46-a65a-7993cadc9211",
+   "property_id": "H_pench_tree_lodge",
+   "park_id": null,
+   "name": "Accompanying naturalist",
+   "pricing_unit": "per_vehicle",
+   "rate": 2500,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "1d8f79b2-0f1a-4d39-ae4b-735a3f3d7962",
+   "property_id": "H_kanha_earth_lodge",
+   "park_id": null,
+   "name": "Accompanying naturalist",
+   "pricing_unit": "per_vehicle",
+   "rate": 2500,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
    "id": "0806b9bb-8248-4a88-83e4-26258d669441",
    "name": "Accompanying naturalist",
    "property_id": null,
@@ -9887,22 +10724,66 @@ export const REAL_MASTER = {
    ]
   },
   {
-   "id": "1e7cf02e-20d4-4c4a-9ca5-5e3258f543f6",
-   "name": "Banjar River picnic",
-   "property_id": "H_kanha_earth_lodge",
+   "id": "c645547c-7c60-41bc-9a7b-5d823e2b13fc",
+   "property_id": "H_waghoba_eco_lodge",
    "park_id": null,
-   "pricing_unit": "per_person",
-   "rate": 2000,
+   "name": "Accompanying naturalist",
+   "pricing_unit": "per_vehicle",
+   "rate": 2500,
    "rate_foreign": null,
    "tax_pct": 5,
-   "active": true,
-   "min_guests": 2,
+   "min_guests": null,
    "included_guests": null,
    "extra_guest_rate": null,
    "extra_guest_rate_foreign": null,
    "max_guests": null,
    "unavailable_weekdays": [],
-   "availability_note": null
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "7d616725-c1eb-49f0-8d1a-335630751caa",
+   "property_id": "H_denwa_backwater_escape",
+   "park_id": null,
+   "name": "Accompanying naturalist",
+   "pricing_unit": "per_vehicle",
+   "rate": 2500,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "c9b9d911-6193-4b2d-9824-02683770d1f1",
+   "property_id": null,
+   "park_id": null,
+   "name": "Accompanying naturalist, full-day safari",
+   "pricing_unit": "per_vehicle",
+   "rate": 7500,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": true,
+   "offered_at": [
+    "H_denwa_backwater_escape",
+    "H_kanha_earth_lodge",
+    "H_kings_lodge",
+    "H_pench_tree_lodge",
+    "H_tree_house_hideaway",
+    "H_waghoba_eco_lodge"
+   ]
   },
   {
    "id": "8038812e-1acd-4b60-bf9a-f5f3ed600a91",
@@ -9957,6 +10838,24 @@ export const REAL_MASTER = {
    "max_guests": null,
    "unavailable_weekdays": [],
    "availability_note": null
+  },
+  {
+   "id": "10bd2445-e937-4d07-a899-ce3f1c9a65d6",
+   "property_id": "H_denwa_backwater_escape",
+   "park_id": null,
+   "name": "Boat safari - 1 hour",
+   "pricing_unit": "per_group",
+   "rate": 8000,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
   },
   {
    "id": "5ea43d8d-a337-4127-8f38-be0c7ca39941",
@@ -10031,22 +10930,112 @@ export const REAL_MASTER = {
    "availability_note": null
   },
   {
-   "id": "9dfac3d6-b00c-433d-b9c9-730588b4fb70",
-   "name": "Bush dinner experience",
-   "property_id": "H_ken_river_lodge",
+   "id": "6cc6b4f1-8057-4474-9b0a-4752ed16242e",
+   "property_id": "H_denwa_backwater_escape",
    "park_id": null,
+   "name": "Boat safari, 2 hours, up to 2 guests (foreign nationals)",
+   "pricing_unit": "per_group",
+   "rate": 14000,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "bff76c1c-e41d-43e0-8f4d-35a11e8eeabe",
+   "property_id": "H_denwa_backwater_escape",
+   "park_id": null,
+   "name": "Boat trip: each extra guest (Indian nationals)",
+   "pricing_unit": "per_person",
+   "rate": 750,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "c6675846-4c53-4fcd-a91c-dcaefc2173e0",
+   "property_id": "H_denwa_backwater_escape",
+   "park_id": null,
+   "name": "Boat trip: each extra guest (foreign nationals)",
+   "pricing_unit": "per_person",
+   "rate": 1500,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "75626630-cf95-4540-b242-3207c9d5aca1",
+   "property_id": "H_kanha_earth_lodge",
+   "park_id": null,
+   "name": "Buffer walk",
    "pricing_unit": "per_person",
    "rate": 3000,
    "rate_foreign": null,
-   "tax_pct": 0,
-   "active": true,
+   "tax_pct": 5,
    "min_guests": 2,
    "included_guests": null,
    "extra_guest_rate": null,
    "extra_guest_rate_foreign": null,
    "max_guests": null,
    "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": true
+  },
+  {
+   "id": "3257e7fe-f4e4-48ee-b1ec-d2d8f549324d",
+   "name": "Buffer walk (Runi Jhuni walking trail)",
+   "property_id": "H_pench_tree_lodge",
+   "park_id": null,
+   "pricing_unit": "per_person",
+   "rate": 3000,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "active": true,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
    "availability_note": null
+  },
+  {
+   "id": "9bd4efd6-7fa6-4185-bd6b-2ca0d81692ce",
+   "property_id": "H_kings_lodge",
+   "park_id": null,
+   "name": "Bush dinner experience",
+   "pricing_unit": "per_person",
+   "rate": 4000,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
   },
   {
    "id": "37b58cb3-e0c8-4eb4-86f6-8bbeb07315b9",
@@ -10074,6 +11063,60 @@ export const REAL_MASTER = {
    ]
   },
   {
+   "id": "d9e05142-c103-47b8-9b61-7bc9581137e7",
+   "property_id": "H_tree_house_hideaway",
+   "park_id": null,
+   "name": "Bush dinner experience",
+   "pricing_unit": "per_person",
+   "rate": 4000,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "9dfac3d6-b00c-433d-b9c9-730588b4fb70",
+   "name": "Bush dinner experience",
+   "property_id": "H_ken_river_lodge",
+   "park_id": null,
+   "pricing_unit": "per_person",
+   "rate": 3000,
+   "rate_foreign": null,
+   "tax_pct": 0,
+   "active": true,
+   "min_guests": 2,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null
+  },
+  {
+   "id": "a40a6cca-b218-4541-b542-7609f5fc09dd",
+   "property_id": "H_pench_tree_lodge",
+   "park_id": null,
+   "name": "Bush dinner experience",
+   "pricing_unit": "per_person",
+   "rate": 4000,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
    "id": "cc2b0714-f9c8-4fa2-be65-26a5e169eef6",
    "name": "Canoe ride",
    "property_id": "H_denwa_backwater_escape",
@@ -10090,6 +11133,50 @@ export const REAL_MASTER = {
    "max_guests": null,
    "unavailable_weekdays": [],
    "availability_note": null
+  },
+  {
+   "id": "8cb9fca8-857d-43fa-b80b-e820309307f0",
+   "property_id": null,
+   "park_id": null,
+   "name": "Culinary workshop",
+   "pricing_unit": "per_person",
+   "rate": 2500,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": 2,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": true,
+   "offered_at": [
+    "H_denwa_backwater_escape",
+    "H_kanha_earth_lodge",
+    "H_kings_lodge",
+    "H_pench_tree_lodge",
+    "H_tree_house_hideaway",
+    "H_waghoba_eco_lodge"
+   ]
+  },
+  {
+   "id": "0fd6a774-1cdd-43d5-b81e-3b4b7a3fff06",
+   "property_id": "H_ken_river_lodge",
+   "park_id": null,
+   "name": "Culinary workshop",
+   "pricing_unit": "per_person",
+   "rate": 1500,
+   "rate_foreign": null,
+   "tax_pct": 0,
+   "min_guests": 2,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
   },
   {
    "id": "1028e30a-a9b9-4956-9aaf-090b538d115b",
@@ -10254,6 +11341,42 @@ export const REAL_MASTER = {
    "availability_note": null
   },
   {
+   "id": "31f928c9-dd6b-4293-be17-221688ed338e",
+   "property_id": "H_ken_river_lodge",
+   "park_id": null,
+   "name": "Escorted nature walk",
+   "pricing_unit": "per_person",
+   "rate": 1000,
+   "rate_foreign": null,
+   "tax_pct": 0,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "577c0b15-3d5f-4da5-ba36-97ec1a06eed1",
+   "property_id": "H_kanha_earth_lodge",
+   "park_id": null,
+   "name": "Extra breakfast",
+   "pricing_unit": "per_person",
+   "rate": 1100,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
    "id": "5a927478-4a34-4485-9b53-5ebd4fb3d4a7",
    "name": "Extra breakfast",
    "property_id": "H_ken_river_lodge",
@@ -10270,6 +11393,78 @@ export const REAL_MASTER = {
    "max_guests": null,
    "unavailable_weekdays": [],
    "availability_note": null
+  },
+  {
+   "id": "98d3c5b9-bc1a-49f9-acb6-2409ed5cba2e",
+   "property_id": "H_waghoba_eco_lodge",
+   "park_id": null,
+   "name": "Extra breakfast",
+   "pricing_unit": "per_person",
+   "rate": 1100,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "c665cd2f-200e-429e-848c-43da42717fcf",
+   "property_id": "H_pench_tree_lodge",
+   "park_id": null,
+   "name": "Extra breakfast",
+   "pricing_unit": "per_person",
+   "rate": 1100,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "63c2e607-be60-4d84-9f80-94d3760eb57f",
+   "property_id": "H_kings_lodge",
+   "park_id": null,
+   "name": "Extra breakfast",
+   "pricing_unit": "per_person",
+   "rate": 1100,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "8e819558-252a-48c4-8630-2ad7958575ae",
+   "property_id": "H_tree_house_hideaway",
+   "park_id": null,
+   "name": "Extra breakfast",
+   "pricing_unit": "per_person",
+   "rate": 1100,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
   },
   {
    "id": "2b0a020d-c251-405f-a57a-1c1f6c99ea3b",
@@ -10298,22 +11493,22 @@ export const REAL_MASTER = {
    ]
   },
   {
-   "id": "259df58d-91d8-4647-b8c9-2a11d5f1365f",
-   "name": "Extra dinner with pre-dinner snacks",
-   "property_id": "H_ken_river_lodge",
+   "id": "b246b58e-e573-44ba-b70c-ddabfa62d3c5",
+   "property_id": "H_pench_tree_lodge",
    "park_id": null,
+   "name": "Extra dinner with pre-dinner snacks",
    "pricing_unit": "per_person",
-   "rate": 700,
+   "rate": 2200,
    "rate_foreign": null,
-   "tax_pct": 0,
-   "active": true,
+   "tax_pct": 18,
    "min_guests": null,
    "included_guests": null,
    "extra_guest_rate": null,
    "extra_guest_rate_foreign": null,
    "max_guests": null,
    "unavailable_weekdays": [],
-   "availability_note": null
+   "availability_note": null,
+   "active": false
   },
   {
    "id": "772c2f0d-c490-4d73-a941-e9957b236499",
@@ -10342,6 +11537,150 @@ export const REAL_MASTER = {
    ]
   },
   {
+   "id": "c12675a5-9e7e-432b-90ae-67ac3236c83b",
+   "property_id": "H_kanha_earth_lodge",
+   "park_id": null,
+   "name": "Extra dinner with pre-dinner snacks",
+   "pricing_unit": "per_person",
+   "rate": 2200,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "cf77d776-d2dc-4193-b80c-43e17a672afe",
+   "property_id": "H_waghoba_eco_lodge",
+   "park_id": null,
+   "name": "Extra dinner with pre-dinner snacks",
+   "pricing_unit": "per_person",
+   "rate": 2200,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "259df58d-91d8-4647-b8c9-2a11d5f1365f",
+   "name": "Extra dinner with pre-dinner snacks",
+   "property_id": "H_ken_river_lodge",
+   "park_id": null,
+   "pricing_unit": "per_person",
+   "rate": 700,
+   "rate_foreign": null,
+   "tax_pct": 0,
+   "active": true,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null
+  },
+  {
+   "id": "dfc931a9-2942-4000-8b5f-c211735a56f6",
+   "property_id": "H_kings_lodge",
+   "park_id": null,
+   "name": "Extra dinner with pre-dinner snacks",
+   "pricing_unit": "per_person",
+   "rate": 2200,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "d496417e-52ff-4537-8bdb-be5bc406f33d",
+   "property_id": "H_tree_house_hideaway",
+   "park_id": null,
+   "name": "Extra dinner with pre-dinner snacks",
+   "pricing_unit": "per_person",
+   "rate": 2200,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "31fe81f5-6eab-46f7-8384-5a6a7bb1fb65",
+   "name": "Extra lunch",
+   "property_id": "H_ken_river_lodge",
+   "park_id": null,
+   "pricing_unit": "per_person",
+   "rate": 700,
+   "rate_foreign": null,
+   "tax_pct": 0,
+   "active": true,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null
+  },
+  {
+   "id": "aeba67a8-12a4-4538-9a26-5b8cedd7a721",
+   "property_id": "H_tree_house_hideaway",
+   "park_id": null,
+   "name": "Extra lunch",
+   "pricing_unit": "per_person",
+   "rate": 1600,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "da014390-b8b3-4cfd-8d59-2677aeb79e29",
+   "property_id": "H_pench_tree_lodge",
+   "park_id": null,
+   "name": "Extra lunch",
+   "pricing_unit": "per_person",
+   "rate": 1600,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
    "id": "10bb0f2c-7352-4d2b-8980-3d56e527d98a",
    "name": "Extra lunch",
    "property_id": null,
@@ -10368,22 +11707,58 @@ export const REAL_MASTER = {
    ]
   },
   {
-   "id": "31fe81f5-6eab-46f7-8384-5a6a7bb1fb65",
-   "name": "Extra lunch",
-   "property_id": "H_ken_river_lodge",
+   "id": "e0f06fc3-e620-43ea-a010-4ab8b047b63e",
+   "property_id": "H_denwa_backwater_escape",
    "park_id": null,
+   "name": "Extra lunch",
    "pricing_unit": "per_person",
-   "rate": 700,
+   "rate": 1600,
    "rate_foreign": null,
-   "tax_pct": 0,
-   "active": true,
+   "tax_pct": 18,
    "min_guests": null,
    "included_guests": null,
    "extra_guest_rate": null,
    "extra_guest_rate_foreign": null,
    "max_guests": null,
    "unavailable_weekdays": [],
-   "availability_note": null
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "14495019-aea1-457e-9565-f7fbc9d5c5e4",
+   "property_id": "H_kings_lodge",
+   "park_id": null,
+   "name": "Extra lunch",
+   "pricing_unit": "per_person",
+   "rate": 1600,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "6bfc8d47-a0f4-4232-80ec-2248ae287a0a",
+   "property_id": "H_waghoba_eco_lodge",
+   "park_id": null,
+   "name": "Extra lunch",
+   "pricing_unit": "per_person",
+   "rate": 1600,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
   },
   {
    "id": "11dd48b1-28c6-4026-921a-44771a0454c2",
@@ -10440,6 +11815,24 @@ export const REAL_MASTER = {
    "availability_note": null
   },
   {
+   "id": "909c2eaf-465a-46d9-b073-0a8fd47e2e96",
+   "property_id": "H_kanha_earth_lodge",
+   "park_id": null,
+   "name": "Full-day safari (up to 3 guests)",
+   "pricing_unit": "per_vehicle",
+   "rate": 125000,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
    "id": "3b130c64-51bd-499e-a611-2915c8a21bfe",
    "name": "Full-day safari (up to 3 guests)",
    "property_id": null,
@@ -10465,6 +11858,78 @@ export const REAL_MASTER = {
    ]
   },
   {
+   "id": "3d438557-2989-4bca-8e54-17aec369b063",
+   "property_id": "H_tree_house_hideaway",
+   "park_id": null,
+   "name": "Full-day safari (up to 3 guests)",
+   "pricing_unit": "per_vehicle",
+   "rate": 125000,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "97e290bc-519d-48be-8c37-b69e44ad9ceb",
+   "property_id": "H_kings_lodge",
+   "park_id": null,
+   "name": "Full-day safari (up to 3 guests)",
+   "pricing_unit": "per_vehicle",
+   "rate": 125000,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "b8e6a6af-444b-4481-af83-d59dcaec8384",
+   "property_id": "H_pench_tree_lodge",
+   "park_id": null,
+   "name": "Full-day safari (up to 3 guests)",
+   "pricing_unit": "per_vehicle",
+   "rate": 125000,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "f0a90dda-926e-4e86-bda4-75fd18bd93d5",
+   "property_id": "H_ken_river_lodge",
+   "park_id": null,
+   "name": "Island dinner",
+   "pricing_unit": "per_person",
+   "rate": 5000,
+   "rate_foreign": null,
+   "tax_pct": 0,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
    "id": "15829bca-6311-4e39-b017-4d94772f61ec",
    "name": "Island dinner (Rs 15,000 per couple)",
    "property_id": "H_ken_river_lodge",
@@ -10481,6 +11946,24 @@ export const REAL_MASTER = {
    "max_guests": null,
    "unavailable_weekdays": [],
    "availability_note": null
+  },
+  {
+   "id": "abed58bc-8eaa-42c4-87a7-2c3dbb899607",
+   "property_id": "H_kanha_earth_lodge",
+   "park_id": null,
+   "name": "Jabalpur transfer via Bhedaghat and Dhuandhar Falls (extra)",
+   "pricing_unit": "per_vehicle",
+   "rate": 1500,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
   },
   {
    "id": "309e5dc0-0d74-4c46-9fdb-761cbd8df50c",
@@ -10504,6 +11987,24 @@ export const REAL_MASTER = {
     "H_kings_lodge",
     "H_tree_house_hideaway"
    ]
+  },
+  {
+   "id": "bdb465d2-f771-4431-a8d9-ea1d873ce8b2",
+   "property_id": "H_tree_house_hideaway",
+   "park_id": null,
+   "name": "Jabalpur transfer via Bhedaghat and Dhuandhar Falls (extra)",
+   "pricing_unit": "per_vehicle",
+   "rate": 1500,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
   },
   {
    "id": "2f360009-440d-4f1b-893c-6f15566f589f",
@@ -10578,6 +12079,42 @@ export const REAL_MASTER = {
    "availability_note": null
   },
   {
+   "id": "1ee35fd1-c0e4-4873-9016-2a978781c398",
+   "property_id": "H_doubletree_by_hilton_agra",
+   "park_id": null,
+   "name": "Local guide, per day",
+   "pricing_unit": "per_group",
+   "rate": 8000,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": true
+  },
+  {
+   "id": "98400aae-2805-462b-a343-f6c3080d2dec",
+   "property_id": "H_itc_rajputana",
+   "park_id": null,
+   "name": "Local guide, per day",
+   "pricing_unit": "per_group",
+   "rate": 8000,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": true
+  },
+  {
    "id": "b6b80886-d4a2-4f44-996b-c59f8b05acfd",
    "name": "Local guide, per day",
    "property_id": "H_roseate_house",
@@ -10594,6 +12131,42 @@ export const REAL_MASTER = {
    "max_guests": null,
    "unavailable_weekdays": [],
    "availability_note": null
+  },
+  {
+   "id": "226c4238-ee71-4da5-af34-78fec49f7bed",
+   "property_id": "H_itc_mughal",
+   "park_id": null,
+   "name": "Local guide, per day",
+   "pricing_unit": "per_group",
+   "rate": 8000,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": true
+  },
+  {
+   "id": "d16b9727-f97a-4cc2-8232-8a82a7d0b71c",
+   "property_id": "H_courtyard_by_marriott_agra",
+   "park_id": null,
+   "name": "Local guide, per day",
+   "pricing_unit": "per_group",
+   "rate": 8000,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": true
   },
   {
    "id": "5d282a7d-838c-457e-afff-3b399e14b233",
@@ -10650,6 +12223,24 @@ export const REAL_MASTER = {
    "availability_note": null
   },
   {
+   "id": "2c2bcf09-d9dd-4d89-8d3f-6b62f6a90361",
+   "property_id": "H_denwa_backwater_escape",
+   "park_id": null,
+   "name": "Nature walk / cycling / night trail",
+   "pricing_unit": "per_person",
+   "rate": 1500,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
    "id": "144edd92-75e3-4d57-bfb9-582a559bb8bc",
    "name": "Nature walk / cycling / night trail",
    "property_id": null,
@@ -10674,6 +12265,78 @@ export const REAL_MASTER = {
     "H_tree_house_hideaway",
     "H_waghoba_eco_lodge"
    ]
+  },
+  {
+   "id": "936e3143-fd45-4e50-a8ec-bf6c7d7ff7bc",
+   "property_id": "H_tree_house_hideaway",
+   "park_id": null,
+   "name": "Nature walk / cycling / night trail",
+   "pricing_unit": "per_person",
+   "rate": 1500,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "89fc5b39-2116-4801-af1d-cb81cb6956ea",
+   "property_id": "H_kanha_earth_lodge",
+   "park_id": null,
+   "name": "Nature walk / cycling / night trail",
+   "pricing_unit": "per_person",
+   "rate": 1500,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "e375eb11-0c79-48f0-bcb4-6e2a64885005",
+   "property_id": "H_pench_tree_lodge",
+   "park_id": null,
+   "name": "Nature walk / cycling / night trail",
+   "pricing_unit": "per_person",
+   "rate": 1500,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "1b124737-278e-4842-8146-fbc3be1470de",
+   "property_id": "H_waghoba_eco_lodge",
+   "park_id": null,
+   "name": "Nature walk / cycling / night trail",
+   "pricing_unit": "per_person",
+   "rate": 1500,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
   },
   {
    "id": "9d08d7ee-8037-4ebf-9e13-2d17b779c855",
@@ -10730,6 +12393,114 @@ export const REAL_MASTER = {
    "availability_note": null
   },
   {
+   "id": "fc1203b5-a034-45d6-a3f8-0aaaf4045ef5",
+   "property_id": "H_ken_river_lodge",
+   "park_id": null,
+   "name": "Night safari with overnight stay at Jhinna camp (per double room)",
+   "pricing_unit": "per_room",
+   "rate": 18500,
+   "rate_foreign": null,
+   "tax_pct": 0,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "f35d2fc1-3597-4993-8738-a5d3bf360edf",
+   "property_id": "H_denwa_backwater_escape",
+   "park_id": null,
+   "name": "Packed meal",
+   "pricing_unit": "per_person",
+   "rate": 1000,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "eb1cdefc-1a38-4d75-aa5c-6e88370fd0cc",
+   "property_id": "H_tree_house_hideaway",
+   "park_id": null,
+   "name": "Packed meal",
+   "pricing_unit": "per_person",
+   "rate": 1000,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "1b752c3e-c19d-4ff2-ba38-b53d41032f4c",
+   "property_id": "H_kings_lodge",
+   "park_id": null,
+   "name": "Packed meal",
+   "pricing_unit": "per_person",
+   "rate": 1000,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "1de1f1ec-3a62-47b5-9d7a-68af172d674c",
+   "property_id": "H_kanha_earth_lodge",
+   "park_id": null,
+   "name": "Packed meal",
+   "pricing_unit": "per_person",
+   "rate": 1000,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "98eb4924-ccd4-4767-a104-f68bf2989b23",
+   "name": "Packed meal",
+   "property_id": "H_ken_river_lodge",
+   "park_id": null,
+   "pricing_unit": "per_person",
+   "rate": 500,
+   "rate_foreign": null,
+   "tax_pct": 0,
+   "active": true,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null
+  },
+  {
    "id": "126b9005-5ab9-4a75-ab68-29c5a9bbeaee",
    "name": "Packed meal",
    "property_id": null,
@@ -10756,22 +12527,84 @@ export const REAL_MASTER = {
    ]
   },
   {
-   "id": "98eb4924-ccd4-4767-a104-f68bf2989b23",
-   "name": "Packed meal",
-   "property_id": "H_ken_river_lodge",
+   "id": "9641b36e-ba3a-420e-8406-9e2a32514b57",
+   "property_id": "H_waghoba_eco_lodge",
    "park_id": null,
+   "name": "Packed meal",
    "pricing_unit": "per_person",
-   "rate": 500,
+   "rate": 1000,
    "rate_foreign": null,
-   "tax_pct": 0,
-   "active": true,
+   "tax_pct": 18,
    "min_guests": null,
    "included_guests": null,
    "extra_guest_rate": null,
    "extra_guest_rate_foreign": null,
    "max_guests": null,
    "unavailable_weekdays": [],
-   "availability_note": null
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "0aa5fe3b-94e5-425f-bfd5-24637faf95ee",
+   "property_id": "H_ken_river_lodge",
+   "park_id": null,
+   "name": "Picnic at the farm",
+   "pricing_unit": "per_person",
+   "rate": 3000,
+   "rate_foreign": null,
+   "tax_pct": 0,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "1e7cf02e-20d4-4c4a-9ca5-5e3258f543f6",
+   "name": "Picnic lunch",
+   "property_id": null,
+   "park_id": null,
+   "pricing_unit": "per_person",
+   "rate": 4000,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "active": true,
+   "min_guests": 2,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "offered_at": [
+    "H_denwa_backwater_escape",
+    "H_kanha_earth_lodge",
+    "H_kings_lodge",
+    "H_pench_tree_lodge",
+    "H_tree_house_hideaway",
+    "H_waghoba_eco_lodge"
+   ]
+  },
+  {
+   "id": "5113a10b-d16a-49ed-8217-05f6ee1e9525",
+   "property_id": "H_kanha_earth_lodge",
+   "park_id": null,
+   "name": "Rooftop / poolside dinner experience",
+   "pricing_unit": "per_person",
+   "rate": 4000,
+   "rate_foreign": null,
+   "tax_pct": 18,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
   },
   {
    "id": "1b601ddd-dfa7-4ad3-875f-b439e448e7fd",
@@ -10779,27 +12612,9 @@ export const REAL_MASTER = {
    "property_id": "H_ken_river_lodge",
    "park_id": null,
    "pricing_unit": "per_group",
-   "rate": 300,
+   "rate": 4000,
    "rate_foreign": null,
    "tax_pct": 0,
-   "active": true,
-   "min_guests": null,
-   "included_guests": null,
-   "extra_guest_rate": null,
-   "extra_guest_rate_foreign": null,
-   "max_guests": null,
-   "unavailable_weekdays": [],
-   "availability_note": null
-  },
-  {
-   "id": "3257e7fe-f4e4-48ee-b1ec-d2d8f549324d",
-   "name": "Runi Jhuni walking trail",
-   "property_id": "H_pench_tree_lodge",
-   "park_id": null,
-   "pricing_unit": "per_person",
-   "rate": 3000,
-   "rate_foreign": null,
-   "tax_pct": 5,
    "active": true,
    "min_guests": null,
    "included_guests": null,
@@ -10820,8 +12635,8 @@ export const REAL_MASTER = {
    "tax_pct": 18,
    "active": true,
    "min_guests": null,
-   "included_guests": null,
-   "extra_guest_rate": null,
+   "included_guests": 2,
+   "extra_guest_rate": 500,
    "extra_guest_rate_foreign": null,
    "max_guests": null,
    "unavailable_weekdays": [],
@@ -10864,9 +12679,27 @@ export const REAL_MASTER = {
    "availability_note": null
   },
   {
-   "id": "f196e544-1472-4f23-af44-fa1bdf599b2e",
+   "id": "cd9874e1-b95e-4e57-b229-1b4feeae1318",
+   "property_id": "H_denwa_backwater_escape",
+   "park_id": null,
+   "name": "Tawa cruise to the lodge by boat for 2 guests (foreign nationals)",
+   "pricing_unit": "per_group",
+   "rate": 18000,
+   "rate_foreign": null,
+   "tax_pct": 5,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
+  },
+  {
+   "id": "e791694c-d02e-4fe1-aadc-9b9e423a2892",
    "name": "Transfer via Bedaghat / Dhuandhar Falls (extra per vehicle)",
-   "property_id": "H_tree_house_hideaway",
+   "property_id": "H_kings_lodge",
    "park_id": null,
    "pricing_unit": "per_group",
    "rate": 1500,
@@ -10900,9 +12733,9 @@ export const REAL_MASTER = {
    "availability_note": null
   },
   {
-   "id": "e791694c-d02e-4fe1-aadc-9b9e423a2892",
+   "id": "f196e544-1472-4f23-af44-fa1bdf599b2e",
    "name": "Transfer via Bedaghat / Dhuandhar Falls (extra per vehicle)",
-   "property_id": "H_kings_lodge",
+   "property_id": "H_tree_house_hideaway",
    "park_id": null,
    "pricing_unit": "per_group",
    "rate": 1500,
@@ -10916,6 +12749,24 @@ export const REAL_MASTER = {
    "max_guests": null,
    "unavailable_weekdays": [],
    "availability_note": null
+  },
+  {
+   "id": "9919701e-8b33-4448-a390-dc5c24776a84",
+   "property_id": "H_ken_river_lodge",
+   "park_id": null,
+   "name": "Village safari",
+   "pricing_unit": "per_person",
+   "rate": 1500,
+   "rate_foreign": null,
+   "tax_pct": 0,
+   "min_guests": null,
+   "included_guests": null,
+   "extra_guest_rate": null,
+   "extra_guest_rate_foreign": null,
+   "max_guests": null,
+   "unavailable_weekdays": [],
+   "availability_note": null,
+   "active": false
   },
   {
    "id": "8bdbad2c-0cf9-4ce7-9638-a05b3828c8fe",

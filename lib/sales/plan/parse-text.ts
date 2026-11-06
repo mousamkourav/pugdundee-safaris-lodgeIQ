@@ -10,6 +10,7 @@
 // =====================================================================
 
 import type { ISODate } from "@/lib/sales/pricing/types";
+import { guestWords } from "./travel-rules";
 import { addDays } from "@/lib/sales/pricing/dates";
 import { defaultStop, findAddon, mealPlansOf, roomsOf } from "./planner";
 import type { BuilderContext, Plan, TravelMode } from "./types";
@@ -232,7 +233,10 @@ export function aliasesOf(name: string): string[] {
 export function locationAliases(name: string, code?: string | null): string[] {
   const full = name.toLowerCase().trim();
   const core = full.replace(/\b(international|domestic|airport|railway station|railway|station|junction|jn|city|bus stand)\b/g, " ").replace(/\s+/g, " ").trim();
-  return [...new Set([full, core, ...(code ? [code.toLowerCase()] : [])].filter((x) => x.length >= 3))];
+  // "Hoshangabad (Narmadapuram) Railway Station": "hoshangabad" and "narmadapuram" too
+  const bracket = core.match(/^(.*?)\s*\((.*?)\)\s*(.*)$/);
+  const parts = bracket ? [`${bracket[1]} ${bracket[3]}`.trim(), bracket[2].trim()] : [];
+  return [...new Set([full, core, ...parts, ...(code ? [code.toLowerCase()] : [])].filter((x) => x.length >= 3))];
 }
 
 interface Hit {
@@ -425,11 +429,15 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   const adultsM =
     low.match(new RegExp(`\\b${NUM}\\s*(?:adults?|pax|people|persons|guests?|travell?ers|ppl|log|logon?|bande|aadmi)\\b`)) ??
     low.match(/\b(\d{1,2})\s*a\b(?![\w'])/) ??
-    // "2 indian", "3 foreigners"
-    low.match(new RegExp(`\\b${NUM}\\s+(?:indians?|foreigners?|foreign nationals?|nris?)\\b`));
+    // "2 indian", "3 foreigners" (not an age: "a child of 8 indian", "kids 7 and 12 indian")
+    low.match(new RegExp(`(?<!\\b(?:of|aged?|ages?|and|aur|child|kid|kids|children|years?|yrs?)\\s+)\\b${NUM}\\s+(?:indians?|foreigners?|foreign nationals?|nris?)\\b`));
   const familyM = low.match(new RegExp(`\\bfamily of\\s*${NUM}\\b`));
   // every count: "1 child 8 yrs + 1 infant" is two children, the infant under 2
-  const kidsAll = [...low.matchAll(new RegExp(`\\b${NUM}\\s*(?:kids?|children|childs?|child|infants?|bab(?:y|ies)|bacche|bachche|bachhe|bachon|bacchon)\\b`, "g"))];
+  const kidsAll = [
+    ...low.matchAll(new RegExp(`\\b${NUM}\\s*(?:kids?|children|childs?|child|infants?|bab(?:y|ies)|bacche|bachche|bachhe|bachon|bacchon)\\b`, "g")),
+    // "a child of 8", "an infant": one
+    ...low.matchAll(/\b(a|an)\s+(?:child|kid|infant|baby)\b/g),
+  ];
   let infantN = 0;
   let childN = 0;
   for (const m of kidsAll) {
@@ -445,6 +453,8 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     low.match(new RegExp(`\\b(?:kids?|children|child|infants?|bab(?:y|ies)|bacche|bachche|bachhe|bachon|bacchon)\\s*\\(\\s*(?:aged?\\s*)?${LIST}\\s*(?:y(?:ea)?rs?|yo|saal)?\\s*(?:old\\s*|ke\\s*)?\\)`)),
     low.match(new RegExp(`\\b(?:kids?|children)\\s+(\\d{1,2}(?:\\s*(?:,|and|&|/)\\s*\\d{1,2})+)\\b`)),
     low.match(/\b(?:child|kid|son|daughter)\s+(?:of\s+)?(\d{1,2})\s*(?:y(?:ea)?rs?|yo)\b/),
+    // "a child of 8" (no "years")
+    low.match(/\b(?:child|kid|son|daughter)\s+of\s+(\d{1,2})\b(?!\s*(?:nights?|days?|rooms?|adults?|safaris?))/),
   ];
   let ages: number[] = [];
   for (const m of ageSources) {
@@ -478,7 +488,11 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     out.children = ages;
   }
 
+  // the rule book's guest words (travel-rules.ts): "1 double" = 2 adults in 1 room, "2 doubles" = 4 in 2,
+  // "1 triple" = 3 in 1, "single" = 1 in 1, "couple" / "honeymoon" = 2
+  const gw = guestWords(text);
   if (adultsM) out.adults = toNum(adultsM[1]);
+  else if (gw?.adults) out.adults = gw.adults;
   else if (familyM) out.adults = Math.max(1, toNum(familyM[1]) - (out.children?.length ?? 0));
   else if (/\bcouple\b/.test(low)) out.adults = 2;
   else if (/\b(solo|single traveller|single traveler)\b/.test(low)) out.adults = 1;
@@ -500,6 +514,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     new RegExp(`\\b${NUM}\\s*(?:(?:double|twin|single|triple|deluxe|ac|a/c|family|standard|luxury|separate)\\s+)*(?:rooms?|cottages?|tents?|suites?|villas?|tree ?houses?|bungalows?)\\b`)
   );
   if (roomsM) out.rooms = toNum(roomsM[1]);
+  else if (gw?.rooms) out.rooms = gw.rooms;
 
   // the country straight after the guests: "3 adults US", "2 adults france"
   const afterGuests = low.match(/\b(?:adults?|pax|people|persons|guests?|couple|travell?ers?)\s*,?\s+([a-z]+(?:\s+[a-z]+)?)/);
@@ -1117,6 +1132,9 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     const after = text.slice(h.end, h.end + 15);
     // Words before the place win; a word after only counts if it follows
     // directly ("Nagpur out"), not when it starts the next phrase (", drop at Raipur").
+    // "...denwa 4 nights, then fly to jorhat, then iora": a flight between two lodges, not where the
+    // trip starts or ends (it made Jorhat the arrival and the departure; 5 Nov 2026)
+    if (/\b(?:fly\w*|flight\w*)\s+(?:to|into)\W*$/i.test(before) && h.index > firstPark && h.index < lastPark) continue;
     if (bothWords.test(after) || /\bin and out of\W*$/i.test(before) || bothBefore.test(text.slice(Math.max(0, h.index - 45), h.index))) {
       out.arrival_place ??= h.name;
       out.departure_place ??= h.name;

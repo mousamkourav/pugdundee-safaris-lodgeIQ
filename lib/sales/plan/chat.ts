@@ -20,6 +20,7 @@ import { addDays } from "@/lib/sales/pricing/dates";
 import type { BuilderContext, Plan, PlanStop } from "./types";
 import { cityHotelNamed, cityHotels, safariOnly, sameCity, stayKey, stayWhere } from "./cities";
 import { tripChecklist, type CheckItem } from "./checklist";
+import { applyTravelRules, cityEnds } from "./travel-rules";
 
 export interface ChatFlags {
   dateSet: boolean;
@@ -36,6 +37,7 @@ export interface ChatFlags {
   nationalitySet?: boolean; // Indian / foreign (or the country) was said
   legAsked?: boolean; // "our car or own vehicle between the lodges?" has been answered
   asks?: Ask[]; // what the reader found unclear, asked one by one before the price
+  airportsDone?: string[]; // airport questions answered ("airport:Kaziranga National Park"): never asked again
   farAsked?: string[]; // lodges far apart ("far:PTL>IORA") whose way between them has been asked
   askFor?: string | null; // the ask the last question was
   pending: "parks" | "nights" | "date" | "adults" | "arrival" | "departure" | "lodge" | "room" | "hotel" | "name" | "leg" | "ask" | null;
@@ -349,6 +351,7 @@ export function chatTurn(
     if (newPort && isOther(next.arrival_location_id)) next.arrival_location_id = newPort.id;
     if (newPort && isOther(next.departure_location_id)) next.departure_location_id = newPort.id;
     f.asks = (f.asks ?? []).filter((x) => x !== a);
+    f.airportsDone = [...new Set([...(f.airportsDone ?? []), a.key])]; // asked once (owner, 5 Nov 2026)
     if (f.askFor === a.key) f.askFor = null;
     chips.push(`${shortName(a.key.slice(8))}: via ${pick} Airport`);
     // the airport named here is this answer, not a new arrival point
@@ -387,7 +390,12 @@ export function chatTurn(
       chips.push("noted with the trip");
     }
   }
-  for (const a of parsed.asks ?? []) if (!(f.asks ?? []).some((x) => x.key === a.key)) f.asks = [...(f.asks ?? []), a];
+  // an airport question is not asked when the message names one of its airports as the way in or out
+  // ("arriving jorhat", "fly to guwahati"), not when the town is only mentioned
+  const namesAirport = (a: { key: string; quick?: string[] }) =>
+    a.key.startsWith("airport:") &&
+    (a.quick ?? []).some((q) => new RegExp(`\\b(?:fly\\w*|flight\\w*|arriv\\w*|arrin\\w*|land\\w*|via|depart\\w*|leav\\w*)\\s+(?:to\\s+|at\\s+|in\\s+|from\\s+|via\\s+)?${q.toLowerCase()}\\b`).test(low));
+  for (const a of parsed.asks ?? []) if (!(f.asks ?? []).some((x) => x.key === a.key) && !(f.airportsDone ?? []).includes(a.key) && !namesAirport(a)) f.asks = [...(f.asks ?? []), a];
 
   // A bare answer to the last question: "4", "3 nights", "2 adults"
   const bare = low.match(/^\s*(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten)\s*(nights?|n|adults?|pax|people|guests)?\s*\.?$/);
@@ -793,6 +801,31 @@ export function chatTurn(
   const tripWords = parsed.parks.length || parsed.cityStays?.length || parsed.flights?.length;
   if (tripWords && msg.trim().length >= 15) next.enquiry = (!plan.stops.length || parsed.replaceRoute ? msg : [plan.enquiry, msg].filter(Boolean).join("\n")).slice(-6000);
 
+  // ---- the travel rule book (travel-rules.ts), whatever the reader or the AI gave: a flight between
+  // two places no road joins, flights between airports, the nearest airports at the ends, the end drive
+  if (next.stops.length) {
+    const ruled = applyTravelRules(next, full, { saidAirports: [low, ...(plan.enquiry ? [plan.enquiry.toLowerCase()] : [])] });
+    const r = ruled.plan;
+    // "they come on their own" (asked and answered with no place): never filled in by the rule
+    const ownIn = f.arrivalAsked && !next.arrival_location_id;
+    const ownOut = f.departureAsked && !next.departure_location_id;
+    if (r.arrival_location_id !== next.arrival_location_id) f.arrivalAsked = true;
+    if (r.departure_location_id !== next.departure_location_id) f.departureAsked = true;
+    next.flights = r.flights;
+    if (!ownIn) next.arrival_location_id = r.arrival_location_id;
+    if (!ownOut) next.departure_location_id = r.departure_location_id;
+    next.end_city = r.end_city;
+    if (routeKey(next) !== routeKey(plan)) for (const n of ruled.notes) if (!warnings.includes(n)) warnings.push(n);
+    // a lodge with two airports the guests use (Iora Retreat: Jorhat or Guwahati), not said: asked once
+    for (const a of ruled.airportsChosen) {
+      const park = ctx.pricing.parks.find((p) => p.id === a.park_id)?.name ?? "";
+      const key = `airport:${park}`;
+      if ((f.asks ?? []).some((x) => x.key === key) || (f.airportsDone ?? []).includes(key)) continue;
+      const short = park.replace(/\s+(national park|tiger reserve|wildlife sanctuary)$/i, "");
+      f.asks = [...(f.asks ?? []), { key, text: `Which airport for ${short}: ${a.options.join(" or ")}? I have taken ${a.chosen} for now.`, quick: a.options }];
+    }
+  }
+
   // ---- rebuild the day plan when the route changed
   const routeChanged = routeKey(next) !== routeKey(plan);
   if (routeChanged) {
@@ -908,7 +941,10 @@ export function nextQuestion(
       ready: false,
     };
   }
-  if (!f.arrivalAsked && !plan.arrival_location_id) {
+  // a trip that starts (ends) with city nights arrives at (leaves from) that city's airport: rule 3 of
+  // travel-rules.ts, nothing to ask (5 Nov 2026)
+  const ends = cityEnds(plan);
+  if (!f.arrivalAsked && !plan.arrival_location_id && !ends.startsInCity) {
     return {
       text: 'Where will they arrive? Pick a place, or say "on their own" if they reach the lodge themselves.',
       pending: "arrival",
@@ -918,7 +954,7 @@ export function nextQuestion(
     };
   }
   // The way out is asked separately: guests often fly in and out of different cities.
-  if (!f.departureAsked && plan.arrival_location_id && !plan.departure_location_id) {
+  if (!f.departureAsked && plan.arrival_location_id && !plan.departure_location_id && !ends.endsInCity) {
     const arrName = ctx.locations.find((l) => l.id === plan.arrival_location_id)?.name ?? "the same place";
     return {
       text: `Where do they leave from at the end? The same place (${arrName}), or somewhere else?`,

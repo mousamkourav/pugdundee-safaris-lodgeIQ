@@ -15,6 +15,7 @@ import type { BuilderContext } from "./types";
 import { roadRegions } from "./planner";
 import { sameCity } from "./cities";
 import { DRIVE_CITIES } from "@/lib/sales/master/missing-transfers";
+import { airportUnclear } from "./travel-rules";
 
 export type RouteEntry =
   | { kind: "city"; city: string; pos: number }
@@ -114,7 +115,9 @@ export function resolveRoute(input: {
     if (!options.length) return null;
     const city = cityOfAirport(options[0].name);
     chosen.set(e.park, city);
-    if (options.length > 1) {
+    // rule 1 (travel-rules.ts): the shortest drive in Master data, not asked; asked only when Master data
+    // cannot tell which is nearer (no drive hours, or the same: Iora Retreat, Jorhat or Guwahati)
+    if (airportUnclear(options, ctx.properties.find((p) => p.id === e.propertyId)?.kind)) {
       const park = e.park.replace(/\s+(national park|tiger reserve|wildlife sanctuary)$/i, "");
       const names = options.map((o) => cityOfAirport(o.name));
       asks.push({

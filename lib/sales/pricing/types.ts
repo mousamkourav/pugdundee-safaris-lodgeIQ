@@ -193,6 +193,7 @@ export interface PaymentSlab {
 
 export interface PricingSettings {
   markup_pct?: number | null;
+  flight_fare_pp?: number | null; // a domestic flight with no row in Flight routes, per person one way (default 15,000)
   fx?: Partial<Record<"USD" | "EUR" | "GBP" | "AUD", number | null>> | null; // rupees per 1 unit
   fx_source?: string | null; // e.g. "ECB rate of 21 Oct 2026"
   fx_margin_pct?: number | null; // cushion against rate moves, taken off the rate

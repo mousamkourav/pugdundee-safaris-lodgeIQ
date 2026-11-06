@@ -69,6 +69,15 @@ export const SETTINGS_FIELDS: (FieldDef & { path: string[] })[] = [
   },
   { name: "markup_pct", path: ["markup_pct"], label: "Default markup %", type: "number", empty: 0 },
   {
+    name: "flight_fare_pp",
+    path: ["flight_fare_pp"],
+    label: "Domestic flight fare (per person, one way)",
+    type: "money",
+    initial: 15000,
+    empty: 15000,
+    help: "Used for every flight in the circuit that has no row in Master data > Flight routes (a row there wins). Never left as a price to type.",
+  },
+  {
     name: "hike_label",
     path: ["rate_hike", "label"],
     label: "Yearly hike: season name",

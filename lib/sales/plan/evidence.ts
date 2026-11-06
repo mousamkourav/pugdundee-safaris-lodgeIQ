@@ -16,6 +16,7 @@
 
 import { DATELESS_RE, EXTRA_WORDS, REQUESTS, aliasesOf, lodgeAliases } from "./parse-text";
 import { safariOnly } from "./cities";
+import { guestWords } from "./travel-rules";
 import type { BuilderContext } from "./types";
 
 // ---------------- text matching ----------------
@@ -184,10 +185,12 @@ export function checkEvidence(raw: unknown, message: string, full: Ctx): { readi
     if (v !== undefined) out[key] = v;
   };
 
-  // ---- guests
-  set("adults", take("adults", o.adults, num));
+  // ---- guests ("1 double" states 2 adults and 1 room, "2 doubles" 4 and 2, "couple" 2: rule 5 of
+  // travel-rules.ts; the words must still be in the message)
+  const words = (k: "adults" | "rooms") => (q: string, v: unknown) => num(q, v) || (typeof v === "number" && guestWords(q)?.[k] === v);
+  set("adults", take("adults", o.adults, words("adults")));
   set("children_ages", take("children_ages", o.children_ages, (q, v) => Array.isArray(v) && v.every((a) => typeof a === "number" && statesNumber(q, a))));
-  set("rooms", take("rooms", o.rooms, num));
+  set("rooms", take("rooms", o.rooms, words("rooms")));
   set("country", take("country", o.country));
   set("nationality", take("nationality", o.nationality));
 

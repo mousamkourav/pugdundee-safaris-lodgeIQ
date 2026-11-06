@@ -289,6 +289,8 @@ export async function loadPricingData(client?: SupabaseClient): Promise<{ data: 
     ),
     settings: {
       markup_pct: numOrNull(s.markup_pct),
+      // a domestic flight with no row in Master data > Flight routes (owner, 5 Nov 2026: Rs 15,000)
+      flight_fare_pp: numOrNull(s.flight_fare_pp),
       fx: {
         USD: live?.rates.USD ?? numOrNull(fx?.USD),
         EUR: live?.rates.EUR ?? numOrNull(fx?.EUR),
