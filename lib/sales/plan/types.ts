@@ -78,6 +78,7 @@ export interface DaySafari {
   zone: "core" | "buffer";
   naturalist?: boolean; // accompanying naturalist on this safari
   jeeps?: number; // jeeps on this safari; empty = enough for the group (1 up to 6 guests)
+  by_hand?: boolean; // naturalist / jeeps set on the day plan by hand: kept when the days are built again
 }
 
 // A flight leg (Delhi to Jabalpur...). Ticket details can be added once booked.

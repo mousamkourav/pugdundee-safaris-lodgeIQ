@@ -71,6 +71,14 @@ const CHECKED = (r: { item: string }) => !/^Ken River Lodge: /.test(r.item);
 // the export names the calendars as the screen shows them
 const CAL: Record<string, string> = { "Pugdundee lodges": "pugdundee", "Ken River Lodge (long weekends)": "krl" };
 
+// supabase/sales_roseate_2026_11_08.sql: Roseate House B&B to 31 Mar 2027, 23,000 -> 19,500 (+ 18%)
+const roseate8Nov = (rows: Row[]) =>
+  rows.map((r) =>
+    r.room_category_id === "R_roseate_house_ac_deluxe" && String(r.valid_from) <= "2027-01-15" && String(r.valid_to) >= "2027-01-15" && /^(CP|B&B|BB)$/i.test(String(r.meal_plan))
+      ? { ...r, rate_double: r.rate_double === 23000 ? 19500 : r.rate_double, rate_single: r.rate_single === 23000 ? 19500 : r.rate_single }
+      : r
+  );
+
 const data = (sql: boolean): AuData => {
   const m = R as unknown as Record<string, Row[]>;
   // the export of 2 Nov has no price tiers; Master data has these (the live audit shows them OK)
@@ -84,7 +92,7 @@ const data = (sql: boolean): AuData => {
     properties: m.properties as never,
     locations: m.locations as never,
     rooms: m.rooms as never,
-    roomRates: m.roomRates as never,
+    roomRates: (sql ? roseate8Nov(m.roomRates) : m.roomRates) as never,
     transfers: later.transfers as never,
     addons: addons as unknown as AuAddon[],
     parks: m.parks as never,
@@ -96,16 +104,18 @@ const data = (sql: boolean): AuData => {
   };
 };
 
-test("real Master data: every Rate audit row is OK once the SQL of 3 and 4 Nov 2026 is run", () => {
+test("real Master data: every Rate audit row is OK once the SQL of 3, 4 and 8 Nov 2026 is run", () => {
   const bad = auditRates(data(true)).filter((r) => CHECKED(r) && r.status !== "ok");
   assert.deepEqual(bad.map((r) => `${r.item}: ${r.status} (${r.expected} / ${r.found})`), []);
 });
 
 // The 5 Nov 2026 export was taken after the owner ran the SQL of 3 and 4 Nov: the export itself has
 // every row those files correct, so nothing is flagged even without applying them here.
-test("real Master data (5 Nov export): the SQL of 3 and 4 Nov is already in it, nothing flagged", () => {
+// (8 Nov 2026: Roseate House is 19,500 + 18% to 31 Mar 2027; the export still says 23,000 until
+// supabase/sales_roseate_2026_11_08.sql runs, so that one row is flagged)
+test("real Master data (5 Nov export): the SQL of 3 and 4 Nov is already in it; only Roseate House waits for the SQL of 8 Nov", () => {
   const bad = auditRates(data(false)).filter((r) => CHECKED(r) && r.status !== "ok").map((r) => r.item).sort();
-  assert.deepEqual(bad, []);
+  assert.deepEqual(bad, ["Roseate House, CP, 2027-03 (to 2027-03-31)"]);
 });
 
 // The experiences the owner asked for are found where they are sold (no "not offered" note)

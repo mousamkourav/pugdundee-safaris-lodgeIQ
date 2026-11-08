@@ -68,6 +68,7 @@ export interface CostDay {
   cost: Record<CostKind, number>; // after the changes typed by hand
   auto: Record<CostKind, number>; // from Master data
   edited: CostKind[];
+  why?: Partial<Record<CostKind, string>>; // what a Master data figure is made of ("2 safaris, 2 naturalists")
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;

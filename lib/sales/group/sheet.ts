@@ -8,8 +8,10 @@
 //   ten guests                   -> per-person and per-room add-ons / 10 = "person";
 //                                   per-group add-ons = "group"
 // Flights and items typed on the trip come from the trip itself: a flight's fare per person (or its
-// price / the guests) = "person"; any other typed price = "group". No offers, discounts, markup or
-// adjustment in the sheet (the group's margin is set on the ladder). GST is in every figure.
+// price / the guests) = "person"; a city hotel's typed price = a room's price for the night (single
+// and double, 8 Nov 2026: before, it was taken once for the whole group); any other typed price =
+// "group". No offers, discounts, markup or adjustment in the sheet (the group's margin is set on the
+// ladder). GST is in every figure.
 import { planToTrip } from "@/lib/sales/plan/planner";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 import type { BuilderContext, Plan } from "@/lib/sales/plan/types";
@@ -43,10 +45,14 @@ export function buildCostSheet(plan: Plan, ctx: BuilderContext, today: string, g
   const keyOf = (i: number) => (plan.dateless ? `d${i + 1}` : plan.days[i].date);
   const idx = new Map(plan.days.map((d, i) => [d.date, i]));
   const auto = plan.days.map(() => zero());
+  // what each figure is made of, said under it (8 Nov 2026: "2 safaris" on a day, not a puzzle)
+  const parts = plan.days.map(() => ({}) as Partial<Record<CostKind, string[]>>);
+  const note = (i: number, kind: CostKind, what: string) => (parts[i][kind] ??= []).push(what);
   const add = (line: PriceLine, kind: CostKind, factor = 1) => {
     const i = line.date ? idx.get(line.date) : undefined;
     if (i == null || line.missing) return;
     auto[i][kind] = r2(auto[i][kind] + line.amount * factor);
+    note(i, kind, line.kind === "safari" ? (line.group === "naturalist" ? "naturalist" : "safari") : line.kind === "room" ? "room" : line.kind === "transfer" ? "transfer" : "add-on");
   };
   const unitOf = (l: PriceLine) => ctx.pricing.addons.find((a) => a.id === l.ref_id)?.pricing_unit ?? null;
   const isCustom = (l: PriceLine) => l.kind === "addon" && !l.ref_id;
@@ -85,16 +91,41 @@ export function buildCostSheet(plan: Plan, ctx: BuilderContext, today: string, g
       if (it.addon_id || it.car_package_id) continue;
       if (it.type === "flight") {
         const pp = it.flight?.fare_pp ?? (it.price != null ? it.price / pax : null);
-        if (pp) auto[i].person = r2(auto[i].person + pp);
-      } else if (it.price) auto[i].group = r2(auto[i].group + it.price);
+        if (pp) {
+          auto[i].person = r2(auto[i].person + pp);
+          note(i, "person", "flight");
+        }
+      } else if (it.type === "hotel" && it.auto?.startsWith("hotel:") && it.price) {
+        // a city hotel's price typed on the day plan: one room for the night (incl. tax)
+        auto[i].single = r2(auto[i].single + it.price);
+        auto[i].double = r2(auto[i].double + it.price);
+        note(i, "single", "typed room price");
+        note(i, "double", "typed room price");
+      } else if (it.price) {
+        auto[i].group = r2(auto[i].group + it.price);
+        note(i, "group", "typed");
+      }
     }
   });
 
   const name = (id: string | null | undefined) => ctx.properties.find((p) => p.id === id)?.name ?? "";
   const kind = (id: string | null | undefined) => ctx.properties.find((p) => p.id === id)?.kind ?? "";
   const roomName = (id: string | null | undefined) => ctx.rooms.find((r) => r.id === id)?.name ?? "";
+  // a night at a city hotel typed by name (no Master data rates): its stay and its price from the trip
+  const typedHotel = (i: number) => (plan.days[i].items ?? []).find((it) => it.type === "hotel" && it.auto?.startsWith("hotel:"));
+  const say = (list: string[] | undefined) => {
+    if (!list?.length) return undefined;
+    const n = new Map<string, number>();
+    for (const w of list) n.set(w, (n.get(w) ?? 0) + 1);
+    const order = ["room", "typed room price", "safari", "naturalist", "transfer", "flight", "add-on", "typed"];
+    return [...n]
+      .sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))
+      .map(([w, c]) => (c > 1 && w !== "typed room price" ? `${c} ${w}s` : w))
+      .join(", ");
+  };
   const days = plan.days.map((d, i) => {
     const pid = d.city_hotel?.property_id ?? d.property_id;
+    const th = typedHotel(i);
     const stop = plan.stops.find((s) => s.property_id === d.property_id);
     const k = kind(pid);
     return {
@@ -102,12 +133,13 @@ export function buildCostSheet(plan: Plan, ctx: BuilderContext, today: string, g
       n: i + 1,
       date: plan.dateless ? null : d.date,
       title: d.title,
-      stay: pid ? name(pid) : "",
+      stay: pid ? name(pid) : th ? th.title.replace(/^Hotel:\s*/, "") : "",
       category: d.city_hotel ? roomName(d.city_hotel.room_category_id) : stop ? roomName(stop.room_category_id) : "",
       meal: d.city_hotel?.meal_plan ?? stop?.meal_plan ?? "",
       own_lodge: !!pid && (k || "own_lodge") === "own_lodge" && !d.city_hotel,
-      city_hotel: !!d.city_hotel || k === "city_hotel",
+      city_hotel: !!d.city_hotel || k === "city_hotel" || !!th,
       auto: auto[i],
+      why: Object.fromEntries(COST_KINDS.map((c) => [c, say(parts[i][c])]).filter(([, v]) => v)) as CostDay["why"],
     };
   });
   return { days, missing: [...new Set(ten.missing.map((m) => m.label))] };

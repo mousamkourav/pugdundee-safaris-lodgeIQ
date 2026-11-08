@@ -52,12 +52,16 @@ export function PlanStep({
   ctx,
   result,
   isAdmin = false,
+  group = false,
 }: {
   plan: Plan;
   setPlan: SetPlan;
   ctx: BuilderContext;
   result: PriceResult | null;
   isAdmin?: boolean;
+  // a group quote: priced on the group costing sheet below (per room, per jeep...), so the
+  // one-booking checks (discount, GST, cost by lodge, detailed price check) are not shown
+  group?: boolean;
 }) {
   const [targetDay, setTargetDay] = useState(0);
   const [overDay, setOverDay] = useState<number | null>(null);
@@ -211,7 +215,7 @@ export function PlanStep({
     const day = plan.days[i];
     const old = day.safaris.find((s) => s.session === session);
     const safaris = day.safaris.filter((s) => s.session !== session && s.session !== "full_day");
-    if (zone) safaris.push({ session, zone, ...(old?.naturalist ? { naturalist: true } : {}), ...(old?.jeeps ? { jeeps: old.jeeps } : {}) });
+    if (zone) safaris.push({ session, zone, ...(old?.naturalist ? { naturalist: true } : {}), ...(old?.jeeps ? { jeeps: old.jeeps } : {}), ...(old?.by_hand ? { by_hand: true } : {}) });
     safaris.sort((a, b) => (a.session === b.session ? 0 : a.session === "morning" ? -1 : 1));
     let kind = day.kind;
     if (kind === "safari" || kind === "leisure") kind = safaris.length ? "safari" : "leisure";
@@ -225,7 +229,7 @@ export function PlanStep({
   // Full-day safari: one safari for the whole day instead of morning and evening.
   function setFullDay(i: number, zone: "" | DaySafari["zone"]) {
     const day = plan.days[i];
-    const safaris: DaySafari[] = zone ? [{ session: "full_day", zone, ...(day.safaris[0]?.naturalist ? { naturalist: true } : {}) }] : [];
+    const safaris: DaySafari[] = zone ? [{ session: "full_day", zone, ...(day.safaris[0]?.naturalist ? { naturalist: true } : {}), ...(day.safaris[0]?.by_hand ? { by_hand: true } : {}) }] : [];
     let kind = day.kind;
     if (kind === "safari" || kind === "leisure") kind = safaris.length ? "safari" : "leisure";
     const autoText = describe(ctx, day, plan.vehicle_type).text;
@@ -238,7 +242,7 @@ export function PlanStep({
       ...d,
       safaris: d.safaris.map((x) => {
         if (x.session !== session) return x;
-        const next: DaySafari = { session: x.session, zone: x.zone, ...(x.naturalist ? { naturalist: true } : {}) };
+        const next: DaySafari = { session: x.session, zone: x.zone, ...(x.naturalist ? { naturalist: true } : {}), by_hand: true };
         return jeeps ? { ...next, jeeps } : next;
       }),
     }));
@@ -246,7 +250,7 @@ export function PlanStep({
   // Naturalist on one safari of a day (one per safari: never more than the safaris).
   function setNaturalist(i: number, session: DaySafari["session"], on: boolean) {
     const day = plan.days[i];
-    const next: PlanDay = { ...day, safaris: day.safaris.map((s) => (s.session === session ? { ...s, naturalist: on } : s)) };
+    const next: PlanDay = { ...day, safaris: day.safaris.map((s) => (s.session === session ? { ...s, naturalist: on, by_hand: true } : s)) };
     const autoText = describe(ctx, day, plan.vehicle_type).text;
     setDay(i, () => (day.text === autoText ? describe(ctx, next, plan.vehicle_type) : next));
   }
@@ -483,7 +487,8 @@ export function PlanStep({
                     const c = stays[k];
                     // the night priced from the hotel's rates in Master data (Roseate House), if it is there
                     const masterLine = d.city_hotel ? result?.lines.find((l) => l.kind === "room" && l.date === d.date && l.property_id === d.city_hotel!.property_id) : undefined;
-                    const masterRate = masterLine && !masterLine.missing ? masterLine.amount : null;
+                    // a group quote types a room's price: the Master figure is shown per room too
+                    const masterRate = masterLine && !masterLine.missing ? (group ? Math.round(masterLine.amount / Math.max(1, masterLine.quantity)) : masterLine.amount) : null;
                     const inMaster = !!c.price && !!masterHotelRate(ctx, c.hotel, { date: d.date, nationality: plan.guest.nationality });
                     return (
                       <li className="flex flex-wrap items-center gap-1.5 bg-sand-50 px-3 py-2 text-xs">
@@ -502,19 +507,19 @@ export function PlanStep({
                           onChange={(e) => updateStay(k, { hotel: e.target.value.slice(0, 120) })}
                           aria-label="Hotel"
                         />
-                        <label className="flex items-center gap-1 text-sand-500" title="Price per night for all rooms, incl. tax">
+                        <label className="flex items-center gap-1 text-sand-500" title={group ? "Price per room per night, incl. tax" : "Price per night for all rooms, incl. tax"}>
                           Rs
                           <input
                             type="number"
                             min={0}
                             className="tabular w-24 rounded border border-sand-200 bg-white px-1.5 py-1 text-right"
                             placeholder={d.city_hotel ? (masterRate !== null ? `${masterRate} (Master)` : "no Master rate") : "per night"}
-                            title={d.city_hotel ? "Priced from this hotel's rates in Master data (incl. GST). Type a price to use your own instead." : "Price per night for all rooms, incl. tax"}
+                            title={d.city_hotel ? `Priced from this hotel's rates in Master data (incl. GST). Type a price${group ? " per room" : ""} to use your own instead.` : group ? "Price per room per night, incl. tax" : "Price per night for all rooms, incl. tax"}
                             value={c.price ?? ""}
                             onChange={(e) => updateStay(k, { price: e.target.value === "" ? null : Math.max(0, Math.round(Number(e.target.value))) })}
-                            aria-label="Hotel price per night, all rooms"
+                            aria-label={group ? "Hotel price per room per night" : "Hotel price per night, all rooms"}
                           />
-                          /night
+                          {group ? "/room/night" : "/night"}
                         </label>
                         {inMaster && (
                           <button type="button" className="rounded border border-olive-300 px-1.5 py-1 text-olive-700 hover:bg-olive-50" onClick={() => updateStay(k, { price: null })} title="This hotel has rates in Master data: price its nights from them">
@@ -959,6 +964,11 @@ export function PlanStep({
           </div>
 
           {/* ---------- discount, offers, markup, currency ---------- */}
+          {group ? (
+            <p className={`${ui.card} p-3 text-xs text-sand-600`}>
+              Group quote: the costs per day, the markup and the US dollar prices are on the group costing sheet below this plan. Any rate can be corrected there.
+            </p>
+          ) : (
           <details className={`${ui.card} group`} open={!!plan.discount || plan.offer_ids.length > 0 || plan.currency !== "INR" || plan.gst?.mode === "consolidated"}>
             <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm font-semibold text-olive-800">
               <span className="flex-1">Discount, offers, currency and GST</span>
@@ -1158,9 +1168,10 @@ export function PlanStep({
               </div>
             </div>
           </details>
+          )}
 
           {/* ---------- cost by lodge (internal) ---------- */}
-          {result && result.byProperty.length > 0 && (
+          {!group && result && result.byProperty.length > 0 && (
             <details className={`${ui.card} group`}>
               <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-sm font-semibold text-olive-800">
                 Cost by lodge (internal)
@@ -1185,7 +1196,7 @@ export function PlanStep({
       </div>
 
       {/* ---------- every rate with its GST, to check the quote and correct a price ---------- */}
-      {result && detail.length > 0 && (
+      {!group && result && detail.length > 0 && (
         <details className={`${ui.card} group`} open={editedCount > 0}>
           <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2 px-4 py-3 text-sm font-semibold text-olive-800">
             <span className="flex-1">Detailed price check (internal)</span>

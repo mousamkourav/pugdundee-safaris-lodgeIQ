@@ -10,7 +10,7 @@
 import { fmtDay } from "@/lib/sales/format";
 import { mealLabel } from "@/lib/sales/pricing/engine";
 import { itemStep, transferStep } from "./day-order";
-import { lodgesInPark, mealPlansOf, roomsOf, routeKey, segments } from "./planner";
+import { lodgesInPark, mealPlansOf, roomsOf, routeKey, routeKeyWithPrices, segments } from "./planner";
 import { sanitizePlan } from "./sanitize";
 import type { BuilderContext, Plan, PlanStop } from "./types";
 
@@ -42,14 +42,23 @@ const canon = (v: unknown): unknown =>
 // server always agree: before (r1) the browser's plan was hashed as built, and a city stay built
 // by the AI reading ({..., hotel, at}) hashed differently once the server rebuilt it ({..., at,
 // hotel}): "The route changed after it was confirmed" on save, with nothing changed (2 Nov 2026).
+// r3 (8 Nov 2026): a price typed for a city hotel is not part of the route any more.
 export function confirmKey(plan: Plan): string {
   const clean = sanitizePlan(JSON.parse(JSON.stringify(plan))) ?? plan;
-  return `r2-${fnv(JSON.stringify(canon(JSON.parse(routeKey(clean)))))}`;
+  return `r3-${fnv(JSON.stringify(canon(JSON.parse(routeKey(clean)))))}`;
 }
-// the key quotes confirmed before 2 Nov 2026 carry
-const legacyKey = (plan: Plan) => `r1-${fnv(routeKey(plan))}`;
+// the keys quotes confirmed earlier carry: r2 (2 - 8 Nov 2026, with the typed hotel prices), r1
+const r2Key = (plan: Plan) => {
+  const clean = sanitizePlan(JSON.parse(JSON.stringify(plan))) ?? plan;
+  return `r2-${fnv(JSON.stringify(canon(JSON.parse(routeKeyWithPrices(clean)))))}`;
+};
+const legacyKey = (plan: Plan) => `r1-${fnv(routeKeyWithPrices(plan))}`;
 
-export const isConfirmed = (plan: Plan) => !!plan.confirmed && (plan.confirmed.key === confirmKey(plan) || plan.confirmed.key === legacyKey(plan));
+export const isConfirmed = (plan: Plan) => {
+  const k = plan.confirmed?.key;
+  if (!k) return false;
+  return k.startsWith("r3-") ? k === confirmKey(plan) : k.startsWith("r2-") ? k === r2Key(plan) : k === legacyKey(plan);
+};
 export const markConfirmed = (plan: Plan, at: string): Plan => ({ ...plan, confirmed: { key: confirmKey(plan), at } });
 
 // ---------------- the trip in plain words ----------------

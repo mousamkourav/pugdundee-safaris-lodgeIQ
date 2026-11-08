@@ -145,7 +145,7 @@ const twoPeriods = (source: string, hotel: string, winter: number, summer: numbe
 ];
 
 export const CARD_ROOMS: CardRoom[] = [
-  ...twoPeriods("Partner hotels", "Roseate House", 23000, 17000),
+  ...twoPeriods("Partner hotels", "Roseate House", 19500, 17000), // 19,500 + 18% (owner, 8 Nov 2026: 23,000 was with the tax)
   ...twoPeriods("Partner hotels", "DoubleTree", 20000, 15000),
   ...twoPeriods("Partner hotels", "Courtyard", 20000, 15000),
   ...twoPeriods("Partner hotels", "ITC Mughal", 25000, 15000),

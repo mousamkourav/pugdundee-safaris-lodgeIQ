@@ -147,10 +147,40 @@ function carryItems(oldDays: PlanDay[], days: PlanDay[]): PlanDay[] {
   return out;
 }
 
+// The choices made on the day plan survive when the days are built again (a room, a meal plan or
+// the group size changed): a naturalist or the jeeps on a safari that is still there (same date,
+// park and time of day). Set by hand: always kept. Otherwise kept unless the stop says how many
+// (the guest's wish "naturalist on every safari" is applied again as asked).
+function carrySafariChoices(plan: Plan, ctx: BuilderContext, oldDays: PlanDay[], days: PlanDay[]): PlanDay[] {
+  if (!oldDays.length) return days;
+  const parkOf = (d: PlanDay, x: DaySafari) => (x.session === "morning" && d.morning_park_id ? d.morning_park_id : d.park_id) ?? "";
+  const asked = (park: string, k: "want_naturalists" | "want_jeeps") => plan.stops.some((s) => s.park_id === park && s[k] != null);
+  const old = new Map<string, DaySafari>();
+  for (const d of oldDays) for (const x of d.safaris) old.set(`${d.date}|${parkOf(d, x)}|${x.session}`, x);
+  return days.map((d) => {
+    let changed = false;
+    const safaris = d.safaris.map((x) => {
+      const o = old.get(`${d.date}|${parkOf(d, x)}|${x.session}`);
+      if (!o) return x;
+      const park = parkOf(d, x);
+      const nat = o.by_hand || !asked(park, "want_naturalists") ? !!o.naturalist : !!x.naturalist;
+      const jeeps = o.by_hand || !asked(park, "want_jeeps") ? o.jeeps : x.jeeps;
+      const next: DaySafari = { session: x.session, zone: x.zone, ...(nat ? { naturalist: true } : {}), ...(jeeps ? { jeeps } : {}), ...(o.by_hand ? { by_hand: true } : {}) };
+      if (!!next.naturalist !== !!x.naturalist || next.jeeps !== x.jeeps || !!next.by_hand !== !!x.by_hand) changed = true;
+      return next;
+    });
+    if (!changed) return d;
+    const kept = { ...d, safaris };
+    // the day's words follow the naturalist (the text was just written for the fresh day)
+    return d.text === describe(ctx, d, plan.vehicle_type).text ? { ...describe(ctx, kept, plan.vehicle_type), items: d.items } : kept;
+  });
+}
+
 export function buildDays(plan: Plan, ctx: BuilderContext): PlanDay[] {
   const fresh = buildDaysFresh(plan, ctx).map((d) => ({ ...d, items: [] as PlanItem[] }));
   if (!fresh.length) return fresh;
-  return noDriveBetweenRegions(carryItems(plan.days ?? [], applyCarPackages(plan, addFlights(plan, addCityDays(plan, applyWants(plan, ctx, fresh), ctx), ctx), ctx)), ctx);
+  const built = carryItems(plan.days ?? [], applyCarPackages(plan, addFlights(plan, addCityDays(plan, applyWants(plan, ctx, fresh), ctx), ctx), ctx));
+  return noDriveBetweenRegions(carrySafariChoices(plan, ctx, plan.days ?? [], built), ctx);
 }
 
 // The last guard, whatever the reader or the AI made of the message: a road transfer between
@@ -1300,8 +1330,33 @@ export function datelessPriceNote(basis: RateBasis | null | undefined): string {
 }
 
 // Everything that changes the day plan. If this changes, the days are rebuilt.
+// A price typed for a city hotel's nights is not part of the route (8 Nov 2026): typing it no longer
+// rebuilds the day plan or asks to confirm the trip again (syncCityHotelPrices puts it on the days).
 export const routeKey = (p: Plan) =>
+  JSON.stringify([p.arrival_date, p.arrival_location_id, p.departure_location_id, p.stops, p.vehicle_type, p.guest.rooms, (p.city_stays ?? []).map(({ price: _p, ...c }) => c), p.flights ?? [], !!p.dateless, !!p.own_vehicle, p.end_city ?? null, p.arrival_mode ?? null, p.departure_mode ?? null, p.between_lodges ?? null]);
+// the route as keyed before 8 Nov 2026 (with the typed hotel prices): confirmations made then still count
+export const routeKeyWithPrices = (p: Plan) =>
   JSON.stringify([p.arrival_date, p.arrival_location_id, p.departure_location_id, p.stops, p.vehicle_type, p.guest.rooms, p.city_stays ?? [], p.flights ?? [], !!p.dateless, !!p.own_vehicle, p.end_city ?? null, p.arrival_mode ?? null, p.departure_mode ?? null, p.between_lodges ?? null]);
+// the typed city hotel prices (the part of the trip routeKey leaves out)
+export const hotelPriceKey = (p: Plan) => JSON.stringify((p.city_stays ?? []).map((c) => c.price ?? null));
+
+// A city hotel's typed price changed, nothing else: its nights' "Hotel: ..." lines on the day plan
+// follow (added, changed or removed); everything else on the days stays as it is.
+export function syncCityHotelPrices(plan: Plan, ctx: BuilderContext): PlanDay[] {
+  if (!plan.days.length) return plan.days;
+  const isHotel = (it: PlanItem) => !!it.auto && it.auto.startsWith("hotel:");
+  // the night priced from Master data (city_hotel) or from the typed price (a "Hotel: ..." line)
+  const fresh = new Map(buildDays({ ...plan, days: [] }, ctx).map((d) => [d.date, d]));
+  return plan.days.map((d) => {
+    const f = fresh.get(d.date);
+    const want = (f?.items ?? []).filter(isHotel);
+    const had = (d.items ?? []).filter(isHotel);
+    const ch = f ? f.city_hotel ?? null : d.city_hotel ?? null;
+    if (JSON.stringify(had) === JSON.stringify(want) && JSON.stringify(d.city_hotel ?? null) === JSON.stringify(ch)) return d;
+    const { city_hotel: _old, ...rest } = d;
+    return { ...rest, ...(ch ? { city_hotel: ch } : {}), items: [...want, ...(d.items ?? []).filter((it) => !isHotel(it))] };
+  });
+}
 
 // Problems with the route itself (before pricing).
 export function routeProblems(plan: Plan, ctx: BuilderContext): string[] {

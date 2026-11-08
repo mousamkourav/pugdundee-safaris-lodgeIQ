@@ -27,7 +27,7 @@ const data: AuData = {
   ],
   rooms: [{ id: "ROS_D", property_id: "ROS", name: "AC Deluxe" }, { id: "RAD_R", property_id: "RAD", name: "Deluxe" }],
   roomRates: [
-    rr("ROS_D", { rate_double: 23000 }),
+    rr("ROS_D", { rate_double: 19500 }),
     rr("ROS_D", { valid_from: "2027-04-01", valid_to: "2027-09-30", rate_double: 17000, nationality: "indian" }),
     rr("RAD_R", { valid_to: "2027-09-30", rate_double: 15000, tax_pct: 12 }),
   ],
@@ -65,7 +65,7 @@ test("transfers: OK, a different amount, missing, wrong GST; Jabalpur is its air
   assert.ok(!rows.some((r) => / via /.test(r.item) && !/Transfer via/.test(r.item)));
 });
 
-test("partner hotel rooms: Roseate 23,000 OK; 17,000 saved for Indian guests only is flagged; Radisson GST", () => {
+test("partner hotel rooms: Roseate 19,500 OK; 17,000 saved for Indian guests only is flagged; Radisson GST", () => {
   assert.equal(rows.find((r) => r.item.startsWith("Roseate House, CP, 2027-03"))?.status, "ok");
   const apr = rows.find((r) => r.item.startsWith("Roseate House, CP, 2027-05"));
   assert.equal(apr?.status, "different");

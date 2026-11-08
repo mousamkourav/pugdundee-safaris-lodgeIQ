@@ -98,7 +98,7 @@ test("Confirm: the confirmation holds only for the route that was checked", () =
   assert.equal(isConfirmed(p), false);
   const ok = markConfirmed(p, "2026-11-01T10:00:00Z");
   assert.equal(isConfirmed(ok), true);
-  assert.match(ok.confirmed!.key, /^r2-[0-9a-f]{8}-\d+$/);
+  assert.match(ok.confirmed!.key, /^r3-[0-9a-f]{8}-\d+$/);
   // the same route: still confirmed; a correction to it: confirm again
   assert.equal(isConfirmed({ ...ok, guest: { ...ok.guest, name: "Mr Weber" } }), true);
   assert.equal(isConfirmed(editStop(ok, ctx, 1, { nights: 3 })), false);

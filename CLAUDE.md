@@ -195,6 +195,15 @@ only Sales users can have it (`lib/sales/group/server.ts`, any failure = no acce
 - Payments: booking in USD, no lodge lines, total = selling x paying + supplement x single rooms
   for the group size chosen in the costing step; dues by the quote's payment percentages.
 - A group quote stays a group quote (save refuses a change of type); /sales/new redirects it.
+- Review of 8 Nov 2026 (G. Manager): a city hotel's typed price is per room in a group quote and
+  goes to single / double (it went to "per group" before); the one-booking checks (discount, GST,
+  cost by lodge, detailed price check) are hidden in group mode - the costing sheet is the check,
+  and each figure says what it is made of ("2 safaris, 2 naturalists").
+- Builder (all quotes, 8 Nov 2026): a typed city hotel price is not part of routeKey / confirmKey
+  (r3; r2 and r1 keys still accepted), so it never un-confirms the trip or rebuilds the days
+  (syncCityHotelPrices). Naturalists / jeeps ticked on the day plan (DaySafari.by_hand) survive a
+  rebuild (carrySafariChoices); a new wish typed in the chat for that park replaces them. A step
+  that cannot open says why (top and bottom bar), never a button that silently does nothing.
 
 ## Installed app (PWA, 6 Nov 2026)
 LodgeIQ installs on phones and computers (Add to Home screen / Install app). Files:

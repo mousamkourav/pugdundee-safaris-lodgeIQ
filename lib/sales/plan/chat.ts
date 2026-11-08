@@ -15,7 +15,7 @@ import { priceTrip } from "@/lib/sales/pricing/engine";
 import type { ISODate } from "@/lib/sales/pricing/types";
 import { ROOM_MATCH, aliasesOf, extractTrip, lodgeNamedIn, locationAliases, matchByName, roomWishIn, type Ask, type ParsedTrip, type RoomWish } from "./parse-text";
 import { mergeAiFirst, mergeMemory, sourceNote, type Filled } from "./reading";
-import { airportReachesLodge, buildDays, defaultStop, defaultVehicle, emptyPlan, farLegs, lodgesInPark, masterHotelRate, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems, segments } from "./planner";
+import { airportReachesLodge, buildDays, defaultStop, defaultVehicle, emptyPlan, farLegs, lodgesInPark, masterHotelRate, mealPlansOf, planToTrip, roomsOf, routeKey, routeProblems, segments, hotelPriceKey, syncCityHotelPrices } from "./planner";
 import { addDays } from "@/lib/sales/pricing/dates";
 import type { BuilderContext, Plan, PlanStop } from "./types";
 import { cityHotelNamed, cityHotels, safariOnly, sameCity, stayKey, stayWhere } from "./cities";
@@ -574,6 +574,12 @@ export function chatTurn(
       f.roomDecided = [...new Set([...(f.roomDecided ?? []), park.id])];
     }
     next.stops[i] = { ...next.stops[i], ...wish };
+    if (wish.want_naturalists != null || wish.want_jeeps != null) {
+      // asked again in words: that wins over the ticks made by hand on this park's safaris
+      next.days = next.days.map((d) =>
+        d.park_id === park.id || d.morning_park_id === park.id ? { ...d, safaris: d.safaris.map(({ by_hand: _h, ...x }) => x) } : d
+      );
+    }
     const stop = next.stops[i];
     // a lodge already in the trip, only named (e.g. "Kanha first"): nothing new to report
     if (idx >= 0 && !p.nights && !p.lodge && !Object.keys(wish).length) continue;
@@ -855,6 +861,9 @@ export function chatTurn(
   if (routeChanged) {
     // the days need every hotel (Roseate House for its rates and transfers), not only the safari lodges
     next.days = next.stops.length && !routeProblems(next, ctx).length ? buildDays(next, full) : [];
+  } else if (hotelPriceKey(next) !== hotelPriceKey(plan)) {
+    // only a city hotel's typed price changed: its nights' hotel lines follow
+    next.days = syncCityHotelPrices(next, full);
   }
 
   // Two lodges far apart with nothing between them (Pench, then Iora Retreat) in a trip with

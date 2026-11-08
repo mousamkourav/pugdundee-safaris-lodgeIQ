@@ -13,7 +13,7 @@ import { Icon } from "@/components/icons";
 import { rupees, fmtDate } from "@/lib/sales/format";
 import { priceTrip } from "@/lib/sales/pricing/engine";
 import type { PriceResult } from "@/lib/sales/pricing/types";
-import { buildDays, planToTrip, routeKey, routeProblems } from "@/lib/sales/plan/planner";
+import { buildDays, hotelPriceKey, planToTrip, routeKey, routeProblems, syncCityHotelPrices } from "@/lib/sales/plan/planner";
 import { chatTurn, greeting, initialFlags, nextQuestion, type ChatFlags, type ChatMessage, type ChatResult, type QuickReply } from "@/lib/sales/plan/chat";
 import { closureFor } from "@/lib/sales/pricing/engine";
 import type { BuilderContext, Plan } from "@/lib/sales/plan/types";
@@ -44,6 +44,8 @@ interface Stored {
   savedAt: number;
 }
 
+const CONFIRM_AGAIN = "The trip changed after you confirmed it (a lodge, room, meal plan, rooms or the route). Open Confirm, check it and press \"Correct, continue\".";
+
 function Stepper({ step, canGo, go }: { step: number; canGo: (n: number) => boolean; go: (n: number) => void }) {
   return (
     <ol className={`${ui.card} flex items-center gap-2 overflow-x-auto px-3 py-2`}>
@@ -52,7 +54,7 @@ function Stepper({ step, canGo, go }: { step: number; canGo: (n: number) => bool
         const active = i === step;
         return (
           <li key={label} className="flex flex-1 items-center gap-2 last:flex-none">
-            <button type="button" disabled={!canGo(i)} onClick={() => go(i)} className="flex items-center gap-2 whitespace-nowrap text-sm disabled:cursor-not-allowed disabled:opacity-60">
+            <button type="button" aria-disabled={!canGo(i)} onClick={() => go(i)} className="flex items-center gap-2 whitespace-nowrap text-sm aria-disabled:cursor-not-allowed aria-disabled:opacity-60">
               <span
                 className={
                   "grid h-7 w-7 place-items-center rounded-full border text-xs font-semibold " +
@@ -194,6 +196,20 @@ export function Builder({
     }
     // When days were edited by hand, wait for the user to choose (banner below).
   }, [key, builtKey, problems.length, plan.stops.length, plan.days.length, daysEdited, ctx]);
+  // a price typed for a city hotel (not part of the route): only its "Hotel: ..." lines follow,
+  // the day plan and the confirmation stay as they are
+  // a message about saving or a step is about the plan as it was: any change clears it
+  useEffect(() => {
+    setSaveError(null);
+    setSaveProblems([]);
+  }, [plan]);
+  const hpKey = hotelPriceKey(plan);
+  const [builtHp, setBuiltHp] = useState(hpKey);
+  useEffect(() => {
+    if (hpKey === builtHp) return;
+    if (key === builtKey && plan.days.length) setPlanState((p) => ({ ...p, days: syncCityHotelPrices(p, ctx) }));
+    setBuiltHp(hpKey);
+  }, [hpKey, builtHp, key, builtKey, plan.days.length, ctx]);
 
   // Priced from a deferred copy of the plan: a keystroke shows at once, and the total follows
   // as soon as the browser is free (React skips the pricing of plans already typed over).
@@ -303,8 +319,21 @@ export function Builder({
 
   // ---- navigation
   const canGo = (n: number) => n === 0 || (n === 1 && routeReady) || (n <= 3 && ready && confirmed);
+  // why a step cannot open: always said, never a button that does nothing (8 Nov 2026)
+  const whyNot = (n: number): string =>
+    n === 1 || !routeReady
+      ? blockers[0] ?? "Finish the trip first: parks, lodges, rooms and nights."
+      : !ready
+        ? blockers[0] ?? "The plan is not priced yet."
+        : !confirmed
+          ? CONFIRM_AGAIN
+          : "This step cannot open yet.";
   function go(n: number) {
-    if (!canGo(n)) return;
+    if (!canGo(n)) {
+      setSaveError(whyNot(n));
+      topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
     setStep(n);
     topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -441,8 +470,11 @@ export function Builder({
         // everything typed in this session: the reader logs the words it could not place
         const typed = messages.filter((m) => m.role === "user").map((m) => m.text);
         const res = await saveItinerary(JSON.stringify(plan), currentId, mode, enquiry, typed, versionMode, group ? "group" : undefined);
-        if (res.error) setSaveError(res.error);
-        else if (res.problems?.length) setSaveProblems(res.problems);
+        if (res.error || res.problems?.length) {
+          if (res.error) setSaveError(res.error);
+          else setSaveProblems(res.problems ?? []);
+          topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
         else if (res.id) {
           clearStored();
           setDirty(false);
@@ -480,9 +512,11 @@ export function Builder({
           : null
       : !ready
         ? blockers[0] ?? "The plan is not ready yet."
-        : step === 3
-          ? finalChecks[0] ?? null
-          : null;
+        : step === 2 && !confirmed
+          ? CONFIRM_AGAIN
+          : step === 3
+            ? finalChecks[0] ?? null
+            : null;
   // "Correct, continue": this route is confirmed; corrections made here teach the reader
   function confirmTrip() {
     if (!ready) return;
@@ -583,6 +617,16 @@ export function Builder({
         </div>
       )}
 
+      {step >= 2 && ready && !confirmed && (
+        <div className="mb-3 rounded-xl border border-error-border bg-error-bg p-3 text-sm text-error">
+          <p className="font-semibold">Before you continue</p>
+          <p className="mt-1">{CONFIRM_AGAIN}</p>
+          <button type="button" className={`${ui.btnSecondary} ${ui.btnSm} mt-2`} onClick={() => go(1)}>
+            Open Confirm
+          </button>
+        </div>
+      )}
+
       {step === 0 && (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_400px]">
           <div className="space-y-2">
@@ -601,7 +645,7 @@ export function Builder({
             )}
           </div>
           <div className="space-y-3">
-            <PriceBar plan={plan} result={result} blockers={plan.stops.length ? blockers : []} />
+            {!group && <PriceBar plan={plan} result={result} blockers={plan.stops.length ? blockers : []} />}
             <TripDetails plan={plan} setPlan={setPlan} ctx={ctx} today={today} markFlag={markFlag} />
             {group && <GroupDetails plan={plan} setPlan={setPlan} />}
           </div>
@@ -610,7 +654,7 @@ export function Builder({
 
       {step === 1 && <ConfirmStep plan={plan} setPlan={setPlan} ctx={ctx} confirmed={confirmed} onConfirm={onNext} onEdited={() => setConfirmEdited(true)} />}
 
-      {step === 2 && <PlanStep plan={plan} setPlan={setPlan} ctx={ctx} result={result} isAdmin={isAdmin} />}
+      {step === 2 && <PlanStep plan={plan} setPlan={setPlan} ctx={ctx} result={result} isAdmin={isAdmin} group={group} />}
       {step === 2 && group && <GroupCosting plan={plan} setPlan={setPlan} ctx={ctx} today={today} />}
 
       {step === 3 && (
@@ -636,13 +680,23 @@ export function Builder({
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-sand-200 bg-white/95 backdrop-blur lg:left-[280px] print:hidden">
         <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 sm:px-6 lg:px-10">
           <div className="min-w-0 flex-1">
-            <p className="text-sm">
-              <span className="eyebrow mr-2">{pricesNeeded.length ? "Total so far" : "Total"}</span>
-              <span className="tabular font-display text-lg font-semibold text-olive-800">{result && !blockers.length ? rupees(result.totals.grand) : "-"}</span>
-              {result && !blockers.length && <span className="ml-2 text-xs text-sand-500">{paxText(result.perPerson, result.split, rupees)}</span>}
-            </p>
-            {nextBlockedBy ? (
-              <p className="truncate text-xs font-medium text-error" title={nextBlockedBy}>{nextBlockedBy}</p>
+            {group ? (
+              <p className="text-sm">
+                <span className="eyebrow mr-2">Group</span>
+                <span className="tabular font-display text-lg font-semibold text-olive-800">{plan.group?.paying ?? "-"} + {plan.group?.tls ?? 0}</span>
+                <span className="ml-2 text-xs text-sand-500">{plan.group?.fx ? `US$ at Rs ${plan.group.fx}` : "US dollar rate not typed yet"}</span>
+              </p>
+            ) : (
+              <p className="text-sm">
+                <span className="eyebrow mr-2">{pricesNeeded.length ? "Total so far" : "Total"}</span>
+                <span className="tabular font-display text-lg font-semibold text-olive-800">{result && !blockers.length ? rupees(result.totals.grand) : "-"}</span>
+                {result && !blockers.length && <span className="ml-2 text-xs text-sand-500">{paxText(result.perPerson, result.split, rupees)}</span>}
+              </p>
+            )}
+            {saveError || saveProblems.length ? (
+              <p className="line-clamp-2 text-xs font-medium text-error" title={saveError ?? saveProblems.join(" ")}>{saveError ?? saveProblems[0]}</p>
+            ) : nextBlockedBy ? (
+              <p className="line-clamp-2 text-xs font-medium text-error" title={nextBlockedBy}>{nextBlockedBy}</p>
             ) : pricesNeeded.length > 0 ? (
               <p className="truncate text-xs font-medium text-warning">{pricesNeeded.length} price{pricesNeeded.length === 1 ? "" : "s"} still to enter on Plan &amp; price</p>
             ) : null}

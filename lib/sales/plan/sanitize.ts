@@ -54,6 +54,7 @@ export function sanitizePlan(input: unknown): Plan | null {
         zone: y.zone as DaySafari["zone"],
         ...(y.naturalist === true ? { naturalist: true } : {}),
         ...(Number.isInteger(Number(y.jeeps)) && Number(y.jeeps) >= 1 ? { jeeps: Math.min(10, Number(y.jeeps)) } : {}),
+        ...(y.by_hand === true ? { by_hand: true } : {}),
       }))
       .slice(0, 2);
     const kind = ["arrival", "safari", "transfer", "leisure", "departure", "city"].includes(String(d.kind)) ? (d.kind as PlanDay["kind"]) : "leisure";

@@ -41,6 +41,9 @@ export function GroupCosting({ plan, setPlan, ctx, today }: { plan: Plan; setPla
           <div>
             <h2 className="text-lg">Group costing sheet</h2>
             <p className="text-sm text-sand-500">From Master data, GST included. Change any figure; the Master data figure stays shown under it.</p>
+            <p className="mt-1 text-xs text-sand-500">
+              Each column is one unit for the day: Single / Double = one room; Per jeep = one jeep on all that day&apos;s safaris (with their naturalists); Per vehicle = one vehicle on all that day&apos;s transfers; Per person = one guest; Per group = once. The jeeps and vehicles the group needs are set by group size below.
+            </p>
           </div>
           {Object.keys(g.cells).length > 0 && (
             <button type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} onClick={() => set({ cells: {} })}>Back to Master data figures</button>
@@ -81,7 +84,11 @@ export function GroupCosting({ plan, setPlan, ctx, today }: { plan: Plan; setPla
                         placeholder="0"
                         onChange={(e) => setCell(d.key, k, e.target.value, d.auto[k])}
                       />
-                      {d.edited.includes(k) && <span className="block text-[11px] text-sand-400">was {inr(d.auto[k])}</span>}
+                      {d.edited.includes(k) ? (
+                        <span className="block text-[11px] text-sand-400">was {inr(d.auto[k])}</span>
+                      ) : d.why?.[k] && d.cost[k] ? (
+                        <span className="block max-w-24 text-[11px] leading-tight text-sand-400">{d.why[k]}</span>
+                      ) : null}
                     </td>
                   ))}
                 </tr>
