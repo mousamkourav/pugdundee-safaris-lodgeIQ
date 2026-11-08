@@ -126,3 +126,17 @@ test("group sheet: each figure says what it is made of (two safaris and two natu
   assert.equal(full!.why!.jeep, "2 safaris, 2 naturalists");
   assert.match(s.days[0].why?.double ?? "", /room/);
 });
+
+test("group sheet: a transfer marked 'not needed' is not charged per vehicle", async () => {
+  const { routeOf } = await import("./planner");
+  const s0 = buildCostSheet(base, realCtx, T, { per_jeep: 2, per_vehicle: 3 });
+  const day = s0.days.findIndex((d) => d.auto.vehicle > 0);
+  assert.ok(day >= 0);
+  const t = base.days[day].transfer ?? base.days[day].city_transfers?.[0];
+  assert.ok(t);
+  const key = routeOf(t!.from_location_id, t!.to_location_id);
+  const s1 = buildCostSheet({ ...base, route_vehicles: { [key]: 0 } }, realCtx, T, { per_jeep: 2, per_vehicle: 3 });
+  assert.ok(s1.days[day].auto.vehicle < s0.days[day].auto.vehicle, `${s1.days[day].auto.vehicle} < ${s0.days[day].auto.vehicle}`);
+  // every other day is the same
+  s0.days.forEach((d, i) => i !== day && assert.equal(s1.days[i].auto.vehicle, d.auto.vehicle));
+});

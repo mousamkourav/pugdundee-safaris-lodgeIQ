@@ -19,7 +19,7 @@ import { rupees, fmtDate, fmtDay, fmtRange, daysSince } from "@/lib/sales/format
 import type { QueryStatus } from "@/lib/sales/status";
 import type { Plan } from "@/lib/sales/plan/types";
 import type { PriceResult } from "@/lib/sales/pricing/types";
-import type { GroupSaved } from "@/lib/sales/group/costing";
+import { groupCurrency, groupMoney, type GroupSaved } from "@/lib/sales/group/costing";
 import { GroupPrices } from "@/components/sales/group/group-prices";
 
 interface QueryFull {
@@ -117,7 +117,7 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
   const members = admin
     ? memberInfo.members.filter((m) => m.status !== "disabled").map((m) => ({ id: m.id, name: m.full_name || "Unnamed" }))
     : [];
-  const deposit = group ? null : pricing?.payments?.[0]?.amount ?? null; // a group pays in US dollars
+  const deposit = group ? null : pricing?.payments?.[0]?.amount ?? null; // a group: by group size, in its own currency
 
   // flights in the latest version, with the team's booking details
   const flightItems = (plan?.days ?? []).flatMap((d, i) => (d.items ?? []).filter((it) => it.type === "flight" && it.flight).map((it) => ({ it, d, i })));
@@ -202,7 +202,7 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
             <section className={`${ui.card} p-5`}>
               <div className="flex flex-wrap items-end justify-between gap-2">
                 <h2 className="text-lg">Group prices (version {current.version_no})</h2>
-                <p className="text-xs text-sand-500">US dollar rate {group.fx ? `Rs ${group.fx}` : "not typed"}</p>
+                <p className="text-xs text-sand-500">{groupCurrency(group) === "INR" ? "In Indian rupees" : `${groupCurrency(group)} rate ${group.fx ? `Rs ${group.fx}` : "not typed"}`}</p>
               </div>
               <div className="mt-4 overflow-x-auto">
                 <table className="w-full text-left text-sm">
@@ -212,8 +212,8 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
                       <th className="px-3 py-2 text-right">Jeeps</th>
                       <th className="px-3 py-2 text-right">Vehicles</th>
                       <th className="px-3 py-2 text-right">Cost per guest</th>
-                      <th className="px-3 py-2 text-right">Cost US$</th>
-                      <th className="px-3 py-2 text-right">Selling US$</th>
+                      <th className="px-3 py-2 text-right">Cost {groupCurrency(group)}</th>
+                      <th className="px-3 py-2 text-right">Selling {groupCurrency(group)}</th>
                       <th className="px-3 py-2 text-right">Margin</th>
                     </tr>
                   </thead>
@@ -225,7 +225,7 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
                         <td className="tabular px-3 py-2 text-right">{r.vehicles}</td>
                         <td className="tabular px-3 py-2 text-right">{rupees(r.inr)}</td>
                         <td className="tabular px-3 py-2 text-right">{r.usd == null ? "-" : r.usd.toFixed(2)}</td>
-                        <td className="tabular px-3 py-2 text-right font-semibold">{r.sell == null ? "-" : r.sell.toLocaleString("en-US")}</td>
+                        <td className="tabular px-3 py-2 text-right font-semibold">{groupMoney(r.sell, groupCurrency(group))}</td>
                         <td className="tabular px-3 py-2 text-right">{r.sell != null && r.usd != null && r.sell > 0 ? `${(((r.sell - r.usd) / r.sell) * 100).toFixed(1)}%` : "-"}</td>
                       </tr>
                     ))}

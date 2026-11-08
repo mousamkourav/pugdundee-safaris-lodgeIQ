@@ -5,18 +5,20 @@
 import { useMemo } from "react";
 import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
-import { COST_KINDS, COST_LABEL, defaultGroup, priceGroup, rowFor, type CostKind, type GroupRow, type GroupSettings } from "@/lib/sales/group/costing";
+import { COST_KINDS, COST_LABEL, GROUP_CURRENCY_NAME, defaultGroup, groupCurrency, groupMoney, priceGroup, roundChoices, rowFor, type CostKind, type GroupRow, type GroupSettings } from "@/lib/sales/group/costing";
 import { costSheet } from "@/lib/sales/group/sheet";
 import type { BuilderContext, Plan } from "@/lib/sales/plan/types";
 
 const inr = (n: number) => Math.round(n).toLocaleString("en-IN");
-const usd = (n: number | null) => (n == null ? "-" : `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`);
 const DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 const num = (v: string) => (v === "" ? 0 : Number(v));
 
 export function GroupCosting({ plan, setPlan, ctx, today }: { plan: Plan; setPlan: (u: (p: Plan) => Plan) => void; ctx: BuilderContext; today: string }) {
   const g: GroupSettings = useMemo(() => plan.group ?? defaultGroup(), [plan.group]);
   const rows = useMemo(() => (g.rows.length ? g.rows : [rowFor(g, g.paying, g.tls)]), [g]);
+  // the quote's currency (US$, GBP, EUR, AUD or rupees): the "usd" fields hold it
+  const cur = groupCurrency(g);
+  const usd = (n: number | null) => groupMoney(n, cur, 2);
   const sheet = useMemo(() => costSheet(plan, ctx, today, g), [plan, ctx, today, g]);
   const price = useMemo(() => priceGroup(sheet.days, { ...g, rows }), [sheet, g, rows]);
   const set = (x: Partial<GroupSettings>) =>
@@ -110,10 +112,17 @@ export function GroupCosting({ plan, setPlan, ctx, today }: { plan: Plan; setPla
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-3">
-          <label className="block">
-            <span className={ui.label}>US dollar rate</span>
-            <input className={ui.input} type="number" min={0} step="0.01" value={g.fx ?? ""} placeholder="Rupees per dollar" onChange={(e) => set({ fx: e.target.value === "" ? null : num(e.target.value) })} />
-          </label>
+          {cur === "INR" ? (
+            <p className="text-sm text-sand-600">
+              <span className={ui.label}>Quote in</span>
+              Indian rupees: no exchange rate needed. Change the currency on the Trip step (Group details).
+            </p>
+          ) : (
+            <label className="block">
+              <span className={ui.label}>{GROUP_CURRENCY_NAME[cur]} rate ({cur})</span>
+              <input aria-label="Exchange rate" className={ui.input} type="number" min={0} step="0.01" value={g.fx ?? ""} placeholder={`Rupees per 1 ${cur}`} onChange={(e) => set({ fx: e.target.value === "" ? null : num(e.target.value) })} />
+            </label>
+          )}
           <label className="block">
             <span className={ui.label}>Markup %</span>
             <input className={ui.input} type="number" min={0} max={100} value={g.markup_pct} onChange={(e) => set({ markup_pct: Math.max(0, num(e.target.value)) })} />
@@ -121,10 +130,9 @@ export function GroupCosting({ plan, setPlan, ctx, today }: { plan: Plan; setPla
           <label className="block">
             <span className={ui.label}>Round the selling price up to</span>
             <select className={`${ui.select} w-full`} value={g.round_to} onChange={(e) => set({ round_to: Number(e.target.value) })}>
-              <option value={0}>$1</option>
-              <option value={10}>$10</option>
-              <option value={50}>$50</option>
-              <option value={100}>$100</option>
+              {roundChoices(cur).map((v) => (
+                <option key={v} value={v}>{groupMoney(v || 1, cur)}</option>
+              ))}
             </select>
           </label>
         </div>
@@ -138,9 +146,9 @@ export function GroupCosting({ plan, setPlan, ctx, today }: { plan: Plan; setPla
                 <th className="py-2 pr-2">Jeeps</th>
                 <th className="py-2 pr-2">Vehicles</th>
                 <th className="py-2 pr-2 text-right">Cost / guest (Rs)</th>
-                <th className="py-2 pr-2 text-right">Cost / guest ($)</th>
-                <th className="py-2 pr-2 text-right">Selling / guest ($)</th>
-                <th className="py-2 pr-2 text-right">Margin ($)</th>
+                {cur !== "INR" && <th className="py-2 pr-2 text-right">Cost / guest ({cur})</th>}
+                <th className="py-2 pr-2 text-right">Selling / guest ({cur})</th>
+                <th className="py-2 pr-2 text-right">Margin ({cur})</th>
                 <th className="py-2" />
               </tr>
             </thead>
@@ -153,7 +161,7 @@ export function GroupCosting({ plan, setPlan, ctx, today }: { plan: Plan; setPla
                     </td>
                   ))}
                   <td className="tabular py-1.5 pr-2 text-right">{inr(r.inr)}</td>
-                  <td className="tabular py-1.5 pr-2 text-right">{usd(r.usd)}</td>
+                  {cur !== "INR" && <td className="tabular py-1.5 pr-2 text-right">{usd(r.usd)}</td>}
                   <td className="py-1.5 pr-2 text-right">
                     <input
                       aria-label={`Row ${i + 1} selling price`}
@@ -189,7 +197,7 @@ export function GroupCosting({ plan, setPlan, ctx, today }: { plan: Plan; setPla
           <Icon name="plus" className="h-4 w-4" /> Add a group size
         </button>
         <div className="grid gap-3 rounded-lg border border-sand-200 p-4 text-sm sm:grid-cols-2">
-          <p className="sm:col-span-2 text-sand-600">When the group books (for Payments): the group size and single rooms it booked. The booking is in US dollars: selling price x paying guests + single supplement x single rooms.</p>
+          <p className="sm:col-span-2 text-sand-600">When the group books (for Payments): the group size and single rooms it booked. The booking is in the quote&apos;s currency ({cur}): selling price x paying guests + single supplement x single rooms.</p>
           <label className="space-y-1">
             <span className={ui.label}>Group size booked</span>
             <select aria-label="Group size booked" className={`${ui.select} w-full`} value={g.booked_row ?? 0} onChange={(e) => set({ booked_row: Number(e.target.value) })}>
@@ -204,7 +212,7 @@ export function GroupCosting({ plan, setPlan, ctx, today }: { plan: Plan; setPla
         <div className="grid gap-3 rounded-lg bg-sand-50 p-4 text-sm sm:grid-cols-2">
           <p>
             <span className="text-sand-500">Single room supplement: </span>
-            <b className="text-olive-800">Rs {inr(price.single_supplement.inr)}</b> = {usd(price.single_supplement.usd)} &rarr; sell <b>{usd(price.single_supplement.sell)}</b>
+            <b className="text-olive-800">Rs {inr(price.single_supplement.inr)}</b>{cur !== "INR" && <> = {usd(price.single_supplement.usd)}</>} &rarr; sell <b>{usd(price.single_supplement.sell)}</b>
           </p>
           {price.extra_night && (
             <p>

@@ -469,7 +469,7 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
           {view.group && (
             <section data-pdf-block="" className="-mx-5 bg-[var(--color-olive-900,#2B3318)] px-6 py-8 text-white sm:mx-0 sm:rounded-2xl sm:px-10 sm:py-10">
               <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--color-gold-200,#EBD9A0)]">Group quotation</p>
-              <p className="mt-2 text-sm text-white/70">Per guest in US dollars, twin sharing, by group size. Valid until {long(view.validUntil)}.</p>
+              <p className="mt-2 text-sm text-white/70">Per guest in {view.group.currency === "INR" ? "Indian rupees" : view.group.currency === "GBP" ? "British pounds" : view.group.currency === "EUR" ? "euros" : view.group.currency === "AUD" ? "Australian dollars" : "US dollars"}, twin sharing, by group size. Valid until {long(view.validUntil)}.</p>
               <div className="mt-5">
                 <GroupPrices g={view.group} dark />
               </div>

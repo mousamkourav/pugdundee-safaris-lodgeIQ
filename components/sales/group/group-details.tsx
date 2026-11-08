@@ -2,13 +2,14 @@
 
 // Group quote, Trip step: the group's details the costing needs, asked while the trip is filled in.
 import { ui } from "@/components/ui";
-import { defaultGroup, rowFor, type GroupSettings } from "@/lib/sales/group/costing";
+import { GROUP_CURRENCIES, GROUP_CURRENCY_NAME, defaultGroup, groupCurrency, rowFor, type GroupCurrency, type GroupSettings } from "@/lib/sales/group/costing";
 import type { Plan } from "@/lib/sales/plan/types";
 
 const num = (v: string) => (v === "" ? 0 : Number(v));
 
 export function GroupDetails({ plan, setPlan }: { plan: Plan; setPlan: (u: (p: Plan) => Plan) => void }) {
   const g = plan.group ?? defaultGroup();
+  const cur = groupCurrency(g);
   const set = (x: Partial<GroupSettings>) => {
     const next = { ...g, ...x };
     // the first row of the ladder follows the group's size
@@ -62,7 +63,30 @@ export function GroupDetails({ plan, setPlan }: { plan: Plan; setPlan: (u: (p: P
       <div className="grid gap-4 sm:grid-cols-3">
         {field("Guests in one jeep (safari)", "Jeeps = paying guests / this (edit per group size later)", <input className={ui.input} type="number" min={1} max={6} value={g.per_jeep} onChange={(e) => set({ per_jeep: Math.max(1, num(e.target.value)) })} />)}
         {field("People in one vehicle (transfers)", "Guests and tour leaders together", <input className={ui.input} type="number" min={1} max={12} value={g.per_vehicle} onChange={(e) => set({ per_vehicle: Math.max(1, num(e.target.value)) })} />)}
-        {field("US dollar rate", "Rupees per dollar, typed for this quote", <input className={ui.input} type="number" min={0} step="0.01" value={g.fx ?? ""} placeholder="e.g. 85.50" onChange={(e) => set({ fx: e.target.value === "" ? null : num(e.target.value) })} />)}
+      </div>
+      <div className="grid gap-4 sm:grid-cols-3">
+        {field(
+          "Quote in",
+          "The tour operator's currency (an Indian group: rupees)",
+          <select
+            aria-label="Quote currency"
+            className={`${ui.select} w-full`}
+            value={cur}
+            onChange={(e) => {
+              const c = e.target.value as GroupCurrency;
+              // a new currency: its own rate and rounding (a rate typed for another currency is not kept)
+              set({ currency: c, fx: c === cur ? g.fx : null, round_to: c === "INR" ? 500 : 50 });
+            }}
+          >
+            {GROUP_CURRENCIES.map((c) => <option key={c} value={c}>{c} - {GROUP_CURRENCY_NAME[c]}</option>)}
+          </select>
+        )}
+        {cur !== "INR" &&
+          field(
+            `${GROUP_CURRENCY_NAME[cur]} rate`,
+            `Rupees per 1 ${cur}, typed for this quote`,
+            <input aria-label="Exchange rate" className={ui.input} type="number" min={0} step="0.01" value={g.fx ?? ""} placeholder="e.g. 85.50" onChange={(e) => set({ fx: e.target.value === "" ? null : num(e.target.value) })} />
+          )}
       </div>
     </section>
   );

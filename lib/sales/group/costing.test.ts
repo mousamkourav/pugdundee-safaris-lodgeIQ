@@ -5,7 +5,7 @@
 // tour leader options, dollars, markup and rounding, and the checks on what the browser sends.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyCells, defaultGroup, groupBooking, groupTotalInr, toGuest, type GroupSaved, ladderRow, priceGroup, rowFor, roundUp, sanitizeGroup, sheetTotals, tourLeaderCost, type CostDay, type CostKind } from "./costing";
+import { applyCells, defaultGroup, groupBooking, groupTotalInr, toGuest, toSaved, type GroupSaved, ladderRow, priceGroup, rowFor, roundUp, sanitizeGroup, sheetTotals, tourLeaderCost, type CostDay, type CostKind } from "./costing";
 
 // the sheet: [stay, own lodge, single, double, jeep, vehicle, person]
 const SHEET: [string, boolean, number, number, number, number, number][] = [
@@ -99,7 +99,7 @@ test("dollars: markup and rounding up; a selling price typed per row wins; no ra
   assert.equal(ladderRow(t, { ...G, round_to: 50 }, { paying: 6, tls: 1, jeeps: 3, vehicles: 3 }).sell, 6100);
   const typed = ladderRow(t, G, { paying: 6, tls: 1, jeeps: 3, vehicles: 3, sell_usd: 6300 });
   assert.deepEqual([typed.sell, typed.typed, typed.margin], [6300, true, 240.26]);
-  assert.deepEqual(priceGroup(days(), { ...G, fx: null }).problems, ["Type the US dollar rate (rupees per dollar)."]);
+  assert.deepEqual(priceGroup(days(), { ...G, fx: null }).problems, ["Type the US dollar rate (rupees per 1 USD)."]);
   assert.equal(roundUp(6000, 50), 6000);
   assert.equal(roundUp(6000.01, 50), 6050);
 });
@@ -161,4 +161,42 @@ test("a saved group: the list value, the guest's view (no cost) and the booking 
   assert.equal(groupBooking({ ...SAVED, single_supplement: null }, pcts, 0, 1), null);
   // an unknown row falls back to the first
   assert.equal(groupBooking(SAVED, pcts, 9)!.total, 34800);
+});
+
+// ---------------------------------------------------------------- any currency (8 Nov 2026)
+
+test("a group in pounds, euros or rupees: the same cost, its own rate and rounding; rupees need no rate", async () => {
+  const { groupRate, groupMoney, groupCurrency, defaultCurrency } = await import("./costing");
+  const d = days();
+  const base = { ...G, markup_pct: 0, round_to: 50 };
+  const usd = priceGroup(d, { ...base, currency: "USD", fx: 85 });
+  const gbp = priceGroup(d, { ...base, currency: "GBP", fx: 110 });
+  // the rupee cost never depends on the currency
+  assert.deepEqual(gbp.rows.map((r) => r.inr), usd.rows.map((r) => r.inr));
+  assert.equal(gbp.rows[0].usd, Math.round((gbp.rows[0].inr / 110) * 100) / 100);
+  assert.equal(gbp.rows[0].sell, Math.ceil(gbp.rows[0].usd! / 50) * 50);
+  assert.deepEqual(priceGroup(d, { ...base, currency: "EUR", fx: null }).problems, ["Type the Euro rate (rupees per 1 EUR)."]);
+  // an Indian group in rupees: no rate to type, rounded up to Rs 500, the extra night to Rs 100
+  const inr = priceGroup(d, { ...base, currency: "INR", fx: null, round_to: 500 });
+  assert.deepEqual(inr.problems, []);
+  assert.equal(inr.rows[0].usd, inr.rows[0].inr);
+  assert.equal(inr.rows[0].sell, Math.ceil(inr.rows[0].inr / 500) * 500);
+  assert.ok(inr.rows[0].sell! >= inr.rows[0].inr && inr.rows[0].sell! - inr.rows[0].inr < 500);
+  if (inr.extra_night) assert.equal(inr.extra_night.usd_single! % 100, 0);
+  const saved = toSaved(inr, { ...base, currency: "INR", fx: null });
+  assert.equal(saved.currency, "INR");
+  assert.equal(saved.fx, 1);
+  assert.equal(groupTotalInr(saved), Math.round(saved.rows[0].sell! * saved.rows[0].paying));
+  assert.equal(toGuest(saved).currency, "INR");
+  // old quotes (no currency) are US dollars; a currency from the browser is checked
+  assert.equal(groupCurrency({}), "USD");
+  assert.equal(sanitizeGroup({ ...G, currency: "XYZ" })!.currency, "USD");
+  assert.equal(sanitizeGroup({ ...G, currency: "INR", round_to: 50 })!.round_to, 500);
+  assert.equal(sanitizeGroup({ ...G, currency: "INR", round_to: 1000 })!.round_to, 1000);
+  assert.equal(groupRate({ currency: "INR", fx: null }), 1);
+  assert.equal(groupRate({ currency: "GBP", fx: 0 }), null);
+  assert.equal(groupMoney(1450, "GBP"), "£ 1,450");
+  assert.equal(groupMoney(123500, "INR"), "₹ 1,23,500");
+  assert.equal(defaultCurrency("indian"), "INR");
+  assert.equal(defaultCurrency("foreign"), "USD");
 });

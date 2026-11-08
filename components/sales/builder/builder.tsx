@@ -3,7 +3,7 @@
 import { GroupDetails } from "@/components/sales/group/group-details";
 import { GroupCosting } from "@/components/sales/group/group-costing";
 import { GroupPrices } from "@/components/sales/group/group-prices";
-import { defaultGroup, priceGroup, rowFor, toSaved } from "@/lib/sales/group/costing";
+import { GROUP_CURRENCY_NAME, defaultCurrency, defaultGroup, groupCurrency, groupRate, priceGroup, rowFor, toSaved } from "@/lib/sales/group/costing";
 import { costSheet } from "@/lib/sales/group/sheet";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { paxText } from "@/lib/sales/pricing/pax";
@@ -106,7 +106,7 @@ function PriceBar({ plan, result, blockers }: { plan: Plan; result: PriceResult 
 
 export function Builder({
   ctx,
-  initial,
+  initial: initialProp,
   queryId,
   queryNo = null,
   today,
@@ -129,8 +129,16 @@ export function Builder({
 }) {
   const router = useRouter();
   const storageKey = `lq-itinerary-draft:${group ? "group:" : ""}${queryId ?? "new"}`;
-  // a group quote starts with the group's details (6 paying guests + 1 tour leader)
-  if (group && !initial.group) initial = { ...initial, group: defaultGroup(), guest: { ...initial.guest, adults: initial.stops.length ? initial.guest.adults : 6, rooms: initial.stops.length ? initial.guest.rooms : 3 } };
+  // a group quote starts with the group's details (6 paying guests + 1 tour leader). Made once:
+  // a new object on every render made the "unsaved work" check run again and again and offer to
+  // restore the work being done right now (8 Nov 2026).
+  const initial = useMemo(
+    () =>
+      group && !initialProp.group
+        ? { ...initialProp, group: defaultGroup(defaultCurrency(initialProp.guest.nationality)), guest: { ...initialProp.guest, adults: initialProp.stops.length ? initialProp.guest.adults : 6, rooms: initialProp.stops.length ? initialProp.guest.rooms : 3 } }
+        : initialProp,
+    [group, initialProp]
+  );
 
   // a quote saved before the Confirm step existed was checked when it was made: confirmed as it is
   const [plan, setPlanState] = useState<Plan>(() => (initial.days.length && !initial.confirmed ? markConfirmed(initial, new Date().toISOString()) : initial));
@@ -198,6 +206,14 @@ export function Builder({
   }, [key, builtKey, problems.length, plan.stops.length, plan.days.length, daysEdited, ctx]);
   // a price typed for a city hotel (not part of the route): only its "Hotel: ..." lines follow,
   // the day plan and the confirmation stay as they are
+  // an Indian group (read from the enquiry or set on the Trip step) is quoted in rupees, while the
+  // currency is still the untouched default (US dollars, no rate typed)
+  const groupNat = plan.guest.nationality;
+  const untouchedUsd = !!group && !!plan.group && groupCurrency(plan.group) === "USD" && !plan.group.fx;
+  useEffect(() => {
+    if (untouchedUsd && defaultCurrency(groupNat) === "INR") setPlanState((p) => (p.group ? { ...p, group: { ...p.group, currency: "INR", round_to: 500 } } : p));
+  }, [untouchedUsd, groupNat]);
+
   // a message about saving or a step is about the plan as it was: any change clears it
   useEffect(() => {
     setSaveError(null);
@@ -449,8 +465,8 @@ export function Builder({
         setSaveError("The guest's email address does not look right. Fix it on the Trip step.");
         return;
       }
-      if (group && !(plan.group?.fx && plan.group.fx > 0)) {
-        setSaveError("Type the US dollar rate (Plan & price, Price by group size).");
+      if (group && plan.group && !groupRate(plan.group)) {
+        setSaveError(`Type the ${GROUP_CURRENCY_NAME[groupCurrency(plan.group)]} rate (Trip step, Group details; or Plan & price, Price by group size).`);
         go(2);
         return;
       }
@@ -684,7 +700,9 @@ export function Builder({
               <p className="text-sm">
                 <span className="eyebrow mr-2">Group</span>
                 <span className="tabular font-display text-lg font-semibold text-olive-800">{plan.group?.paying ?? "-"} + {plan.group?.tls ?? 0}</span>
-                <span className="ml-2 text-xs text-sand-500">{plan.group?.fx ? `US$ at Rs ${plan.group.fx}` : "US dollar rate not typed yet"}</span>
+                <span className="ml-2 text-xs text-sand-500">
+                  {groupCurrency(plan.group) === "INR" ? "in Indian rupees" : groupRate(plan.group ?? { fx: null }) ? `${groupCurrency(plan.group)} at Rs ${plan.group?.fx}` : `${GROUP_CURRENCY_NAME[groupCurrency(plan.group)]} rate not typed yet`}
+                </span>
               </p>
             ) : (
               <p className="text-sm">

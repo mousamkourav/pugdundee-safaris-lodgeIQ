@@ -1,7 +1,7 @@
 "use server";
 
 import { groupActor } from "@/lib/sales/group/server";
-import { defaultGroup, groupTotalInr, priceGroup, rowFor, toSaved } from "@/lib/sales/group/costing";
+import { GROUP_CURRENCY_NAME, defaultGroup, groupCurrency, groupRate, groupTotalInr, priceGroup, rowFor, toSaved } from "@/lib/sales/group/costing";
 import { costSheet } from "@/lib/sales/group/sheet";
 import { safe } from "@/lib/sales/safe";
 import { makeShareSlug } from "@/lib/sales/share-slug";
@@ -80,7 +80,7 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
     // out of every lodge, every price from Master data or typed.
     const checks = quoteChecks(plan, ctx, result);
     if (checks.length) return { problems: checks };
-    if (plan.group && !(plan.group.fx && plan.group.fx > 0)) return { problems: ["Type the US dollar rate (Plan & price, Price by group size)."] };
+    if (plan.group && !groupRate(plan.group)) return { problems: [`Type the ${GROUP_CURRENCY_NAME[groupCurrency(plan.group)]} rate (Trip step, Group details).`] };
   }
   // a group quote: its prices by group size, worked out again here from Master data and the typed changes
   const groupSaved = plan.group && plan.days.length && !problems.length ? (() => {
@@ -109,7 +109,7 @@ async function saveItineraryUnsafe(planJson: string, queryId: string | null, mod
   const version = {
     plan,
     pricing: result ? { ...result, priced_on: today, ...(groupSaved ? { group: groupSaved } : {}) } : { priced_on: today, incomplete: true, nights },
-    // a group quote: the rupee value of its first group size at the typed US dollar rate
+    // a group quote: the rupee value of its first group size at the typed rate (rupees: as it is)
     // (selling price per guest x paying guests x rate); the engine total is for one booking, not a group
     total_amount: groupSaved ? groupTotalInr(groupSaved) : plan.group ? 0 : result?.totals.grand ?? 0,
     currency: plan.group ? "INR" : result?.currency ?? plan.currency,

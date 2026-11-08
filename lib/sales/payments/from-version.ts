@@ -7,7 +7,7 @@ import type { PriceResult } from "@/lib/sales/pricing/types";
 import { addDays, type PaymentMode } from "./money";
 import { rpBookingLines } from "@/lib/redpanda/booking";
 import type { RpPrice } from "@/lib/redpanda/types";
-import { groupBooking, type GroupSaved } from "@/lib/sales/group/costing";
+import { groupBooking, groupCurrency, type GroupSaved } from "@/lib/sales/group/costing";
 
 export interface QueryForBooking {
   id: string;
@@ -97,7 +97,7 @@ export function bookingFromVersion(q: QueryForBooking, v: VersionForBooking, tod
   const amount = Number(q.booked_amount) || 0;
   const paid: BookingDraft["payment"] = amount > 0 ? { kind: "payment", amount: r2(amount), paid_on: booked, mode: "other", reference: q.payment_ref?.slice(0, 200) || null, note: "Recorded when the query was marked Booked" } : null;
 
-  // a group quote (lib/sales/group): billed in US dollars for the group size it booked, no lodge
+  // a group quote (lib/sales/group): billed in the quote's currency for the group size it booked, no lodge
   // lines (its costs are per guest, not per lodge); dues by the quote's payment percentages
   const grp = (pr as unknown as { group?: GroupSaved }).group;
   const gb = grp ? groupBooking(grp, (pr.payments ?? []).map((p) => ({ label: p.label, pct: p.pct })), plan.group?.booked_row, plan.group?.singles) : null;
@@ -111,7 +111,7 @@ export function bookingFromVersion(q: QueryForBooking, v: VersionForBooking, tod
         owner_id: q.assigned_to,
         check_in: checkIn,
         check_out: checkOut && checkIn && checkOut < checkIn ? checkIn : checkOut,
-        currency: "USD",
+        currency: groupCurrency(grp),
         other_amount: gb?.total ?? 0,
         discount_amount: 0,
         booked_on: booked,

@@ -72,7 +72,9 @@ export function buildCostSheet(plan: Plan, ctx: BuilderContext, today: string, g
   }
   // a vehicle: its people, one vehicle on every transfer
   const pv = Math.max(1, g.per_vehicle);
-  for (const l of probe(plan, ctx, today, pv, Math.ceil(pv / 2), { transfer_vehicles: 1, route_vehicles: {} }).lines) {
+  // (a road marked "not needed" (0) stays not needed: the group makes its own way there)
+  const notNeeded = Object.fromEntries(Object.entries(plan.route_vehicles ?? {}).filter(([, v]) => v === 0));
+  for (const l of probe(plan, ctx, today, pv, Math.ceil(pv / 2), { transfer_vehicles: 1, route_vehicles: notNeeded }).lines) {
     if (l.kind === "transfer") add(l, "vehicle");
     else if (l.kind === "addon" && unitOf(l) === "per_vehicle") add(l, "vehicle");
   }

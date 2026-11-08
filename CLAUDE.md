@@ -199,6 +199,13 @@ only Sales users can have it (`lib/sales/group/server.ts`, any failure = no acce
   goes to single / double (it went to "per group" before); the one-booking checks (discount, GST,
   cost by lodge, detailed price check) are hidden in group mode - the costing sheet is the check,
   and each figure says what it is made of ("2 safaris, 2 naturalists").
+- Any currency (8 Nov 2026): GroupSettings.currency USD / GBP / EUR / AUD / INR (empty = USD for
+  older quotes; an Indian group defaults to INR, no rate needed, rounding Rs 100/500/1,000). The
+  saved fields keep their names (sell_usd, usd) but hold the quote's currency; Payments books in it.
+- In a group the Guests bar, per-safari jeeps and per-road vehicle counts are hidden (counted per
+  group size); a road can still be "Not needed" (route_vehicles 0), which the sheet respects.
+- The builder's group `initial` is memoised: a new object each render made the "unsaved work"
+  banner offer to restore the work in progress.
 - Builder (all quotes, 8 Nov 2026): a typed city hotel price is not part of routeKey / confirmKey
   (r3; r2 and r1 keys still accepted), so it never un-confirms the trip or rebuilds the days
   (syncCityHotelPrices). Naturalists / jeeps ticked on the day plan (DaySafari.by_hand) survive a

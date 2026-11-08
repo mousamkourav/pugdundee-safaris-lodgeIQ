@@ -131,6 +131,13 @@ export function PlanStep({
     const set = plan.route_vehicles?.[key];
     const line = transferLine(date, a, b);
     if (plan.own_vehicle) return <span className="shrink-0 text-[11px] italic text-sand-400">own vehicle</span>;
+    if (group)
+      return (
+        <label className="flex shrink-0 items-center gap-1 text-[11px] text-sand-500" title="The vehicles for this transfer come from the group size (Price by group size). Tick when the group makes its own way.">
+          <input type="checkbox" className="h-3.5 w-3.5" checked={set === 0} onChange={(e) => setRouteVehicles(key, e.target.checked ? 0 : null)} aria-label={`No transfer needed from ${a} to ${b}`} />
+          Not needed
+        </label>
+      );
     return (
       <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-sand-500">
         {set === 0 ? <span className="italic">not needed</span> : line && !line.missing ? <span className="tabular text-xs text-sand-600">{rupees(line.amount)}</span> : null}
@@ -341,6 +348,19 @@ export function PlanStep({
   return (
     <div className="space-y-4">
       {/* ---------- guests: change them here and the price follows ---------- */}
+      {group && plan.group && (
+        <section className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-sand-200 bg-white px-3 py-2.5 text-sm" aria-label="Group">
+          <span className="font-semibold text-olive-800">Group {plan.group.paying} + {plan.group.tls}</span>
+          <span className="text-xs text-sand-600">
+            {plan.group.per_jeep} guests per jeep, {plan.group.per_vehicle} people per vehicle. Rooms, jeeps and vehicles are counted for each group size on the costing below (change the group on the Trip step, Group details).
+          </span>
+          <label className="flex items-center gap-1.5 text-xs text-sand-600" title="The group has its own vehicle: no transfers are planned or charged">
+            <input type="checkbox" className="h-4 w-4" checked={!!plan.own_vehicle} onChange={(e) => setPlan((p) => ({ ...p, own_vehicle: e.target.checked || undefined }))} />
+            Own vehicle (no transfers)
+          </label>
+        </section>
+      )}
+      {!group && (
       <section className="flex flex-wrap items-end gap-x-4 gap-y-2 rounded-xl border border-sand-200 bg-white px-3 py-2.5 text-sm" aria-label="Guests and rooms">
         <span className="self-center font-semibold text-olive-800">Guests</span>
         <label className="flex items-center gap-1.5 text-xs text-sand-600">
@@ -406,6 +426,7 @@ export function PlanStep({
           </span>
         )}
       </section>
+      )}
 
       {/* ---------- prices master data does not have ---------- */}
       {result && result.missing.length > 0 && (
@@ -587,6 +608,7 @@ export function PlanStep({
                           <input type="checkbox" className="h-3.5 w-3.5" checked={!!safari.naturalist} onChange={(e) => setNaturalist(i, safari.session, e.target.checked)} />
                           Naturalist
                         </label>
+                        {!group && (
                         <label className="flex items-center gap-1 rounded-md bg-sand-50 px-1.5 py-0.5" title="Jeeps on this safari. Empty = enough for the group (6 guests per jeep).">
                           Jeeps
                           <input
@@ -600,6 +622,7 @@ export function PlanStep({
                             aria-label="Jeeps on this safari"
                           />
                         </label>
+                        )}
                       </>
                     );
                     // One line per safari, in order: full day, morning, evening. A full-day

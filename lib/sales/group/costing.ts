@@ -15,8 +15,30 @@
 // Tour leaders: a single room each, or two share a double; their cost is their rooms and their
 // per-person items. It is divided among the paying guests, or their nights at our own lodges are
 // free (the rest divided), or it is all free. Their jeep and vehicle seats are in the counts.
-// Single room supplement = single - double / 2. Then INR -> USD at the rate typed, markup %,
-// rounded up to $50 / $100; the selling price can be typed per row.
+// Single room supplement = single - double / 2. Then rupees -> the quote's currency at the rate
+// typed (US$, GBP, EUR, AUD; an Indian group in rupees needs no rate), markup %, rounded up to 50 /
+// 100 (rupees: 500 / 1,000); the selling price can be typed per row. (8 Nov 2026: not only US$.)
+// The saved fields keep their first names (sell_usd, usd): they hold the quote's currency.
+
+export const GROUP_CURRENCIES = ["USD", "GBP", "EUR", "AUD", "INR"] as const;
+export type GroupCurrency = (typeof GROUP_CURRENCIES)[number];
+export const GROUP_CURRENCY_NAME: Record<GroupCurrency, string> = { USD: "US dollar", GBP: "British pound", EUR: "Euro", AUD: "Australian dollar", INR: "Indian rupee" };
+const SIGN: Record<GroupCurrency, string> = { USD: "US$", GBP: "£", EUR: "€", AUD: "A$", INR: "₹" };
+export const groupCurrency = (g: { currency?: string | null } | null | undefined): GroupCurrency =>
+  (GROUP_CURRENCIES as readonly string[]).includes(String(g?.currency)) ? (g!.currency as GroupCurrency) : "USD";
+// rupees per one unit of the quote's currency: 1 for rupees, else the rate typed (null = not typed)
+export const groupRate = (g: { currency?: string | null; fx: number | null }): number | null =>
+  groupCurrency(g) === "INR" ? 1 : g.fx && g.fx > 0 ? g.fx : null;
+// "US$ 1,450", "£ 1,450", "₹ 1,23,500"
+export function groupMoney(n: number | null | undefined, cur: GroupCurrency, decimals = 0): string {
+  if (n == null) return "-";
+  const loc = cur === "INR" ? "en-IN" : "en-US";
+  return `${SIGN[cur]} ${n.toLocaleString(loc, { maximumFractionDigits: decimals, minimumFractionDigits: 0 })}`;
+}
+// the rounding choices for the selling price, in the quote's currency
+export const roundChoices = (cur: GroupCurrency) => (cur === "INR" ? [0, 100, 500, 1000] : [0, 10, 50, 100]);
+// the default currency of a new group quote: rupees for an Indian group, else US dollars
+export const defaultCurrency = (nationality: string | null | undefined): GroupCurrency => (nationality === "indian" ? "INR" : "USD");
 
 export type GroupTlCost = "divided" | "own_lodges_free" | "free";
 
@@ -25,7 +47,7 @@ export interface GroupRow {
   tls: number;
   jeeps: number;
   vehicles: number;
-  sell_usd?: number | null; // typed selling price per person (USD); empty = cost x markup, rounded
+  sell_usd?: number | null; // typed selling price per person (the quote's currency); empty = cost x markup, rounded
 }
 
 export interface GroupSettings {
@@ -35,9 +57,10 @@ export interface GroupSettings {
   tl_cost: GroupTlCost;
   per_jeep: number; // guests in one jeep on safari
   per_vehicle: number; // people (guests and tour leaders) in one vehicle on transfers
-  fx: number | null; // rupees per US dollar, typed
+  currency?: GroupCurrency; // the quote's currency (empty = USD, quotes made before 8 Nov 2026)
+  fx: number | null; // rupees per one unit of the currency, typed (not needed for INR)
   markup_pct: number;
-  round_to: number; // round the selling price up to this many dollars (0 = no rounding)
+  round_to: number; // round the selling price up to this many units of the currency (0 = no rounding)
   rows: GroupRow[];
   cells: Record<string, Partial<Record<CostKind, number>>>; // changed by hand: day key -> kind -> rupees
   booked_row?: number | null; // the row the group booked (Payments)
@@ -74,8 +97,8 @@ export interface CostDay {
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
-export function defaultGroup(): GroupSettings {
-  return { paying: 6, tls: 1, tl_room: "single", tl_cost: "divided", per_jeep: 2, per_vehicle: 3, fx: null, markup_pct: 0, round_to: 50, rows: [], cells: {} };
+export function defaultGroup(currency: GroupCurrency = "USD"): GroupSettings {
+  return { paying: 6, tls: 1, tl_room: "single", tl_cost: "divided", per_jeep: 2, per_vehicle: 3, currency, fx: null, markup_pct: 0, round_to: currency === "INR" ? 500 : 50, rows: [], cells: {} };
 }
 
 // The default counts for a group size: jeeps for the paying guests, vehicles for everyone.
@@ -154,7 +177,7 @@ export function ladderRow(t: SheetTotals, g: GroupSettings, row: GroupRow): Ladd
   const p = Math.max(1, Math.floor(num(row.paying)));
   const tl = tourLeaderCost(t, Math.max(0, Math.floor(num(row.tls))), g.tl_room, g.tl_cost);
   const inr = r2(t.double / 2 + t.person + t.group / p + (t.jeep * num(row.jeeps)) / p + (t.vehicle * num(row.vehicles)) / p + tl / p);
-  const fx = g.fx && g.fx > 0 ? g.fx : null;
+  const fx = groupRate(g);
   const usd = fx ? r2(inr / fx) : null;
   const typed = row.sell_usd != null && Number.isFinite(row.sell_usd) && row.sell_usd > 0;
   const sell = typed ? r2(row.sell_usd!) : usd != null ? roundUp(usd * (1 + num(g.markup_pct) / 100), g.round_to) : null;
@@ -174,13 +197,15 @@ export interface GroupPrice {
 export function priceGroup(days: CostDay[], g: GroupSettings): GroupPrice {
   const t = sheetTotals(days);
   const problems: string[] = [];
-  if (!(g.fx && g.fx > 0)) problems.push("Type the US dollar rate (rupees per dollar).");
+  const cur = groupCurrency(g);
+  if (!groupRate(g)) problems.push(`Type the ${GROUP_CURRENCY_NAME[cur]} rate (rupees per 1 ${cur}).`);
   const rows = (g.rows.length ? g.rows : [rowFor(g, g.paying, g.tls)]).map((r) => ladderRow(t, g, r));
   for (const r of rows) {
     if (r.paying < 1) problems.push("A group size needs at least 1 paying guest.");
     if (r.jeeps < 0 || r.vehicles < 0) problems.push("Jeeps and vehicles cannot be below 0.");
   }
-  const fx = g.fx && g.fx > 0 ? g.fx : null;
+  const fx = groupRate(g);
+  const nightTo = cur === "INR" ? 100 : 10; // an extra night rounds up to 10 (rupees: 100)
   const srs = r2(t.single - t.double / 2);
   const firstCity = days.find((d) => d.city_hotel && d.cost.double > 0) ?? null;
   return {
@@ -191,8 +216,8 @@ export function priceGroup(days: CostDay[], g: GroupSettings): GroupPrice {
           name: firstCity.stay,
           inr_sharing: r2(firstCity.cost.double / 2),
           inr_single: firstCity.cost.single,
-          usd_sharing: fx ? roundUp((firstCity.cost.double / 2 / fx) * (1 + num(g.markup_pct) / 100), 10) : null,
-          usd_single: fx ? roundUp((firstCity.cost.single / fx) * (1 + num(g.markup_pct) / 100), 10) : null,
+          usd_sharing: fx ? roundUp((firstCity.cost.double / 2 / fx) * (1 + num(g.markup_pct) / 100), nightTo) : null,
+          usd_single: fx ? roundUp((firstCity.cost.single / fx) * (1 + num(g.markup_pct) / 100), nightTo) : null,
         }
       : null,
     totals: t,
@@ -232,7 +257,9 @@ export function sanitizeGroup(raw: unknown): GroupSettings | null {
     }
   }
   const fx = money(r.fx);
+  const currency = groupCurrency({ currency: r.currency as string });
   return {
+    currency,
     paying: int(r.paying, 1, 60, 6),
     tls: int(r.tls, 0, 6, 1),
     tl_room: r.tl_room === "share" ? "share" : "single",
@@ -241,7 +268,7 @@ export function sanitizeGroup(raw: unknown): GroupSettings | null {
     per_vehicle: int(r.per_vehicle, 1, 12, 3),
     fx: fx && fx > 0 ? fx : null,
     markup_pct: Math.min(100, Math.max(0, num(r.markup_pct))),
-    round_to: [0, 10, 50, 100].includes(Number(r.round_to)) ? Number(r.round_to) : 50,
+    round_to: roundChoices(currency).includes(Number(r.round_to)) ? Number(r.round_to) : currency === "INR" ? 500 : 50,
     rows,
     cells,
     booked_row: r.booked_row == null ? null : int(r.booked_row, 0, 29, 0),
@@ -252,7 +279,8 @@ export function sanitizeGroup(raw: unknown): GroupSettings | null {
 // What a saved group quote keeps for the team's page, the guest page and the PDF (no costs): the
 // selling price per guest for each group size, the single supplement and the extra night (dollars).
 export interface GroupSaved {
-  fx: number | null;
+  currency?: GroupCurrency; // empty = USD (saved before 8 Nov 2026)
+  fx: number | null; // rupees per unit (1 for INR)
   tls: number;
   tl_room: GroupSettings["tl_room"];
   rows: { paying: number; tls: number; jeeps: number; vehicles: number; inr: number; usd: number | null; sell: number | null }[];
@@ -261,7 +289,8 @@ export interface GroupSaved {
 }
 export function toSaved(p: GroupPrice, g: GroupSettings): GroupSaved {
   return {
-    fx: g.fx,
+    currency: groupCurrency(g),
+    fx: groupRate(g),
     tls: g.tls,
     tl_room: g.tl_room,
     rows: p.rows.map((r) => ({ paying: r.paying, tls: r.tls, jeeps: r.jeeps, vehicles: r.vehicles, inr: r.inr, usd: r.usd, sell: r.sell })),
@@ -302,11 +331,13 @@ export function groupBooking(g: GroupSaved, pcts: { label: string; pct: number }
 
 // What the tour operator sees (the guest page): selling prices only, never a cost.
 export interface GroupGuest {
+  currency?: GroupCurrency;
   rows: { paying: number; tls: number; sell: number | null }[];
   single_supplement: number | null;
   extra_night: { name: string; sharing: number | null; single: number | null } | null;
 }
 export const toGuest = (g: GroupSaved): GroupGuest => ({
+  currency: groupCurrency(g),
   rows: g.rows.map((r) => ({ paying: r.paying, tls: r.tls, sell: r.sell })),
   single_supplement: g.single_supplement,
   extra_night: g.extra_night ? { name: g.extra_night.name, sharing: g.extra_night.sharing, single: g.extra_night.single } : null,

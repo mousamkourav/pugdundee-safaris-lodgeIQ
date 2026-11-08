@@ -5,7 +5,7 @@
 --   - only the Roseate House rate rows for that period that still say 23,000 change
 --     (double and single); every other rate, period and hotel stays as it is
 --   - 1 Apr - 30 Sep 2027 (Rs 17,000 + 18%) is not touched
---   - Sales > Master data keeps its own audit of the change (existing triggers)
+--   - the rate tables have no change log of their own: this comment is the record
 -- Also changed in the code: lib/sales/master/rate-card.ts and supabase/sales_rate_card_2026.sql
 -- say 19,500, so the Rate audit and a re-run of the rate card agree.
 --

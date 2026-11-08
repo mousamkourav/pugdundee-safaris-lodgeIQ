@@ -1,10 +1,10 @@
 // A group quote's prices for the guest (the tour operator): the selling price per guest for each
 // group size, the single room supplement and an extra night. Server or client; no costs shown.
-import type { GroupGuest } from "@/lib/sales/group/costing";
-
-const usd = (n: number | null) => (n == null ? "On request" : `US$ ${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`);
+import { groupCurrency, groupMoney, type GroupGuest } from "@/lib/sales/group/costing";
 
 export function GroupPrices({ g, dark = false }: { g: GroupGuest; dark?: boolean }) {
+  const cur = groupCurrency(g);
+  const usd = (n: number | null) => (n == null ? "On request" : groupMoney(n, cur));
   const muted = dark ? "text-white/65" : "text-sand-500";
   const line = dark ? "border-white/15" : "border-sand-200";
   return (
