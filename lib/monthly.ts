@@ -286,7 +286,9 @@ export const SECTIONS: Section[] = [
         columns: [
           { key: "name", label: "Name", type: "text" },
           { key: "role", label: "Designation", type: "text" },
-          { key: "salary", label: "Salary", type: "number", unit: "money" },
+          { key: "salary", label: "CTC", type: "number", unit: "money" },
+          { key: "gross", label: "Gross salary", type: "number", unit: "money" },
+          { key: "in_hand", label: "In-hand", type: "number", unit: "money" },
         ],
       },
       {
@@ -298,7 +300,9 @@ export const SECTIONS: Section[] = [
         columns: [
           { key: "name", label: "Name", type: "text" },
           { key: "designation", label: "Designation", type: "text" },
-          { key: "leaves", label: "No. of leaves", type: "number", unit: "count" },
+          { key: "leave_opening", label: "Leave opening", type: "number", unit: "count" },
+          { key: "leaves", label: "Leaves availed", type: "number", unit: "count" },
+          { key: "leave_closing", label: "Leave closing (auto)", type: "number", unit: "count", computed: true },
         ],
       },
     ],
@@ -482,7 +486,7 @@ export const SECTIONS: Section[] = [
     key: "comp_liquor",
     title: "Section 14 - Complimentary liquor report",
     fields: [
-      C("comp_liquor_total", "Total complimentary value (auto)", "money"),
+      C("comp_liquor_total", "Total complimentary amount (auto)", "money"),
     ],
     arrays: [
       {
@@ -495,7 +499,8 @@ export const SECTIONS: Section[] = [
           { key: "date", label: "Date", type: "date" },
           { key: "guest", label: "Guest name", type: "text" },
           { key: "item", label: "Item", type: "text" },
-          { key: "value", label: "Value", type: "number", unit: "money" },
+          { key: "value", label: "Quantity", type: "number", unit: "count" },
+          { key: "amount", label: "Amount", type: "number", unit: "money" },
           { key: "remark", label: "Remark", type: "text" },
         ],
       },
@@ -668,9 +673,17 @@ export function computeDerived(
   }
 
   const compLiquor = Array.isArray(data.comp_liquor)
-    ? data.comp_liquor.reduce((acc: number, r: any) => acc + toNum(r?.value), 0)
+    ? data.comp_liquor.reduce((acc: number, r: any) => acc + toNum(r?.amount), 0)
     : 0;
   data.comp_liquor_total = compLiquor;
+
+  // Staff leave: closing = opening + leaves availed (per row, auto).
+  if (Array.isArray(data.staff_leave)) {
+    data.staff_leave = data.staff_leave.map((r: any) => {
+      if (r == null) return r;
+      return { ...r, leave_closing: round2(toNum(r?.leave_opening) + toNum(r?.leaves)) };
+    });
+  }
 
   return data;
 }
