@@ -58,17 +58,20 @@ type SecStatus = "complete" | "partial" | "empty";
 const filled = (v: unknown) => v !== undefined && v !== null && String(v).trim() !== "";
 
 // A section is "complete" when every hand-entered field has a value, "partial"
-// when anything has been typed. Array blocks count as touched once any numeric
-// cell has a value (seed rows prefill labels, so text cells would be noisy).
+// when anything has been typed. Array blocks count as touched once any
+// hand-entered cell has a value. Columns that seed rows prefill (row labels)
+// are ignored, otherwise a seeded block would always look touched. Text and
+// date columns DO count: Servicing (asset + last service) has no numeric
+// column at all, so a numeric-only check left it "Pending input" forever.
 function sectionStatus(sec: Section, data: Data): SecStatus {
   const inputs = (sec.fields ?? []).filter((f) => !f.computed);
   const done = inputs.filter((f) => filled(getPath(data, f.path))).length;
   const arrayTouched = (sec.arrays ?? []).some((b) => {
     const rows = (data[b.path] as Array<Record<string, unknown>>) ?? [];
-    const numeric = b.columns.filter(
-      (c) => !c.computed && (c.type === "number" || c.type === "rating")
-    );
-    return rows.some((r) => numeric.some((c) => filled(r?.[c.key])));
+    const seeded = new Set<string>();
+    for (const r of b.seed ?? []) for (const k of Object.keys(r)) seeded.add(k);
+    const cols = b.columns.filter((c) => !c.computed && !seeded.has(c.key));
+    return rows.some((r) => cols.some((c) => filled(r?.[c.key])));
   });
   if (inputs.length > 0 && done === inputs.length) return "complete";
   if (inputs.length === 0 && arrayTouched) return "complete";

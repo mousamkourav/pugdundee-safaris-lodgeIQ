@@ -78,12 +78,30 @@ export default async function MonthlyPage({
     return { key: dr.lodge_id + ym, lodgeName: ln, slug: lodgeSlug(ln), ym, label: `${MONTH_NAMES[Number(mmv)] ?? mmv} ${yy}` };
   });
 
+  const status = (row?.status as string) ?? "none";
+  const submitted = status === "submitted";
+
+  const editReq = (erRows as Array<{ status: string }> | null)?.[0] ?? null;
+  const editPending = editReq?.status === "pending";
+  // Only the report's creator may edit its data; admins keep their overrides
+  // (approve/decline, reopen, delete) but not field editing on others' reports.
+  const canEditData = canEditReportData(row, user.id, admin);
+  // The creator gets read-only once submitted (admins who created it can still edit).
+  const submittedLock = submitted && !admin;
+  const locked = !canEditData || submittedLock;
+
+  // Carry-forwards below are SUGGESTIONS for a report that is still being
+  // filled in. Never apply them to a submitted / read-only report: there the
+  // form must show exactly what is stored, otherwise the form shows last
+  // month's rows while the detailed report shows "None recorded".
+  const prefill = !submitted && !locked;
+
   // Energy carry-forward: prefill this month's opening from last month's closing
   // (matched by asset name). Only fills blanks; the manager can still edit.
   {
     const prevEnergy = ((prevRow as { data?: { energy?: Array<Record<string, unknown>> } } | null)?.data?.energy) ?? [];
     const namedPrev = prevEnergy.filter((e) => String(e?.asset ?? "").trim() !== "");
-    if (namedPrev.length > 0) {
+    if (prefill && namedPrev.length > 0) {
       const cur = (data.energy as Array<Record<string, unknown>> | undefined) ?? [];
       const curNamed = cur.some((e) => String(e?.asset ?? "").trim() !== "");
       if (!curNamed) {
@@ -115,7 +133,7 @@ export default async function MonthlyPage({
     const namedPrev = prevServices.filter((e) => String(e?.asset ?? "").trim() !== "");
     const cur = (data.services as Array<Record<string, unknown>> | undefined) ?? [];
     const curNamed = cur.some((e) => String(e?.asset ?? "").trim() !== "");
-    if (namedPrev.length > 0 && !curNamed) {
+    if (prefill && namedPrev.length > 0 && !curNamed) {
       data.services = namedPrev.map((e) => ({ asset: e.asset, last_service: e.last_service }));
     }
   }
@@ -127,7 +145,7 @@ export default async function MonthlyPage({
     const namedPrev = prevLeave.filter((e) => String(e?.name ?? "").trim() !== "");
     const cur = (data.staff_leave as Array<Record<string, unknown>> | undefined) ?? [];
     const curNamed = cur.some((e) => String(e?.name ?? "").trim() !== "");
-    if (namedPrev.length > 0 && !curNamed) {
+    if (prefill && namedPrev.length > 0 && !curNamed) {
       data.staff_leave = namedPrev.map((e) => ({
         name: e.name,
         designation: e.designation,
@@ -136,17 +154,6 @@ export default async function MonthlyPage({
     }
   }
 
-  const status = (row?.status as string) ?? "none";
-  const submitted = status === "submitted";
-
-  const editReq = (erRows as Array<{ status: string }> | null)?.[0] ?? null;
-  const editPending = editReq?.status === "pending";
-  // Only the report's creator may edit its data; admins keep their overrides
-  // (approve/decline, reopen, delete) but not field editing on others' reports.
-  const canEditData = canEditReportData(row, user.id, admin);
-  // The creator gets read-only once submitted (admins who created it can still edit).
-  const submittedLock = submitted && !admin;
-  const locked = !canEditData || submittedLock;
   // The edit-request path only helps someone who may edit once it is reopened.
   const showRequestEdit = canEditData && submittedLock;
   const lodgeName = lodges.find((l) => l.id === lodge)?.name ?? "Lodge";
