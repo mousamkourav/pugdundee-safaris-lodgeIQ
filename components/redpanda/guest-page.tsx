@@ -5,6 +5,7 @@ import { DownloadPdfButton } from "@/components/sales/download-pdf";
 import { ShareButtons } from "@/components/sales/share-buttons";
 import { fmtDay } from "@/lib/sales/format";
 import type { RpClientView } from "@/lib/redpanda/client-view";
+import { rpDayLabel } from "@/lib/redpanda/content";
 
 // the brochure's palette (Red_Panda_Outpost.pdf), only on this page
 const RP_CSS = `.rp{--rp-paper:#F9F3F1;--rp-paper-2:#F4EBE9;--rp-ink:#4B383A;--rp-bark:#543526;--rp-accent:#A6916A;--rp-line:#E2D5D1}
@@ -111,7 +112,7 @@ export function RedPandaGuestPage({ view }: { view: RpClientView }) {
               {c.days.map((d) => (
                 <li key={d.n} data-pdf-block="" className="grid gap-3 border-l-2 border-[var(--rp-accent)] pl-5 sm:grid-cols-[120px_1fr] sm:border-l-0 sm:pl-0">
                   <div>
-                    <p className="font-display text-lg font-semibold text-[var(--rp-bark)]">Day {d.n}</p>
+                    <p className="font-display text-lg font-semibold text-[var(--rp-bark)]">{rpDayLabel(d)}</p>
                     {d.dateText && <p className="text-sm text-[var(--rp-accent)]">{d.dateText}</p>}
                   </div>
                   <div className="sm:border-l sm:border-[var(--rp-line)] sm:pl-6">

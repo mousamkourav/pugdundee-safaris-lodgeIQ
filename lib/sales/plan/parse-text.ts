@@ -723,6 +723,20 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   // naturalist each place", "morning safari only", "2 jeeps per safari". They are blanked
   // out (same length) before each stop's own part is read, so they count once, for all.
   let lowSeg = low;
+  // A room type written just before the park it is for: "change room category to treehouse in
+  // pench", "treehouse category at Pench", "stay in a cottage at Kanha" (10 Nov 2026: it was read
+  // only after the park's name, so these were lost and Pench stayed AC Cottage). That park takes
+  // it, and the park before does not.
+  const leadRoom = new Map<number, RoomWish>();
+  order.forEach(({ at }, k) => {
+    const before = low.slice(Math.max(0, at - 70), at);
+    const m = before.match(/\b(tree\s?houses?|cottages?|bungalows?|forest\s*suites?|suites?|deluxe\s*rooms?)\b(?:\s+(?:category|categories|room|rooms|type|stay))?\s+(?:at|in|for)\s+(?:the\s+)?$/);
+    const wish = m ? roomWishIn(m[1]) : null;
+    if (!m || !wish) return;
+    leadRoom.set(k, wish);
+    const from = at - before.length + m.index!;
+    lowSeg = lowSeg.slice(0, from) + " ".repeat(at - from) + lowSeg.slice(at);
+  });
   const placeWords = new Set([...ctx.properties, ...ctx.pricing.parks].flatMap((x) => x.name.toLowerCase().split(/[^a-z]+/)));
   const each = "(?:at\\s+|in\\s+)?(?:each|every|per)(?:\\s+(?:place|stop|lodge|park|location))?\\b";
   const global = (re: RegExp, read: (m: RegExpMatchArray) => void) => {
@@ -839,7 +853,7 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     if (extras.length) p.extras = extras;
     const cam = seg.match(/\bcameras?(?:\s*fees?)?\s*(?:x\s*)?(\d{1,2})\b|\b(\d{1,2})\s*cameras?\b/);
     if (cam) p.qty = { camera: Number(cam[1] ?? cam[2]) };
-    const room = roomWishIn(seg);
+    const room = roomWishIn(seg) ?? leadRoom.get(k) ?? null;
     if (room) p.room = room;
     // a room named by a word of its own ("stilted" = Stilted River Facing Cottage)
     const park = ctx.pricing.parks.find((x) => x.name === p.name);
@@ -1105,8 +1119,15 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
       if (n >= 1 && n <= 10) out.transferVehicles = n;
     }
   }
-  // Hinglish "sab safari naturalist ke saath": every safari at every stop with a naturalist
-  if (/\b(?:sab|saari|sabhi|all(?:\s+the)?|every)\s+safaris?\b[^.]{0,40}\bnaturalists?\b/.test(low) && !/\bnaturalists?\s+ke\s+bina\b/.test(low) && !/\bwithout\s+(?:an?\s+|the\s+)?naturalists?\b/.test(low)) {
+  // Hinglish "sab safari naturalist ke saath": every safari at every stop with a naturalist.
+  // Also the other way round, "naturalist on every safari" / "naturalists for all the safaris"
+  // (10 Nov 2026: written at the end it went to the last park only, at the start to none, and the
+  // other parks' naturalists were not charged)
+  const everySafariNat =
+    /\b(?:sab|saari|sabhi|all(?:\s+the)?|every|each)\s+safaris?\b[^.]{0,40}\bnaturalists?\b/.test(low) ||
+    /\bnaturalists?\s+(?:on|for|in|with|during|at|throughout)\s+(?:all|every|each)(?:\s+(?:the|of\s+the|our|their))?\s+(?:(?:jeep|tiger|core|game|wildlife)\s+)?safaris?\b/.test(low) ||
+    /\b(?:sab|saari|sabhi)\s+safari\s+mein\s+naturalist\b|\bhar\s+safari\b[^.]{0,30}\bnaturalist\b/.test(low);
+  if (everySafariNat && !/\bnaturalists?\s+ke\s+bina\b/.test(low) && !/\bwithout\s+(?:an?\s+|the\s+)?naturalists?\b/.test(low)) {
     for (const p of out.parks) p.naturalists ??= -1;
   }
   if (/\b(reverse|opposite\s+(?:order|direction|way)|other\s+way\s+round|wrong\s+(?:direction|order)|the other way)\b/.test(low)) out.reverse = true;

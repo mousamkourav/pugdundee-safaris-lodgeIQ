@@ -7,8 +7,9 @@ import type { RpPlan, RpPrice, RpSettings } from "./types";
 
 export interface RpGuestDay {
   n: number;
+  to?: number; // the last day of a block ("Day 3-5": n 3, to 5)
   date: string | null;
-  dateText: string;
+  dateText: string; // a block: "Sat, 13 Feb 2027 - Mon, 15 Feb 2027
   title: string;
   text: string;
   stay: string | null; // where they sleep that night
@@ -31,6 +32,15 @@ export interface RpGuestContent {
   guests: number;
   rooms: number;
 }
+
+// The days after the first full day at the Outpost, written once as one block ("Day 3-5"; owner,
+// 10 Nov 2026: the same text on each day read as a repeat). Master data can change it (4th day text).
+export const RP_LATER_DAYS = {
+  title: "The search continues: sunrise, sunset and day hikes",
+  text: "We follow the same routine as the trekkers continue their search. On one of the days we have the option to drive out for sunrise, as the mighty Kanchenjunga unfolds with the first light, while the trekking team continues the search. We also have the option to go for sunset and see the majestic peaks. Guests can also opt for one of the day hikes we offer through the scenic mountain vistas.",
+};
+// "Day 3" or "Day 3-5"
+export const rpDayLabel = (d: Pick<RpGuestDay, "n" | "to">) => (d.to && d.to > d.n ? `Day ${d.n}-${d.to}` : `Day ${d.n}`);
 
 const short = (name: string) => name.replace(/\s*\(.*$/, "").replace(/,.*$/, "").trim();
 
@@ -59,11 +69,15 @@ export function rpGuestContent(plan: RpPlan, price: RpPrice, s: RpSettings): RpG
     balance_days: s.balance_days_before,
   };
   const [arriveText, stayDay, departText] = [s.days[0], s.days[1], s.days[2]];
+  const laterDays = s.days[3]?.title ? s.days[3] : RP_LATER_DAYS;
   const date = (i: number) => (price.arrival ? addDays(price.arrival, i) : null);
   const days: RpGuestDay[] = [];
-  const push = (title: string, text: string, stay: string | null) => {
-    const d = date(days.length);
-    days.push({ n: days.length + 1, date: d, dateText: fmtDay(d), title, text, stay });
+  let dayNo = 1; // the next day's number (a block counts all its days)
+  const push = (title: string, text: string, stay: string | null, span = 1) => {
+    const d = date(dayNo - 1);
+    const last = span > 1 ? date(dayNo - 1 + span - 1) : null;
+    days.push({ n: dayNo, ...(span > 1 ? { to: dayNo + span - 1 } : {}), date: d, dateText: last && d ? `${fmtDay(d)} - ${fmtDay(last)}` : fmtDay(d), title, text, stay });
+    dayNo += span;
   };
   // Delhi first: arrive in Delhi, nights there, then the flight to Bagdogra
   const delhiLine = (k: "delhi_before" | "delhi_after") => price.lines.find((l) => l.key === k);
@@ -88,7 +102,9 @@ export function rpGuestContent(plan: RpPlan, price: RpPrice, s: RpSettings): RpG
       h1
     );
   push(arriveText?.title ?? "Arrival and transfer to Red Panda Outpost", (before ? "" : flightIn) + fill(arriveText?.text ?? "", vars), "Red Panda Outpost");
-  for (let i = 1; i < nights; i++) push(stayDay?.title ?? "At Red Panda Outpost", fill(stayDay?.text ?? "", vars), "Red Panda Outpost");
+  // Day 2 at the Outpost as it is; the days after it, one block ("Day 3-5")
+  if (nights >= 2) push(stayDay?.title ?? "At Red Panda Outpost", fill(stayDay?.text ?? "", vars), "Red Panda Outpost");
+  if (nights >= 3) push(laterDays.title, fill(laterDays.text, vars), "Red Panda Outpost", nights - 2);
   const h2 = hotelName("after");
   const toDelhi = plan.delhi_after.flight;
   const flyDelhi = (lead: string) =>

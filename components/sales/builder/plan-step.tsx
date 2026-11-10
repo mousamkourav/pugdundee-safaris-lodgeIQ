@@ -1,5 +1,7 @@
 "use client";
 
+import { PriceCheckDownload } from "@/components/sales/price-check-download";
+import { unitRate } from "@/lib/sales/pricing/price-csv";
 import { useState } from "react";
 import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
@@ -16,6 +18,9 @@ import type { MissingPrice } from "@/lib/sales/pricing/types";
 import { parseTransferKey } from "@/lib/sales/master/missing-transfers";
 import { DAY_STEP, itemStep, transferStep } from "@/lib/sales/plan/day-order";
 import { saveTransferRate } from "@/app/(dashboard)/sales/new/rate-actions";
+
+// numbers only in the price check (no Rs sign): they paste into Excel as numbers
+const plainNum = (n: number) => (Math.round(n * 100) / 100).toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
 type SetPlan = (u: (p: Plan) => Plan) => void;
 const DRAG_TYPE = "application/x-lodgeiq-item";
@@ -1228,8 +1233,11 @@ export function PlanStep({
           </summary>
           <div className="border-t border-sand-200">
             <p className="px-4 py-2 text-xs text-sand-500">
-              Every rate in this quote with its GST %. If a rate is not right, type the correct amount (incl. GST) in the last column; it is used for this quote only. Fix master data for future quotes.
+              Every rate in this quote with its GST %, in rupees. Qty x Rate = Before GST; Before GST + GST = Amount. If a rate is not right, type the correct amount (incl. GST) in the last column; it is used for this quote only. Fix master data for future quotes.
             </p>
+            <div className="px-4 pb-2">
+              <PriceCheckDownload rows={detail} total={result.totals.grand} dateless={!!plan.dateless} fileName={`price-check-${plan.guest.name || "quote"}`} />
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] text-left text-xs">
                 <thead>
@@ -1237,10 +1245,11 @@ export function PlanStep({
                     {!plan.dateless && <th className="px-3 py-2">Date</th>}
                     <th className="px-3 py-2">Service</th>
                     <th className="px-3 py-2 text-right">Qty</th>
-                    <th className="px-3 py-2 text-right">Before GST</th>
+                    <th className="px-3 py-2 text-right">Rate (Rs)</th>
+                    <th className="px-3 py-2 text-right">Before GST (Rs)</th>
                     <th className="px-3 py-2 text-right">GST %</th>
-                    <th className="px-3 py-2 text-right">GST</th>
-                    <th className="px-3 py-2 text-right">Amount</th>
+                    <th className="px-3 py-2 text-right">GST (Rs)</th>
+                    <th className="px-3 py-2 text-right">Amount (Rs)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1252,9 +1261,10 @@ export function PlanStep({
                         {r.manual && <span className="ml-1 text-[10px] font-semibold uppercase text-sand-500">typed</span>}
                       </td>
                       <td className="tabular px-3 py-1.5 text-right">{r.quantity}</td>
-                      <td className="tabular px-3 py-1.5 text-right">{rupees(r.net)}</td>
+                      <td className="tabular px-3 py-1.5 text-right">{plainNum(unitRate(r))}</td>
+                      <td className="tabular px-3 py-1.5 text-right">{plainNum(r.net)}</td>
                       <td className="tabular px-3 py-1.5 text-right">{r.gstPct != null ? `${r.gstPct}%` : "-"}</td>
-                      <td className="tabular px-3 py-1.5 text-right">{rupees(r.gst)}</td>
+                      <td className="tabular px-3 py-1.5 text-right">{plainNum(r.gst)}</td>
                       <td className="px-3 py-1.5 text-right">
                         {r.lkey && !r.manual ? (
                           <span className="inline-flex items-center gap-1">
@@ -1281,14 +1291,14 @@ export function PlanStep({
                             )}
                           </span>
                         ) : (
-                          <span className="tabular">{rupees(r.amount)}</span>
+                          <span className="tabular">{plainNum(r.amount)}</span>
                         )}
                       </td>
                     </tr>
                   ))}
                   <tr className="border-t border-sand-300 font-semibold text-olive-800">
-                    <td className="px-3 py-2" colSpan={plan.dateless ? 5 : 6}>Total</td>
-                    <td className="tabular px-3 py-2 text-right">{rupees(result.totals.grand)}</td>
+                    <td className="px-3 py-2" colSpan={plan.dateless ? 6 : 7}>Total</td>
+                    <td className="tabular px-3 py-2 text-right">{plainNum(result.totals.grand)}</td>
                   </tr>
                 </tbody>
               </table>

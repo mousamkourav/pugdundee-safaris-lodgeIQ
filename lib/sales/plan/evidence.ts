@@ -110,7 +110,9 @@ const NUMBER_WORDS: Record<number, string[]> = {
 // the number written as digits or a word ("3", "three", "teen"; "couple" for 2)
 export function statesNumber(quote: string, n: number): boolean {
   const ws = norm(quote).replace(/(\d+)(st|nd|rd|th|n|nts?|nights?|pax|yrs?|years?|days?|d)\b/g, "$1 $2").split(" ");
-  return ws.includes(String(n)) || (NUMBER_WORDS[n] ?? []).some((w) => ws.includes(w));
+  // "02 adults", "06 safaris" (a leading zero, as typed in many enquiries) state 2 and 6 (10 Nov 2026:
+  // they were dropped, so "03 adults" would have been quoted for 2)
+  return ws.some((w) => /^\d+$/.test(w) && Number(w) === n) || (NUMBER_WORDS[n] ?? []).some((w) => ws.includes(w));
 }
 const ALL_WORDS = /\b(all|every|each|sab|sabhi|har)\b/;
 

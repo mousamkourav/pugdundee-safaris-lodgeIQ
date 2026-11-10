@@ -149,7 +149,10 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
       flightIn: seg.index === 0 && prev?.kind === "city" && !!prev.stay.city && flights.some((f) => sameCity(f.from, prev.stay.city)),
     };
   });
-  const safaris = plan.days.reduce((t, d) => t + d.safaris.length, 0);
+  // the box at the top: private safaris, a full-day safari shown on its own ("13 + 1 full-day";
+  // 10 Nov 2026: one number read as if the full day counted twice)
+  const fullDays = plan.days.reduce((t, d) => t + d.safaris.filter((x) => x.session === "full_day").length, 0);
+  const safaris = plan.days.reduce((t, d) => t + d.safaris.length, 0) - fullDays;
   const lodgeCount = new Set(plan.stops.map((s) => s.property_id)).size;
   // At a glance: 17 D / 16 N, the safaris, and the places in travel order
   // (Delhi - Jabalpur - Kanha - Bandhavgarh - Khajuraho - Delhi).
@@ -157,7 +160,9 @@ export default async function ClientItineraryPage({ params }: { params: Promise<
   const path = routePath(plan, view.placeNames, view.parkNames);
   const facts = [
     { n: `${dayCount}D / ${Math.max(0, dayCount - 1)}N`, label: "days / nights", wide: false },
-    { n: String(safaris), label: safaris === 1 ? "safari" : "safaris", wide: false },
+    ...(safaris || fullDays
+      ? [{ n: fullDays ? `${safaris ? `${safaris} + ` : ""}${fullDays} full-day` : String(safaris), label: safaris + fullDays === 1 ? "private safari" : "private safaris", wide: false }]
+      : []),
     ...(path.length > 1 ? [{ n: path.join(" \u2013 "), label: "your route", wide: true }] : [{ n: String(lodgeCount), label: lodgeCount === 1 ? "lodge" : "lodges", wide: false }]),
   ];
 

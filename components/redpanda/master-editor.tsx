@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/client";
 import { compressImage } from "@/lib/image-compress";
 import { addRpImage, addTariffYear, rpImageUploadUrl, saveRpSettings, saveSupplement, saveTariffRate, updateRpImage } from "@/app/(dashboard)/red-panda/actions";
 import type { Market, RpSettings } from "@/lib/redpanda/types";
+import { RP_LATER_DAYS } from "@/lib/redpanda/content";
 
 export interface TariffCell { id: string; season: string; valid_from: string; valid_to: string; market: Market; guests: number; per_pax: number; active: boolean }
 export interface SupplementCell { id: string; season: string; valid_from: string; market: Market; kind: "single_room" | "tour_leader"; amount: number; active: boolean }
@@ -200,11 +201,11 @@ export function SettingsEditor({ settings }: { settings: RpSettings }) {
         <label className="block"><span className={ui.label}>Line under the title</span><input className={ui.input} value={s.tagline} onChange={(e) => setS({ ...s, tagline: e.target.value })} /></label>
         {area("Introduction", s.intro, (v) => setS({ ...s, intro: v }), 5)}
         {area("The stay", s.stay_text, (v) => setS({ ...s, stay_text: v }), 4)}
-        {s.days.map((d, i) => (
+        {(s.days.length === 3 ? [...s.days, RP_LATER_DAYS] : s.days).map((d, i, all) => (
           <div key={i} className="space-y-2 rounded-lg border border-sand-200 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-sand-500">{["Arrival day", "Each day at the Outpost", "Departure day"][i]}</p>
-            <input className={ui.inputSm} value={d.title} onChange={(e) => setS({ ...s, days: s.days.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)) })} />
-            <textarea className={ui.input} rows={4} value={d.text} onChange={(e) => setS({ ...s, days: s.days.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)) })} />
+            <p className="text-xs font-semibold uppercase tracking-wide text-sand-500">{["Arrival day", "Day 2 at the Outpost", "Departure day", "Day 3 onwards at the Outpost (one block: Day 3-5)"][i]}</p>
+            <input className={ui.inputSm} value={d.title} onChange={(e) => setS({ ...s, days: all.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)) })} />
+            <textarea className={ui.input} rows={4} value={d.text} onChange={(e) => setS({ ...s, days: all.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)) })} />
           </div>
         ))}
         <p className="text-xs text-sand-500">Words in braces are filled in: {"{airport}"}, {"{hours}"}, {"{departure_airport}"}, {"{nights}"}, {"{days}"}, {"{expedition_days}"}, {"{deposit_pct}"}, {"{balance_pct}"}, {"{balance_days}"}.</p>

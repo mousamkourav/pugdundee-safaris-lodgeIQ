@@ -14,7 +14,7 @@ import { readAccess } from "./access";
 import { modulesFor, moduleForPath, NAV } from "@/components/nav";
 import { priceRedPanda, guestBreakup } from "./pricing";
 import { emptyRpPlan, isRedPandaPlan, readSettings, sanitizeRpPlan } from "./plan";
-import { rpGuestContent } from "./content";
+import { RP_LATER_DAYS, rpDayLabel, rpGuestContent } from "./content";
 import { checkMoneyInput, checkSettingsInput } from "./master";
 import { bookingFromVersion } from "@/lib/sales/payments/from-version";
 import { sanitizePlan } from "@/lib/sales/plan/sanitize";
@@ -99,14 +99,18 @@ test("guest text: dated days with the year, the airports and hours filled in, th
   const price = priceRedPanda(p, MASTER);
   assert.deepEqual(price.errors, []);
   const c = rpGuestContent(p, price, SETTINGS);
-  assert.equal(c.days.length, 7); // 1 hotel night + 5 nights at the Outpost + the day they leave
+  // 1 hotel night, arrival at the Outpost, day 2, days 3-5 as one block (10 Nov 2026), the day they leave
+  assert.deepEqual(c.days.map((d) => rpDayLabel(d)), ["Day 1", "Day 2", "Day 3", "Day 4-6", "Day 7"]);
   assert.equal(c.days[0].dateText, "Fri, 20 Nov 2026");
   assert.match(c.days[0].title, /Mayfair Chumta/);
   assert.equal(c.days[1].dateText, "Sat, 21 Nov 2026");
   assert.match(c.days[1].text, /Bagdogra Airport/);
   assert.match(c.days[1].text, /about a 5-hour journey/);
-  assert.equal(c.days[6].dateText, "Thu, 26 Nov 2026");
-  assert.match(c.days[6].title, /Departure/);
+  assert.equal(c.days[3].dateText, "Mon, 23 Nov 2026 - Wed, 25 Nov 2026");
+  assert.equal(c.days[3].title, RP_LATER_DAYS.title);
+  assert.match(c.days[3].text, /^We follow the same routine as the trekkers continue their search\. On one of the days .*Kanchenjunga.*sunset.*day hikes/);
+  assert.equal(c.days[4].dateText, "Thu, 26 Nov 2026");
+  assert.match(c.days[4].title, /Departure/);
   for (const d of c.days) assert.doesNotMatch(d.text + d.title, /\{\w+\}/);
   assert.ok(c.inclusions.some((x) => /Stay for 5 nights \/ 6 days/.test(x)));
   assert.ok(c.inclusions.some((x) => /4-day Red Panda Expedition/.test(x)));
@@ -236,9 +240,7 @@ test("Delhi - Red Panda - Delhi: the guest's days, the Payments lines (a Delhi h
     "Wed, 10 Feb 2027: Arrival in Delhi, Roseate House [Roseate House]",
     "Thu, 11 Feb 2027: Arrive and on to Red Panda Outpost [Red Panda Outpost]".replace("Arrive and on to Red Panda Outpost", SETTINGS.days[0].title),
     "Fri, 12 Feb 2027: In search of the red panda / birding [Red Panda Outpost]",
-    "Sat, 13 Feb 2027: In search of the red panda / birding [Red Panda Outpost]",
-    "Sun, 14 Feb 2027: In search of the red panda / birding [Red Panda Outpost]",
-    "Mon, 15 Feb 2027: In search of the red panda / birding [Red Panda Outpost]",
+    `Sat, 13 Feb 2027 - Mon, 15 Feb 2027: ${RP_LATER_DAYS.title} [Red Panda Outpost]`,
     "Tue, 16 Feb 2027: Goodbye to the mountains, fly to Delhi [Roseate House]",
     "Wed, 17 Feb 2027: Departure [-]",
   ]);
@@ -253,4 +255,36 @@ test("Delhi - Red Panda - Delhi: the guest's days, the Payments lines (a Delhi h
     ["Roseate House", "2027-02-16", "2027-02-17", 27140, 6300],
   ]);
   assert.equal(b.booking.other_amount, 60000); // the two flights
+});
+
+test("Red Panda days: day 2 as it is, day 3 onwards one block, for every length of stay", () => {
+  for (const [nights, labels] of [
+    [2, ["Day 1", "Day 2", "Day 3"]],
+    [3, ["Day 1", "Day 2", "Day 3", "Day 4"]],
+    [4, ["Day 1", "Day 2", "Day 3-4", "Day 5"]],
+    [5, ["Day 1", "Day 2", "Day 3-5", "Day 6"]],
+    [7, ["Day 1", "Day 2", "Day 3-7", "Day 8"]],
+  ] as [number, string[]][]) {
+    const p = plan({ nights });
+    const price = priceRedPanda(p, MASTER);
+    const c = rpGuestContent(p, price, SETTINGS);
+    assert.deepEqual(c.days.map((d) => rpDayLabel(d)), labels, `${nights} nights`);
+    if (nights >= 3) {
+      const block = c.days[2];
+      assert.equal(block.title, RP_LATER_DAYS.title);
+      assert.equal(block.stay, "Red Panda Outpost");
+    }
+    // the days still add up: the last day is the day after the last night
+    const last = c.days[c.days.length - 1];
+    assert.equal(last.to ?? last.n, nights + 1);
+  }
+  // Master data's own text for the block (a 4th day text) is used when there is one; the Final
+  // draft's own text for "3" replaces the block's
+  const p = plan({ nights: 5 });
+  const price = priceRedPanda(p, MASTER);
+  const own = rpGuestContent(p, price, { ...SETTINGS, days: [...SETTINGS.days.slice(0, 3), { title: "Our own block", text: "Our own text for {nights} nights" }] });
+  assert.equal(own.days[2].title, "Our own block");
+  assert.equal(own.days[2].text, "Our own text for 5 nights");
+  const typed = rpGuestContent({ ...p, text: { ...p.text, days: { "3": "Typed for this guest" } } }, price, SETTINGS);
+  assert.equal(typed.days[2].text, "Typed for this guest");
 });

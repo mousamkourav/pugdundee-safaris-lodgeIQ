@@ -58,8 +58,8 @@ export function checkSettingsInput(raw: unknown): { data: Partial<Editable>; pro
   for (const k of ["inclusions", "exclusions", "good_to_know", "what_to_carry"] as const) if (r[k] !== undefined) data[k] = list(r[k], 60, 1000);
   if (r.days !== undefined) {
     const d = Array.isArray(r.days) ? (r.days as Record<string, unknown>[]) : [];
-    data.days = d.map((x) => ({ title: clean(x?.title, 160), text: clean(x?.text, 4000) })).filter((x) => x.title).slice(0, 3);
-    if (data.days.length !== 3) problems.push("Day by day: three texts (arrival, a day at the Outpost, departure).");
+    data.days = d.map((x) => ({ title: clean(x?.title, 160), text: clean(x?.text, 4000) })).filter((x) => x.title).slice(0, 4);
+    if (data.days.length < 3) problems.push("Day by day: the texts for the arrival day, day 2 at the Outpost and the departure day (and day 3 onwards).");
   }
   if (data.title !== undefined && !data.title) problems.push("Give the title.");
   return { data, problems };

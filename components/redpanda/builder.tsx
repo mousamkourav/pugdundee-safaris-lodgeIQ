@@ -7,7 +7,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { RpChat, type RpChatMessage } from "./rp-chat";
 import { applyReading, isRpConfirmed, mentionsOtherPlaces, nextQuestion, replyText, rpConfirmKey, tripSummary } from "@/lib/redpanda/assist";
-import { rpGuestContent } from "@/lib/redpanda/content";
+import { rpDayLabel, rpGuestContent } from "@/lib/redpanda/content";
 import { rpAssist } from "@/app/(dashboard)/red-panda/ai-actions";
 import type { RpPending } from "@/lib/redpanda/reader";
 import { useRouter } from "next/navigation";
@@ -480,7 +480,7 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
               <p className={ui.label}>Day by day</p>
               {content.days.map((d) => (
                 <div key={d.n} className="rounded-lg border border-sand-200 p-3">
-                  <p className="text-sm font-semibold text-olive-800">Day {d.n}{d.dateText ? `, ${d.dateText}` : ""}: {d.title}</p>
+                  <p className="text-sm font-semibold text-olive-800">{rpDayLabel(d)}{d.dateText ? `, ${d.dateText}` : ""}: {d.title}</p>
                   <textarea
                     className={`${ui.input} mt-2`}
                     rows={3}

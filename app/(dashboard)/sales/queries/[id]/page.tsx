@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PriceCheckDownload } from "@/components/sales/price-check-download";
+import { unitRate } from "@/lib/sales/pricing/price-csv";
 import { notFound, redirect } from "next/navigation";
 import { paxText } from "@/lib/sales/pricing/pax";
 import { requireUser, isSalesAdmin } from "@/lib/auth";
@@ -21,6 +23,9 @@ import type { Plan } from "@/lib/sales/plan/types";
 import type { PriceResult } from "@/lib/sales/pricing/types";
 import { groupCurrency, groupMoney, type GroupSaved } from "@/lib/sales/group/costing";
 import { GroupPrices } from "@/components/sales/group/group-prices";
+
+// numbers only in the price check (no Rs sign): they paste into Excel as numbers
+const plainNum = (n: number) => (Math.round(n * 100) / 100).toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
 interface QueryFull {
   id: string;
@@ -295,6 +300,10 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
                     Detailed breakup: every rate with its GST %
                     <Icon name="chevronLeft" className="h-4 w-4 -rotate-90 text-sand-500 transition group-open:rotate-90" />
                   </summary>
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-sand-200 px-3 py-2 text-xs text-sand-500">
+                    <span>In rupees. Qty x Rate = Before GST; Before GST + GST = Amount.</span>
+                    <PriceCheckDownload rows={detailedBreakdown(pricing, { spreadMarkup: false, groupNights: false }).rows} total={pricing.totals.grand} dateless={!!plan?.dateless} fileName={`price-check-${q.query_no}-v${current.version_no}`} />
+                  </div>
                   <div className="overflow-x-auto border-t border-sand-200">
                     <table className="w-full min-w-[640px] text-left text-xs">
                       <thead>
@@ -302,10 +311,11 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
                           {!plan?.dateless && <th className="px-3 py-2">Date</th>}
                           <th className="px-3 py-2">Service</th>
                           <th className="px-3 py-2 text-right">Qty</th>
-                          <th className="px-3 py-2 text-right">Before GST</th>
+                          <th className="px-3 py-2 text-right">Rate (Rs)</th>
+                          <th className="px-3 py-2 text-right">Before GST (Rs)</th>
                           <th className="px-3 py-2 text-right">GST %</th>
-                          <th className="px-3 py-2 text-right">GST</th>
-                          <th className="px-3 py-2 text-right">Amount</th>
+                          <th className="px-3 py-2 text-right">GST (Rs)</th>
+                          <th className="px-3 py-2 text-right">Amount (Rs)</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -317,10 +327,11 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
                               {r.edited && <span className="ml-1 text-[10px] font-semibold uppercase text-warning">corrected by hand</span>}
                             </td>
                             <td className="tabular px-3 py-1.5 text-right">{r.quantity}</td>
-                            <td className="tabular px-3 py-1.5 text-right">{rupees(r.net)}</td>
+                            <td className="tabular px-3 py-1.5 text-right">{plainNum(unitRate(r))}</td>
+                            <td className="tabular px-3 py-1.5 text-right">{plainNum(r.net)}</td>
                             <td className="tabular px-3 py-1.5 text-right">{r.gstPct != null ? `${r.gstPct}%` : "-"}</td>
-                            <td className="tabular px-3 py-1.5 text-right">{rupees(r.gst)}</td>
-                            <td className="tabular px-3 py-1.5 text-right">{rupees(r.amount)}</td>
+                            <td className="tabular px-3 py-1.5 text-right">{plainNum(r.gst)}</td>
+                            <td className="tabular px-3 py-1.5 text-right">{plainNum(r.amount)}</td>
                           </tr>
                         ))}
                       </tbody>

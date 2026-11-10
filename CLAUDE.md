@@ -221,6 +221,23 @@ LodgeIQ installs on phones and computers (Add to Home screen / Install app). Fil
 - middleware.ts lets manifest.webmanifest, sw.js and offline.html through without a login;
   next.config.ts serves sw.js with no-cache. Change the offline page? Bump CACHE in sw.js.
 
+## Price check for Excel and the trip-wide naturalist (10 Nov 2026)
+- The internal price check (Plan & price, and the query page) shows numbers only (no Rs sign), a
+  Rate per unit column (Qty x Rate = Before GST) and a "Download for Excel" CSV with plain numbers
+  and a total that adds up (`lib/sales/pricing/price-csv.ts`, `components/sales/price-check-download.tsx`).
+- Reader: "naturalist on every safari" / "naturalists for all the safaris" / "har safari mein
+  naturalist" anywhere in the enquiry = every park (it went to the last park only, or none).
+
+## Review of 10 Nov 2026 (JJ quote, Red Panda days)
+- Reader: a room type written before its park ("change room category to treehouse in pench",
+  "treehouse category at pench") is that park's (`leadRoom` in parse-text.ts); the park written
+  before it does not take it. "02 adults" (leading zero) passes the AI evidence check.
+- Guest page box: "private safaris", a full-day safari shown on its own ("13 + 1 full-day").
+- Red Panda guest days: Day 2 as it is, Day 3 onwards one block ("Day 3-5", `RP_LATER_DAYS`, or a
+  4th day text in Red Panda Master data); the Final draft's own text for the block is keyed "3".
+- Versions: each version keeps its own plan and pricing (its guest link shows its own prices);
+  the query page, Payments and lists use the latest version.
+
 ## AI assistant (Sales builder)
 One reading flow, AI first (`lib/sales/plan/reading.ts`):
 1. Memory: `sales_reading_patterns` (Master data > Reading memory), saved when a quote is
