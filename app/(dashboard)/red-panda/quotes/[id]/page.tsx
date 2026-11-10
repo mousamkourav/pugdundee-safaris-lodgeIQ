@@ -17,6 +17,8 @@ import { MARKET_LABEL } from "@/lib/redpanda/pricing";
 import { sanitizeRpPlan } from "@/lib/redpanda/plan";
 import type { QueryStatus } from "@/lib/sales/status";
 import type { RpPrice } from "@/lib/redpanda/types";
+import { clientLinkPath } from "@/lib/sales/quote-link";
+import { ClientLinkSwitch } from "@/components/sales/client-link-switch";
 
 interface QueryRow {
   id: string;
@@ -210,7 +212,8 @@ export default async function RedPandaQuotePage({ params }: { params: Promise<{ 
             <section className={`${ui.card} p-5`}>
               <h2 className="text-lg">Guest link</h2>
               <p className="mt-1 text-sm text-sand-500">The Red Panda page and PDF for version {current.version_no}.</p>
-              <div className="mt-3"><ShareLink path={`/i/${current.share_slug ?? current.share_token}`} /></div>
+              <div className="mt-3"><ShareLink path={clientLinkPath((q as { share_key?: string | null }).share_key, current)} /></div>
+              <ClientLinkSwitch queryId={q.id} off={!!(q as { share_disabled_at?: string | null }).share_disabled_at} />
             </section>
           )}
           {q.status === "booked" && (

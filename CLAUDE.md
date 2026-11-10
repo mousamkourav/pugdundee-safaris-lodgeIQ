@@ -238,6 +238,16 @@ LodgeIQ installs on phones and computers (Add to Home screen / Install app). Fil
 - Versions: each version keeps its own plan and pricing (its guest link shows its own prices);
   the query page, Payments and lists use the latest version.
 
+## Client links /quote/<name-code>/<version> (10 Nov 2026)
+- `supabase/sales_quote_links.sql`: sales_queries.share_key = the guest's first 2 name words + 6
+  random characters (no l/1/o/0), made once per quote (trigger), the same for every version;
+  share_disabled_at/_by (links turned off), sales_link_audit, sales_link_misses (hashed device).
+- `app/quote/[key]/[v]` renders the same page as `app/i/[token]` (old links keep working).
+  `lib/sales/link-guard.ts`: 20 wrong links from one device in 15 minutes = blocked for a while;
+  a turned-off quote shows "This link is no longer active" on every link, old ones too.
+- Query pages (Sales and Red Panda) show the new link (`clientLinkPath`) and "Turn the client link
+  off / on" (the quote's member or a Sales admin; `link-actions.ts`).
+
 ## AI assistant (Sales builder)
 One reading flow, AI first (`lib/sales/plan/reading.ts`):
 1. Memory: `sales_reading_patterns` (Master data > Reading memory), saved when a quote is

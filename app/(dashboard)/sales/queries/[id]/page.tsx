@@ -23,6 +23,8 @@ import type { Plan } from "@/lib/sales/plan/types";
 import type { PriceResult } from "@/lib/sales/pricing/types";
 import { groupCurrency, groupMoney, type GroupSaved } from "@/lib/sales/group/costing";
 import { GroupPrices } from "@/components/sales/group/group-prices";
+import { clientLinkPath } from "@/lib/sales/quote-link";
+import { ClientLinkSwitch } from "@/components/sales/client-link-switch";
 
 // numbers only in the price check (no Rs sign): they paste into Excel as numbers
 const plainNum = (n: number) => (Math.round(n * 100) / 100).toLocaleString("en-IN", { maximumFractionDigits: 2 });
@@ -72,6 +74,10 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
   // a Red Panda quote has its own page (its own plan and price; never the Safari views)
   if ((qData as { query_type?: string }).query_type === "red_panda") redirect(`/red-panda/quotes/${id}`);
   const q = qData as unknown as QueryFull;
+  // the client link's key and whether it is turned off (supabase/sales_quote_links.sql; before it
+  // is run: the old links, always on)
+  const shareKey = (qData as { share_key?: string | null }).share_key ?? null;
+  const linkIsOff = !!(qData as { share_disabled_at?: string | null }).share_disabled_at;
 
   // the version list without its plans (small), the latest version in full, events and
   // corrections: all at once
@@ -417,7 +423,7 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
                     <td className="tabular px-4 py-3 text-right">{rupees(v.total_amount)}</td>
                     <td className="px-4 py-3 text-right">
                       {!isDraft && (
-                        <a href={`/i/${v.share_slug ?? v.share_token}`} target="_blank" rel="noopener noreferrer" className={`${ui.btnGhost} ${ui.btnSm} whitespace-nowrap`}>
+                        <a href={clientLinkPath(shareKey, v)} target="_blank" rel="noopener noreferrer" className={`${ui.btnGhost} ${ui.btnSm} whitespace-nowrap`}>
                           Client page
                         </a>
                       )}
@@ -435,7 +441,8 @@ export default async function QueryDetailPage({ params }: { params: Promise<{ id
             <section className={`${ui.card} p-5`}>
               <h2 className="text-lg">Client itinerary</h2>
               <p className="mb-3 mt-1 text-sm text-sand-500">Version {current.version_no}, with photos and payment terms. Costs by lodge are never shown to the guest.</p>
-              <ShareLink path={`/i/${current.share_slug ?? current.share_token}`} />
+              <ShareLink path={clientLinkPath(shareKey, current)} />
+              <ClientLinkSwitch queryId={q.id} off={linkIsOff} />
             </section>
           )}
 

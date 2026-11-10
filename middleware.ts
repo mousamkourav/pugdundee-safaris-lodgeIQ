@@ -67,7 +67,8 @@ export async function middleware(request: NextRequest) {
     path.startsWith("/auth/callback") ||
     // Client itinerary share links: opened by guests without an account.
     // The page itself only shows a version whose secret token is in the URL.
-    path.startsWith("/i/");
+    path.startsWith("/i/") ||
+    path.startsWith("/quote/");
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();

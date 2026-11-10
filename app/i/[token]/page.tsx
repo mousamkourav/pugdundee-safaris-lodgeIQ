@@ -3,6 +3,9 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { paxLines } from "@/lib/sales/pricing/pax";
 import { loadClientView } from "@/lib/sales/client-view";
+import { deviceKey, isBlocked, linkOff, queryOfOldLink, recordMiss } from "@/lib/sales/link-guard";
+import { isShareSlug, isShareToken } from "@/lib/sales/share-slug";
+import { LinkMessage } from "@/components/sales/link-message";
 import { loadRpClientView } from "@/lib/redpanda/client-view";
 import { RedPandaGuestPage } from "@/components/redpanda/guest-page";
 import { DownloadPdfButton } from "@/components/sales/download-pdf";
@@ -108,11 +111,18 @@ const SOCIAL = [
 
 export default async function ClientItineraryPage({ params }: { params: Promise<{ token: string }> }) {
   const token = (await params).token;
+  // the locks on client links (lib/sales/link-guard.ts): a device trying many wrong links is
+  // blocked for a while; a quote whose links Sales turned off says so
+  const who = await deviceKey();
+  if (await isBlocked(who)) return <LinkMessage kind="blocked" />;
+  const qid = isShareToken(token) || isShareSlug(token) ? await queryOfOldLink(token, isShareToken(token)) : null;
+  if (qid && (await linkOff(qid))) return <LinkMessage kind="off" />;
   const view = await loadClientView(token);
   if (!view) {
     // a Red Panda quote has its own template (lib/redpanda); anything else: not found
     const rp = await loadRpClientView(token);
     if (rp) return <RedPandaGuestPage view={rp} />;
+    await recordMiss(who);
     notFound();
   }
   const { plan } = view;
