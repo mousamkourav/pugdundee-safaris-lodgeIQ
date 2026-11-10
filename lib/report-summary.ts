@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { monthRange } from "@/lib/format";
+import { computeDerived } from "@/lib/monthly";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function n(v: unknown): number {
@@ -47,7 +48,8 @@ export async function getSubmissionSummary(
     .eq("month", start)
     .maybeSingle();
 
-  const d = (row as any)?.data ?? {};
+  // Same totals the form and detailed report show (never a stale stored one).
+  const d = row ? (computeDerived((row as any).data ?? {}) as any) : {};
   const status = (row as any)?.status ?? null;
   const front = d.front ?? {};
 

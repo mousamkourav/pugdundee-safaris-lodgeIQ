@@ -1,5 +1,5 @@
 import { requireUser, isAdmin } from "@/lib/auth";
-import { formatValue } from "@/lib/format";
+import { currentMonth, formatValue } from "@/lib/format";
 import {
   fetchMetrics,
   monthLabel,
@@ -23,10 +23,8 @@ const toYM = (iso: string) => iso.slice(0, 7); // YYYY-MM-01 -> YYYY-MM
 const money = (n: number) => formatValue("money", n);
 const count = (n: number) => formatValue("count", n);
 
-function thisMonthYM(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
+// India time, not server (UTC) time - see currentMonth().
+const thisMonthYM = currentMonth;
 
 // "Central operations feed" style eyebrow shown above the page title.
 function Eyebrow({ text, range }: { text: string; range: string }) {

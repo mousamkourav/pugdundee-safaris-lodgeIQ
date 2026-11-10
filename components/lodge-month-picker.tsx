@@ -3,6 +3,7 @@
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import type { LodgeLite } from "@/lib/lodges";
 import { lodgeSlug } from "@/lib/lodge-slug";
+import { hasUnsaved } from "@/lib/unsaved";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -38,7 +39,15 @@ export function LodgeMonthPicker({
   const currentSlug = current ? lodgeSlug(current.name) : (lodge ?? "");
 
   function go(nextLodgeSlug: string, nextYear: number, nextMon: number) {
+    // Switching remounts the monthly form, which drops anything not yet saved.
+    if (
+      hasUnsaved() &&
+      !window.confirm("You have unsaved changes on this report. Switch anyway and lose them?")
+    ) {
+      return;
+    }
     const params = new URLSearchParams(sp.toString());
+    params.delete("notice"); // a "Draft saved" banner belongs to the old report
     if (nextLodgeSlug) params.set("lodge", nextLodgeSlug);
     params.set("month", `${nextYear}-${String(nextMon).padStart(2, "0")}`);
     router.push(`${pathname}?${params.toString()}`);

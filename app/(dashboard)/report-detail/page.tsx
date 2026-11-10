@@ -3,6 +3,7 @@ import { getAccessibleLodges, resolveLodge } from "@/lib/lodges";
 import { currentMonth, monthRange, formatValue } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 import {
+  computeDerived,
   getPath,
   groupFields,
   sectionsForLodge,
@@ -36,7 +37,8 @@ export default async function ReportDetailPage({
   const sp = await searchParams;
   const lodges = await getAccessibleLodges();
   const lodge = resolveLodge(sp.lodge, lodges);
-  const month = sp.month || currentMonth();
+  const month =
+    sp.month && /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.month) ? sp.month : currentMonth();
   if (!lodge) return <NoLodge title="Detailed report" />;
 
   const { start, label } = monthRange(month);
@@ -49,7 +51,10 @@ export default async function ReportDetailPage({
     .maybeSingle();
 
   const lodgeName = lodges.find((l) => l.id === lodge)?.name ?? "Lodge";
-  const data = ((row as any)?.data ?? {}) as Record<string, unknown>;
+  // Recompute auto fields with the same function the form uses, so this page
+  // can never show a stale stored total that disagrees with the form.
+  const rawData = ((row as any)?.data ?? {}) as Record<string, unknown>;
+  const data = row ? computeDerived(rawData) : rawData;
   const status = (row as any)?.status ?? null;
   const hasData = !!row;
 

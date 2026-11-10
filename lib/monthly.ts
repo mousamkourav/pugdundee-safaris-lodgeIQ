@@ -455,7 +455,7 @@ export const SECTIONS: Section[] = [
         columns: [
           { key: "detail", label: "Detail", type: "text" },
           { key: "category", label: "Category", type: "text" },
-          { key: "dec", label: "Dec 2025", type: "number", unit: "count" },
+          { key: "dec", label: "Count", type: "number", unit: "count" },
           { key: "total", label: "Total (auto)", type: "number", unit: "count", computed: true },
         ],
       },
@@ -688,18 +688,71 @@ export function computeDerived(
   return data;
 }
 
+// Schema lookup for parseMonthlyForm: "front.paid_rooms" -> field, and
+// "vehicles[].fuel" -> column. Built once from SECTIONS.
+type SchemaEntry = { type: FieldType; computed: boolean };
+let SCHEMA: Map<string, SchemaEntry> | null = null;
+function schema(): Map<string, SchemaEntry> {
+  if (SCHEMA) return SCHEMA;
+  const m = new Map<string, SchemaEntry>();
+  for (const sec of SECTIONS) {
+    for (const f of sec.fields ?? []) {
+      m.set(f.path, { type: f.type, computed: f.computed === true });
+    }
+    for (const b of sec.arrays ?? []) {
+      for (const c of b.columns) {
+        m.set(`${b.path}[].${c.key}`, { type: c.type, computed: c.computed === true });
+      }
+    }
+  }
+  SCHEMA = m;
+  return m;
+}
+
+const NUMERIC = /^-?\d+(\.\d+)?$/;
+
 // Build the nested `data` object from FormData. Data inputs are named "d:<path>",
-// arrays as "d:vehicles[0].fuel". Values that look numeric become numbers.
+// arrays as "d:vehicles[0].fuel".
+//
+// Rules (they decide what a save writes, so read before changing):
+// - Only number/rating fields become numbers. Text and date fields stay text,
+//   so a vehicle no. "7109", a remark "5400" or a code "007" is kept exactly.
+// - Computed (auto) fields are ignored: computeDerived() recalculates them.
+// - A blank scalar field that is on the form is saved as null, so clearing a
+//   value really clears it. Fields NOT on the form are simply absent and the
+//   save action keeps their stored value.
+// - Array blocks are rebuilt from the form: blank cells are left out, empty
+//   rows are dropped, and a block whose rows are all blank becomes [] (so
+//   deleting every breakdown / comp-liquor row actually deletes them).
 export function parseMonthlyForm(fd: FormData): Record<string, unknown> {
   const data: Record<string, unknown> = {};
+  const arraysSeen = new Set<string>();
+  const sch = schema();
   for (const [rawKey, rawVal] of fd.entries()) {
-    if (!rawKey.startsWith("d:")) continue;
-    const val = String(rawVal);
-    if (val === "") continue;
+    if (!rawKey.startsWith("d:") || typeof rawVal !== "string") continue;
     const key = rawKey.slice(2);
-    const coerced: string | number | boolean =
-      val === "on" ? true : /^-?\d+(\.\d+)?$/.test(val) ? Number(val) : val;
-    setDeep(data, key, coerced);
+    const am = key.match(/^([^.[]+)\[(\d+)\]\.(.+)$/);
+    if (am) arraysSeen.add(am[1]);
+    const entry = sch.get(am ? `${am[1]}[].${am[3]}` : key);
+    if (entry?.computed) continue;
+
+    const val = rawVal.trim();
+    let v: unknown;
+    if (val === "") v = null;
+    else if (!entry) v = NUMERIC.test(val) ? Number(val) : val; // legacy key
+    else if (entry.type === "number" || entry.type === "rating")
+      v = NUMERIC.test(val) ? Number(val) : val; // non-numeric text is kept, not lost
+    else if (entry.type === "bool") v = val === "on" || val === "true";
+    else v = val;
+
+    if (v === null && am) continue; // blank array cell: leave it out of the row
+    setDeep(data, key, v);
+  }
+  for (const p of arraysSeen) {
+    const arr = Array.isArray(data[p]) ? (data[p] as unknown[]) : [];
+    data[p] = arr.filter(
+      (r) => r !== null && typeof r === "object" && Object.keys(r as object).length > 0
+    );
   }
   return data;
 }

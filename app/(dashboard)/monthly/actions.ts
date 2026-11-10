@@ -12,9 +12,13 @@ import {
   reportOwner,
 } from "@/lib/monthly";
 
-function back(lodge: string, month: string) {
+// Every save ends here with a notice code the page turns into a banner
+// (saved / submitted / why it was NOT saved). Before this, refused saves
+// redirected silently and looked exactly like a successful save.
+function back(lodge: string, month: string, notice?: string) {
   revalidatePath("/monthly");
-  redirect(`/monthly?lodge=${lodge}&month=${month}`);
+  const n = notice ? `&notice=${notice}` : "";
+  redirect(`/monthly?lodge=${lodge}&month=${month}${n}`);
 }
 
 async function loadRow(lodge: string, monthStart: string) {
@@ -51,69 +55,79 @@ function deepMerge(base: any, patch: any): any {
 async function saveInternal(fd: FormData, submit: boolean) {
   const lodge_id = String(fd.get("lodge_id"));
   const month = String(fd.get("month"));
+  // redirect() works by throwing, so it must never run inside the try below.
+  const notice = await trySave(fd, lodge_id, month, submit);
+  back(lodge_id, month, notice);
+}
+
+// Returns the notice code for the banner. Never throws for an expected
+// failure: throwing would replace the form with an error page and the
+// manager would lose everything typed. A redirect keeps the form on screen.
+async function trySave(
+  fd: FormData,
+  lodge_id: string,
+  month: string,
+  submit: boolean
+): Promise<string> {
   const { start } = monthRange(month);
 
   // The form posts the lodge+month its data was loaded for. If they differ from
   // the target, the values on screen belong to another report - refuse to save
   // them here (this is how Waghoba Sept 2026 got August's data and was locked).
   const origin = fd.get("form_origin");
-  if (origin !== null && String(origin) !== `${lodge_id}|${month}`) {
-    back(lodge_id, month);
-    return;
+  if (origin !== null && String(origin) !== `${lodge_id}|${month}`) return "stale";
+
+  try {
+    // Auth and the existing row are independent: fetch both at once.
+    const [cu, existing] = await Promise.all([
+      getCurrentUser(),
+      loadRow(lodge_id, start),
+    ]);
+    if (!cu?.user) return "error";
+    const admin = isAdmin(cu.profile?.role);
+
+    // Only the report's creator may edit its data (see canEditReportData). Admins
+    // keep reopen / approve / delete, which are separate actions.
+    if (!canEditReportData(existing, cu.user.id, admin)) return "not_owner";
+    if (existing && existing.status === "submitted" && !admin) return "locked";
+
+    // Merge submitted fields onto whatever is already stored, THEN recompute
+    // totals from the merged result. Fields not on the form are preserved.
+    const submitted = parseMonthlyForm(fd);
+    const existingData =
+      (existing?.data as Record<string, unknown> | undefined) ?? {};
+    const merged = deepMerge(existingData, submitted);
+    const data = computeDerived(merged);
+
+    const s = await createClient();
+    const payload: Record<string, unknown> = { lodge_id, month: start, data };
+    // New report, or an older row with no created_by: record who saved it, so
+    // ownership is explicit from here on.
+    if (!existing || !existing.created_by) payload.created_by = cu.user.id;
+    if (submit) {
+      payload.status = "submitted";
+      payload.submitted_by = cu.user.id;
+      payload.submitted_at = new Date().toISOString();
+    } else if (!existing) {
+      payload.status = "draft";
+    } else if (admin) {
+      payload.status = existing.status;
+    } else {
+      payload.status = "draft";
+    }
+
+    const { error } = await s
+      .from("monthly_submissions")
+      .upsert(payload, { onConflict: "lodge_id,month" });
+    if (error) {
+      console.error("monthly save failed", lodge_id, month, error.message);
+      return "error";
+    }
+    return submit ? "submitted" : "saved";
+  } catch (e) {
+    console.error("monthly save failed", lodge_id, month, e);
+    return "error";
   }
-
-  // Auth and the existing row are independent: fetch both at once.
-  const [cu, existing] = await Promise.all([
-    getCurrentUser(),
-    loadRow(lodge_id, start),
-  ]);
-  if (!cu?.user) throw new Error("Not authorized");
-  const admin = isAdmin(cu.profile?.role);
-
-  // Only the report's creator may edit its data (see canEditReportData). Admins
-  // keep reopen / approve / delete, which are separate actions.
-  if (!canEditReportData(existing, cu.user.id, admin)) {
-    back(lodge_id, month);
-    return;
-  }
-  if (existing && existing.status === "submitted" && !admin) {
-    back(lodge_id, month);
-    return;
-  }
-
-  // Merge submitted fields onto whatever is already stored, THEN recompute
-  // totals from the merged result. This preserves any field not present in the
-  // submitted form and prevents blank overwrites.
-  const submitted = parseMonthlyForm(fd);
-  const existingData =
-    (existing?.data as Record<string, unknown> | undefined) ?? {};
-  const merged = deepMerge(existingData, submitted);
-  const data = computeDerived(merged);
-
-  const s = await createClient();
-  const payload: Record<string, unknown> = { lodge_id, month: start, data };
-  // New report, or an older row with no created_by: record who saved it, so
-  // ownership is explicit from here on. Only reached when this user may edit
-  // it (its submitted_by owner, or an unowned row).
-  if (!existing || !existing.created_by) payload.created_by = cu.user.id;
-  if (submit) {
-    payload.status = "submitted";
-    payload.submitted_by = cu.user.id;
-    payload.submitted_at = new Date().toISOString();
-  } else if (!existing) {
-    payload.status = "draft";
-  } else if (admin) {
-    payload.status = existing.status;
-  } else {
-    payload.status = "draft";
-  }
-
-  const { error } = await s
-    .from("monthly_submissions")
-    .upsert(payload, { onConflict: "lodge_id,month" });
-  // Surface failures instead of redirecting as if the save worked.
-  if (error) throw new Error(`Could not save the report: ${error.message}`);
-  back(lodge_id, month);
 }
 
 export async function saveDraft(fd: FormData) {
@@ -145,8 +159,7 @@ export async function reopenReport(fd: FormData) {
       ...(owner ? { created_by: owner } : {}),
     })
     .eq("id", id);
-  if (error) throw new Error(`Could not reopen the report: ${error.message}`);
-  back(String(fd.get("lodge_id")), String(fd.get("month")));
+  back(String(fd.get("lodge_id")), String(fd.get("month")), error ? "error" : "reopened");
 }
 
 export async function deleteReport(fd: FormData) {
@@ -154,6 +167,9 @@ export async function deleteReport(fd: FormData) {
   if (!cu?.user || !isSuperAdmin(cu.profile?.role))
     throw new Error("Not authorized");
   const s = await createClient();
-  await s.from("monthly_submissions").delete().eq("id", String(fd.get("id")));
-  back(String(fd.get("lodge_id")), String(fd.get("month")));
+  const { error } = await s
+    .from("monthly_submissions")
+    .delete()
+    .eq("id", String(fd.get("id")));
+  back(String(fd.get("lodge_id")), String(fd.get("month")), error ? "error" : "deleted");
 }

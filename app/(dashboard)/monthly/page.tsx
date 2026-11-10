@@ -12,10 +12,24 @@ import { MonthlyForm } from "@/components/monthly-form";
 import { saveDraft, submitReport, reopenReport, deleteReport } from "./actions";
 import { requestEdit, approveEdit, declineEdit } from "./edit-requests";
 
+// Banner text for ?notice=... set by the save / reopen / edit-request actions.
+const NOTICES: Record<string, { ok: boolean; text: string }> = {
+  saved: { ok: true, text: "Draft saved." },
+  submitted: { ok: true, text: "Report submitted. It is now locked; ask an admin if it needs changes." },
+  reopened: { ok: true, text: "Report reopened as a draft. The manager can edit and submit it again." },
+  declined: { ok: true, text: "Edit request declined. The report stays locked." },
+  requested: { ok: true, text: "Edit request sent to the admins." },
+  deleted: { ok: true, text: "Report deleted." },
+  not_owner: { ok: false, text: "NOT saved: only the person who created this report can edit it." },
+  locked: { ok: false, text: "NOT saved: this report is already submitted. Use \"Request edit access\" to change it." },
+  stale: { ok: false, text: "NOT saved: the form was opened for a different lodge or month. Reload the page and enter the figures again." },
+  error: { ok: false, text: "NOT saved: something went wrong on the server. Your entries are still on screen - press Save again. If it keeps failing, tell the admin." },
+};
+
 export default async function MonthlyPage({
   searchParams,
 }: {
-  searchParams: Promise<{ lodge?: string; month?: string }>;
+  searchParams: Promise<{ lodge?: string; month?: string; notice?: string }>;
 }) {
   const [{ user, profile }, sp, lodges] = await Promise.all([
     requireUser(),
@@ -23,7 +37,9 @@ export default async function MonthlyPage({
     getAccessibleLodges(),
   ]);
   const lodge = resolveLodge(sp.lodge, lodges);
-  const month = sp.month || currentMonth();
+  // A malformed ?month= (typo, old bookmark) used to crash the page.
+  const month =
+    sp.month && /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.month) ? sp.month : currentMonth();
   if (!lodge) return <NoLodge title="Monthly report" />;
 
   const { start, label } = monthRange(month);
@@ -176,6 +192,8 @@ export default async function MonthlyPage({
       ? `Read-only: only ${ownerName ?? "the person who created this report"} can edit it.`
       : "Read-only: only the lodge's manager can edit this report's fields.";
 
+  const notice = sp.notice ? NOTICES[sp.notice] : undefined;
+
   const statusUi = submitted
     ? { t: "Submitted", cls: "border-success-border bg-success-bg text-success", dot: "bg-success" }
     : status === "draft"
@@ -200,6 +218,19 @@ export default async function MonthlyPage({
         description={`Monthly report for ${lodgeName}. Figures roll up into the dashboards and summaries.`}
       />
       <LodgeMonthPicker lodges={lodges} lodge={lodge} month={month} />
+
+      {notice && (
+        <div
+          role="status"
+          className={`mb-6 rounded-xl border px-4 py-3 text-sm font-medium ${
+            notice.ok
+              ? "border-success-border bg-success-bg text-success"
+              : "border-error-border bg-error-bg text-error"
+          }`}
+        >
+          {notice.text}
+        </div>
+      )}
 
       {drafts.length > 0 && (
         <div className="mb-6 rounded-xl border border-pending-border bg-pending-bg/40 p-4">

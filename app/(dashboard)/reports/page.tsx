@@ -26,7 +26,8 @@ export default async function ReportsPage({
   const sp = await searchParams;
   const lodges = await getAccessibleLodges();
   const lodge = resolveLodge(sp.lodge, lodges);
-  const month = sp.month || currentMonth();
+  const month =
+    sp.month && /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.month) ? sp.month : currentMonth();
   if (!lodge) return <NoLodge title="Monthly summary" />;
 
   const s = await createClient();

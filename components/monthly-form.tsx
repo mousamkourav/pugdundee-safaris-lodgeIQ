@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useFormStatus } from "react-dom";
+import { setUnsaved } from "@/lib/unsaved";
 import {
   computeDerived,
   getPath,
@@ -24,6 +26,24 @@ function inputType(t: string): string {
   if (t === "date") return "date";
   return "text";
 }
+
+// A number/date input cannot DISPLAY a value that is not a number / ISO date
+// (e.g. "NA" or "12/10/2026" from an import): the browser shows it blank and
+// the next save would drop it. In that case render a plain text box so the
+// stored value stays visible and is posted back unchanged.
+function renderType(t: string, value: string): string {
+  const it = inputType(t);
+  if (value === "") return it;
+  if (it === "number" && !/^-?\d*\.?\d*$/.test(value.trim())) return "text";
+  if (it === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(value)) return "text";
+  return it;
+}
+
+// Scrolling the page with the mouse over a focused number box silently
+// changes its value (3778 -> 3777). Drop focus instead.
+const blurOnWheel = (e: React.WheelEvent<HTMLInputElement>) => {
+  if (e.currentTarget.type === "number") e.currentTarget.blur();
+};
 
 type Data = Record<string, unknown>;
 
@@ -136,8 +156,23 @@ export function MonthlyForm({
   const [origin] = useState(() => `${lodge}|${month}`);
   const sections = sectionsForLodge(lodgeName);
   const [activeKey, setActiveKey] = useState<string | null>(sections[0]?.key ?? null);
+  // Unsaved edits: warn before closing / reloading the tab, and let the
+  // lodge-month picker warn before switching away.
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    setUnsaved(dirty);
+    if (!dirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
+  useEffect(() => () => setUnsaved(false), []);
 
   function update(path: string, value: string) {
+    setDirty(true);
     setData((prev) => {
       const next = clone(prev);
       setDeep(next, path, value);
@@ -146,6 +181,7 @@ export function MonthlyForm({
   }
 
   function addRow(block: ArrayBlock) {
+    setDirty(true);
     setData((prev) => {
       const next = clone(prev);
       const arr = ((next[block.path] as unknown[]) ?? []).slice();
@@ -156,6 +192,7 @@ export function MonthlyForm({
   }
 
   function removeRow(block: ArrayBlock, i: number) {
+    setDirty(true);
     setData((prev) => {
       const next = clone(prev);
       const arr = ((next[block.path] as unknown[]) ?? []).slice();
@@ -198,7 +235,7 @@ export function MonthlyForm({
   const pct = sections.length ? Math.round((doneCount / sections.length) * 100) : 0;
 
   return (
-    <form action={saveDraft}>
+    <form action={saveDraft} onSubmit={() => setDirty(false)}>
       <input type="hidden" name="lodge_id" value={lodge} />
       <input type="hidden" name="month" value={month} />
       <input type="hidden" name="form_origin" value={origin} />
@@ -460,31 +497,58 @@ export function MonthlyForm({
                   : "Once submitted you can't edit - an admin can reopen it if needed."}
               </p>
             </div>
-            <div className="flex gap-2">
-              <button
-                formAction={saveDraft}
-                className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg border border-sand-300 bg-white px-5 py-2 text-sm font-medium text-sand-700 transition hover:border-sand-500 hover:bg-sand-100 sm:min-h-10 sm:flex-none"
-              >
-                Save draft
-              </button>
-              <button
-                formAction={submitReport}
-                onClick={(e) => {
-                  const what = `${lodgeName} - ${monthLabel(month)}`;
-                  const msg = admin
-                    ? `Mark the ${what} report as submitted?`
-                    : `Submit the ${what} report? It will be locked and you will need admin approval to edit it again.`;
-                  if (!window.confirm(msg)) e.preventDefault();
-                }}
-                className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg bg-olive-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-olive-700 active:bg-olive-800 sm:min-h-10 sm:flex-none"
-              >
-                {admin ? "Save & mark submitted" : "Submit (locks report)"}
-              </button>
-            </div>
+            <SaveButtons
+              admin={admin}
+              confirmText={
+                admin
+                  ? `Mark the ${lodgeName} - ${monthLabel(month)} report as submitted?`
+                  : `Submit the ${lodgeName} - ${monthLabel(month)} report? It will be locked and you will need admin approval to edit it again.`
+              }
+              saveDraft={saveDraft}
+              submitReport={submitReport}
+            />
           </div>
         </div>
       )}
     </form>
+  );
+}
+
+// Must render inside the <form> so useFormStatus sees its submission. While a
+// save is in flight both buttons are disabled and say so: no double submits,
+// and the manager can see the save has not finished yet.
+function SaveButtons({
+  admin,
+  confirmText,
+  saveDraft,
+  submitReport,
+}: {
+  admin: boolean;
+  confirmText: string;
+  saveDraft: (fd: FormData) => Promise<void>;
+  submitReport: (fd: FormData) => Promise<void>;
+}) {
+  const { pending } = useFormStatus();
+  return (
+    <div className="flex gap-2">
+      <button
+        formAction={saveDraft}
+        disabled={pending}
+        className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg border border-sand-300 bg-white px-5 py-2 text-sm font-medium text-sand-700 transition hover:border-sand-500 hover:bg-sand-100 disabled:cursor-wait disabled:opacity-60 sm:min-h-10 sm:flex-none"
+      >
+        {pending ? "Saving..." : "Save draft"}
+      </button>
+      <button
+        formAction={submitReport}
+        disabled={pending}
+        onClick={(e) => {
+          if (!window.confirm(confirmText)) e.preventDefault();
+        }}
+        className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg bg-olive-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-olive-700 active:bg-olive-800 disabled:cursor-wait disabled:opacity-60 sm:min-h-10 sm:flex-none"
+      >
+        {pending ? "Saving..." : admin ? "Save & mark submitted" : "Submit (locks report)"}
+      </button>
+    </div>
   );
 }
 
@@ -525,8 +589,9 @@ function ArrayCell({
       </span>
       <input
         name={name}
-        type={inputType(c.type)}
-        step={c.type === "number" ? "0.01" : undefined}
+        type={renderType(c.type, value)}
+        step={c.type === "number" || c.type === "rating" ? "any" : undefined}
+        onWheel={blurOnWheel}
         placeholder={c.label}
         aria-label={c.label}
         value={value}
@@ -563,10 +628,9 @@ function ScalarField({
       </span>
       <input
         name={`d:${f.path}`}
-        type={inputType(f.type)}
-        step={
-          f.type === "rating" ? "0.1" : f.type === "number" ? "0.01" : undefined
-        }
+        type={renderType(f.type, value)}
+        step={f.type === "number" || f.type === "rating" ? "any" : undefined}
+        onWheel={blurOnWheel}
         value={value}
         readOnly={isComputed}
         disabled={locked && !isComputed}

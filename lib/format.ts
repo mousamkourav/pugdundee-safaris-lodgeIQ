@@ -34,9 +34,17 @@ export function formatValue(unit: Unit | undefined, raw: unknown): string {
   }
 }
 
+// Current month in India time. The server runs in UTC, so new Date().getMonth()
+// still says the previous month until 05:30 IST on the 1st.
 export function currentMonth(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(new Date());
+  const y = parts.find((p) => p.type === "year")?.value;
+  const m = parts.find((p) => p.type === "month")?.value;
+  return `${y}-${m}`;
 }
 
 // month = "YYYY-MM" -> inclusive start, exclusive end (first of next month), label

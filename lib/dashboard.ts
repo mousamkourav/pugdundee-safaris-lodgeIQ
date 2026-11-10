@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { computeDerived } from "@/lib/monthly";
 
 export type Metrics = {
   lodgeId: string;
@@ -27,13 +28,16 @@ function n(v: unknown): number {
 // their own lodge; admins see all) and flattens them into comparable metrics.
 export async function fetchMetrics(): Promise<Metrics[]> {
   const s = await createClient();
-  const { data } = await s
+  const { data, error } = await s
     .from("monthly_submissions")
     .select("lodge_id, month, data, lodges(name)")
     .order("month");
+  // Fail loudly: an empty list here would render "No monthly reports yet".
+  if (error) throw new Error(`Could not load monthly reports: ${error.message}`);
   const rows = (data ?? []) as any[];
   return rows.map((r) => {
-    const d = r.data ?? {};
+    // Same totals the form and detailed report show (never a stale stored one).
+    const d = computeDerived(r.data ?? {}) as any;
     const front = d.front ?? {};
     const roomNights =
       n(front.total_rooms) || n(front.paid_rooms) + n(front.comp_rooms);
