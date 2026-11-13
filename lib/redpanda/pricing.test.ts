@@ -268,3 +268,69 @@ test("Delhi: same-day connection (0 nights) = the flight only; a typed fare; no 
   const apr = priceRedPanda(plan({ arrival: "2027-04-05", delhi_before: delhi(1), g: { adults: 2 } }), WITH_DELHI);
   assert.equal(apr.lines.find((l) => l.key === "delhi_before")!.amount, 17000);
 });
+
+// ---------------------------------------------------------------- dates not fixed (13 Nov 2026)
+
+test("dates not fixed: priced on the season's tariff as on its first day, and no date shown anywhere", async () => {
+  const { rpSeasons, datelessBasis } = await import("./pricing");
+  assert.deepEqual(rpSeasons(MASTER).map((x) => [x.season, x.from, x.to]), [["2026-27", "2026-10-01", "2027-05-31"], ["2025-26", "2025-10-01", "2026-05-31"]]);
+  // the newest season when none is chosen
+  assert.deepEqual(datelessBasis({ rate_season: null }, MASTER), { season: "2026-27", on: "2026-10-01" });
+  // 2 foreign guests, 5 nights, 1 night at Mayfair before: the same price as arriving on 1 Oct 2026
+  const base = { g: { adults: 2, nationality: "foreign" as const }, hotel_before: { nights: 1, room_id: "R_jungle" } };
+  const dated = priceRedPanda(plan({ ...base, arrival: "2026-10-01" }), MASTER);
+  const open = priceRedPanda(plan({ ...base, arrival: null, dateless: true, rate_season: null }), MASTER);
+  assert.deepEqual(open.errors, []);
+  assert.equal(open.totals.grand, dated.totals.grand);
+  assert.equal(open.totals.grand, 253000 * 2 * 1.05 + 17000 * 1.18 + 3150); // 5,31,300 + Mayfair 20,060 + the airport transfer 3,150
+  assert.equal(open.season, "2026-27");
+  assert.equal(open.dateless, true);
+  assert.equal(open.arrival, null);
+  assert.equal(open.departure, null);
+  assert.deepEqual(open.outpost, { check_in: null, check_out: null });
+  assert.equal(open.payments[1].due, null); // the balance: 45 days before arrival, the date not known
+  assert.match(open.payments[1].note!, /45 days before arrival/);
+  // the older season, when chosen: 2025-26 rates
+  const old = priceRedPanda(plan({ g: { adults: 2, nationality: "foreign" }, arrival: null, dateless: true, rate_season: "2025-26" }), MASTER);
+  assert.equal(old.season, "2025-26");
+  assert.equal(old.totals.package, 230000 * 2);
+  // a season not in Master data: the newest, with a warning
+  const gone = priceRedPanda(plan({ g: { adults: 2 }, arrival: null, dateless: true, rate_season: "2019-20" }), MASTER);
+  assert.equal(gone.season, "2026-27");
+  assert.ok(gone.warnings.some((w) => /2019-20 tariff is not in Master data/.test(w)));
+  // no tariff at all: a clear error, not a price
+  const none = priceRedPanda(plan({ g: { adults: 2 }, arrival: null, dateless: true }), { ...MASTER, tariff: [] });
+  assert.ok(none.errors.some((e) => /no Red Panda tariff season/.test(e)));
+  // without the tick and without a date: still asks for the date
+  assert.ok(priceRedPanda(plan({ g: { adults: 2 }, arrival: null }), MASTER).errors.includes("Add the arrival date."));
+});
+
+test("dates not fixed: kept by the plan, read from the enquiry, the date question skipped, the guest page says so", async () => {
+  const { readEnquiry } = await import("./reader");
+  const { applyReading, nextQuestion, rpConfirmKey } = await import("./assist");
+  const { rpGuestContent } = await import("./content");
+  const p = sanitizeRpPlan(JSON.parse(JSON.stringify(plan({ arrival: null, dateless: true, rate_season: "2026-27" }))))!;
+  assert.equal(p.dateless, true);
+  assert.equal(p.rate_season, "2026-27");
+  assert.equal(sanitizeRpPlan(JSON.parse(JSON.stringify({ ...plan(), dateless: "yes", rate_season: "<b>" })))!.dateless, undefined);
+  for (const m of ["2 adults from UK, dates not fixed, 5 nights", "2 guests, foreign nationals, Dates not decided", "2 adults, no fixed dates yet", "2 adults, dates TBD", "dates not fixed"]) assert.equal(readEnquiry(m, "2026-11-13").dateless, true, m);
+  assert.equal(readEnquiry("2 adults arriving 20 Feb 2027", "2026-11-13").dateless, undefined);
+  const r = readEnquiry("2 adults from UK, dates not fixed, 5 nights", "2026-11-13");
+  const applied = applyReading(emptyRpPlan(), r, SETTINGS);
+  assert.equal(applied.plan.dateless, true);
+  assert.notEqual(applied.pending, "arrival");
+  assert.equal(nextQuestion(applied.plan, r, SETTINGS).pending === "arrival", false);
+  // a date given later replaces it
+  const later = applyReading(applied.plan, readEnquiry("arriving 20 Feb 2027", "2026-11-13"), SETTINGS);
+  assert.equal(later.plan.dateless, undefined);
+  assert.equal(later.plan.arrival, "2027-02-20");
+  // confirming: the tick is part of what was confirmed; older confirmations (no tick) unchanged
+  assert.notEqual(rpConfirmKey({ ...plan({ arrival: null }), dateless: true }), rpConfirmKey(plan({ arrival: null })));
+  assert.ok(!rpConfirmKey(plan()).includes("dateless"));
+  // the guest page: dates to be confirmed, the season's note under the price, days without dates
+  const open = plan({ g: { adults: 2, nationality: "foreign" }, arrival: null, dateless: true });
+  const c = rpGuestContent(open, priceRedPanda(open, MASTER), SETTINGS);
+  assert.equal(c.glance.find((x) => x.label === "Dates")!.value, "To be confirmed");
+  assert.match(c.datelessNote!, /not fixed yet, the price is worked out on the 2026-27 season tariff/);
+  assert.ok(c.days.every((d) => d.dateText === ""));
+});

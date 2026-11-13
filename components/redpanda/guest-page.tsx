@@ -154,6 +154,7 @@ export function RedPandaGuestPage({ view }: { view: RpClientView }) {
               </div>
               <p className="text-xs">Valid until {long(view.validUntil)}</p>
             </div>
+            {c.datelessNote && <p className="text-xs italic">{c.datelessNote}</p>}
             <ul className="space-y-2 text-sm">
               {view.breakup.map((b, i) => (
                 <li key={i} className="flex justify-between gap-4"><span>{b.label}</span><span className="tabular shrink-0 font-medium text-[var(--rp-bark)]">{inr(b.amount)}</span></li>
@@ -163,7 +164,7 @@ export function RedPandaGuestPage({ view }: { view: RpClientView }) {
               <div className="rounded-xl border border-[var(--rp-line)] bg-white/70 p-4 text-sm">
                 <p className="font-semibold text-[var(--rp-bark)]">Payment</p>
                 {view.payments.map((p) => (
-                  <p key={p.label} className="mt-1 flex justify-between gap-4"><span>{p.label}{p.due ? ` by ${fmtDay(p.due)}` : " at booking"}</span><span className="tabular">{inr(p.amount)}</span></p>
+                  <p key={p.label} className="mt-1 flex justify-between gap-4"><span>{p.label}{p.due ? ` by ${fmtDay(p.due)}` : ` ${p.note ?? "at booking"}`}</span><span className="tabular">{inr(p.amount)}</span></p>
                 ))}
                 {c.paymentTerms && <p className="mt-2 text-xs">{c.paymentTerms}</p>}
               </div>

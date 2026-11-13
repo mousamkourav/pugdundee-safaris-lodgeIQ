@@ -161,7 +161,7 @@ export default async function RedPandaQuotePage({ params }: { params: Promise<{ 
               {price.payments.length > 0 && (
                 <div className="mt-3 rounded-lg bg-sand-50 p-3 text-sm">
                   {price.payments.map((p) => (
-                    <p key={p.label} className="flex justify-between gap-3"><span>{p.label} ({p.pct}%), {p.due ? `by ${fmtDay(p.due)}` : "at booking"}</span><span className="tabular font-medium">{rupees(p.amount)}</span></p>
+                    <p key={p.label} className="flex justify-between gap-3"><span>{p.label} ({p.pct}%), {p.due ? `by ${fmtDay(p.due)}` : (p.note ?? "at booking")}</span><span className="tabular font-medium">{rupees(p.amount)}</span></p>
                   ))}
                 </div>
               )}
@@ -174,7 +174,7 @@ export default async function RedPandaQuotePage({ params }: { params: Promise<{ 
               <h2 className="text-lg">Trip</h2>
               <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
                 {([
-                  ["Arrival", fmtDay(price?.arrival ?? plan.arrival)],
+                  ["Arrival", plan.dateless ? `Not fixed yet (tariff ${price?.season ?? plan.rate_season ?? "newest"})` : fmtDay(price?.arrival ?? plan.arrival)],
                   ["Departure", fmtDay(price?.departure ?? null)],
                   ["Red Panda Outpost", `${plan.nights} nights${price?.outpost.check_in ? `, from ${fmtDay(price.outpost.check_in)}` : ""}`],
                   ["Airports", `${plan.arrive_airport} in, ${plan.depart_airport} out`],

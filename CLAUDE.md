@@ -173,6 +173,12 @@ builder, quotes/[id], master, access), components `components/redpanda/*`.
 - Guest page and PDF: own template and colours (the brochure's cream and bark brown, page-scoped
   variables), text from `rp_settings.data` (`lib/redpanda/content.ts`, placeholders like {airport}),
   photos `rp_images` (bucket sales-media, `red-panda/...`; one cover).
+- Dates not fixed (13 Nov 2026, as in the Safari builder): `RpPlan.dateless` + `rate_season` (a tariff
+  season label; null = the newest). `priceRedPanda` prices as if arriving on that season's first day
+  (`datelessBasis`, `rpSeasons`), then returns no arrival/departure/outpost dates, `dateless: true` and a
+  balance with no due date (shown by its note, "45 days before arrival"). Read from enquiries ("dates not
+  fixed", tbd, flexible...); a date given later clears it. Guest page: "To be confirmed" + `datelessNote`.
+  Part of `rpConfirmKey` only when ticked (older confirmations stay valid). Saved quotes get null dates.
 
 ## Group quotes (Sales > Group quotes, 6 Nov 2026)
 Quotes for tour operators' groups (for example 6 paying guests + 1 tour leader), priced by group

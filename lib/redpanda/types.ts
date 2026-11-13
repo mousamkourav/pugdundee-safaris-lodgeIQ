@@ -133,6 +133,11 @@ export interface RpPlan {
     rooms: number | null; // null = the standard (2 per room, 1 single when odd)
   };
   arrival: ISODate | null;
+  // Dates not fixed yet (13 Nov 2026, as in the Sales builder): priced on a season's tariff
+  // ("2026-27"; empty = the newest season in Master data), the guest page says the dates are to
+  // be confirmed. The arrival is then not used.
+  dateless?: boolean;
+  rate_season?: string | null;
   nights: number;
   arrive_airport: AirportCode;
   depart_airport: AirportCode;
@@ -188,6 +193,7 @@ export interface RpPrice {
   perPerson: number;
   arrival: ISODate | null;
   departure: ISODate | null; // the day they fly out (from Bagdogra, or from Delhi)
+  dateless?: boolean; // dates not fixed: priced on the season's tariff (season), no dates shown
   outpost: { check_in: ISODate | null; check_out: ISODate | null };
   dates?: { bagdogra_in: ISODate | null; delhi_back: ISODate | null }; // when the trip goes through Delhi
   currency: "INR";

@@ -82,6 +82,7 @@ export function sanitizeRpPlan(raw: unknown): RpPlan {
       rooms: roomsRaw === null || roomsRaw === undefined || roomsRaw === "" ? null : int(roomsRaw, 0, 20, 0),
     },
     arrival: date(r.arrival),
+    ...(r.dateless === true ? { dateless: true, rate_season: typeof r.rate_season === "string" && /^[\w -]{1,40}$/.test(r.rate_season) ? r.rate_season : null } : {}),
     nights: int(r.nights, 0, 30, 5),
     arrive_airport: airport(r.arrive_airport),
     depart_airport: airport(r.depart_airport),

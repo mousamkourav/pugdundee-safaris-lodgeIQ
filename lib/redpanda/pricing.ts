@@ -52,6 +52,25 @@ function hotelRateOn(rates: RpHotelRate[], d: ISODate): RpHotelRate | null {
   return rates.find((r) => r.valid_from <= d && d <= r.valid_to) ?? null;
 }
 
+// The seasons of the Red Panda tariff in Master data ("2026-27"), newest first, with their dates
+export function rpSeasons(m: Pick<RpMaster, "tariff">): { season: string; from: ISODate; to: ISODate }[] {
+  const by = new Map<string, { season: string; from: ISODate; to: ISODate }>();
+  for (const t of m.tariff) {
+    if (!t.active) continue;
+    const had = by.get(t.season);
+    by.set(t.season, { season: t.season, from: had && had.from < t.valid_from ? had.from : t.valid_from, to: had && had.to > t.valid_to ? had.to : t.valid_to });
+  }
+  return [...by.values()].sort((a, b) => b.from.localeCompare(a.from));
+}
+
+// Dates not fixed: the season to price on (the one chosen, else the newest), and the day the
+// prices are taken on: its first day (every rate, the hotels and transfers too, as on that day)
+export function datelessBasis(plan: Pick<RpPlan, "rate_season">, m: Pick<RpMaster, "tariff">): { season: string; on: ISODate } | null {
+  const all = rpSeasons(m);
+  const pick = (plan.rate_season && all.find((x) => x.season === plan.rate_season)) || all[0];
+  return pick ? { season: pick.season, on: pick.from } : null;
+}
+
 export function priceRedPanda(plan: RpPlan, m: RpMaster): RpPrice {
   const s = m.settings;
   const errors: string[] = [];
@@ -60,7 +79,11 @@ export function priceRedPanda(plan: RpPlan, m: RpMaster): RpPrice {
   const market = marketFor(plan);
   const guests = guestCount(plan);
   const nights = Math.floor(num(plan.nights));
-  const dates = tripDates(plan);
+  // dates not fixed (13 Nov 2026): priced as if they arrived on the first day of the season
+  const basis = plan.dateless ? datelessBasis(plan, m) : null;
+  if (plan.dateless && !basis) errors.push("Dates not fixed: there is no Red Panda tariff season in Master data to price on.");
+  if (plan.dateless && plan.rate_season && basis && basis.season !== plan.rate_season) warnings.push(`The ${plan.rate_season} tariff is not in Master data: priced on ${basis.season}.`);
+  const dates = tripDates(basis ? { ...plan, arrival: basis.on } : plan);
 
   // ---- who
   if (guests < 1) errors.push("Add the guests (at least 1 adult).");
@@ -99,7 +122,7 @@ export function priceRedPanda(plan: RpPlan, m: RpMaster): RpPrice {
   const supp = (kind: "single_room" | "tour_leader") =>
     first ? m.supplements.find((x) => x.active && x.market === market && x.kind === kind && x.valid_from <= first && last <= x.valid_to) ?? null : null;
   if (first && !closed.length && !row && plan.per_pax_override == null)
-    errors.push(`No Red Panda tariff in Master data for ${MARKET_LABEL[market]}, ${g} guest${g === 1 ? "" : "s"}, on these dates.`);
+    errors.push(`No Red Panda tariff in Master data for ${MARKET_LABEL[market]}, ${g} guest${g === 1 ? "" : "s"}, ${basis ? `in the ${basis.season} season` : "on these dates"}.`);
 
   const override = plan.per_pax_override != null && Number.isFinite(plan.per_pax_override) ? plan.per_pax_override : null;
   if (override != null && override < 0) errors.push("The typed rate cannot be below 0.");
@@ -291,7 +314,7 @@ export function priceRedPanda(plan: RpPlan, m: RpMaster): RpPrice {
   // ---- payment terms
   const dep = num(s.deposit_pct);
   const deposit = rupees((grand * dep) / 100);
-  const balanceDue = dates.arrival ? addDays(dates.arrival, -num(s.balance_days_before)) : null;
+  const balanceDue = dates.arrival && !basis ? addDays(dates.arrival, -num(s.balance_days_before)) : null;
   const payments = grand > 0
     ? [
         { label: "Deposit", pct: dep, due: null, amount: deposit, note: "at booking" },
@@ -313,10 +336,12 @@ export function priceRedPanda(plan: RpPlan, m: RpMaster): RpPrice {
     lines,
     totals: { package: pkg, markup, discount, package_gst: pkgGst, hotel: hotelTotal, extras, adjustment, grand },
     perPerson: guests ? rupees(grand / guests) : 0,
-    arrival: dates.arrival,
-    departure: dates.departure,
-    outpost: { check_in: dates.check_in, check_out: dates.check_out },
-    dates: { bagdogra_in: dates.bagdogra_in, delhi_back: dates.delhi_back },
+    // dates not fixed: no date anywhere (the season's first day was only for the rates)
+    arrival: basis ? null : dates.arrival,
+    departure: basis ? null : dates.departure,
+    outpost: basis ? { check_in: null, check_out: null } : { check_in: dates.check_in, check_out: dates.check_out },
+    dates: basis ? { bagdogra_in: null, delhi_back: null } : { bagdogra_in: dates.bagdogra_in, delhi_back: dates.delhi_back },
+    ...(basis ? { dateless: true } : {}),
     currency: "INR",
     payments,
   };

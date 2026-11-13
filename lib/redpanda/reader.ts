@@ -20,6 +20,7 @@ export interface RpReading {
   booked_by?: "agent" | "direct";
   agent_name?: string;
   arrival?: string;
+  dateless?: boolean; // "dates not fixed / not decided / TBD"
   nights?: number;
   arrive_airport?: AirportCode;
   depart_airport?: AirportCode;
@@ -229,6 +230,7 @@ export function readEnquiry(text: string, today: string, opts: { pending?: RpPen
   // ---- dates and nights
   const dates = datesIn(t, today);
   if (dates.length) r.arrival = dates[0].date;
+  else if (/\b(?:dates?\s+(?:are\s+|is\s+)?(?:not\s+(?:yet\s+)?(?:fixed|decided|confirmed|final(?:i[sz]ed)?|known)|tbd|tba|open|flexible|undecided)|no\s+(?:fixed\s+)?dates?(?:\s+(?:yet|fixed))?|without\s+dates?|dateless|tarikh\s+(?:abhi\s+)?(?:fix\s+)?nahi)\b/i.test(l)) r.dateless = true;
   const nn = new RegExp(`\\b${NUM_RE}(?:\\s*(?:nights?|nts?|raat)\\b|(?<=\\d)n(?=\\b|\\d))`, "i").exec(l) ?? /\b(\d{1,2})n\s*\/?\s*\d{1,2}d\b/i.exec(l);
   const dd = new RegExp(`\\b${NUM_RE}(?:\\s*(?:days?|din)\\b|(?<=\\d)d\\b)`, "i").exec(l);
   if (nn) r.nights = toNum(nn[1]);

@@ -28,6 +28,7 @@ export interface RpGuestContent {
   paymentTerms: string;
   arrival: string | null;
   departure: string | null;
+  datelessNote?: string; // dates not fixed: under the price (as on the Sales guest page)
   nights: number; // all nights of the trip
   guests: number;
   rooms: number;
@@ -167,6 +168,9 @@ export function rpGuestContent(plan: RpPlan, price: RpPrice, s: RpSettings): RpG
     paymentTerms: fill(s.payment_terms, vars),
     arrival: price.arrival,
     departure: price.departure,
+    ...(price.dateless
+      ? { datelessNote: `As the travel dates are not fixed yet, the price is worked out on the ${price.season ?? "current"} season tariff. Once the dates are confirmed, prices may vary slightly.` }
+      : {}),
     nights: totalNights,
     guests: price.guests,
     rooms: price.rooms,

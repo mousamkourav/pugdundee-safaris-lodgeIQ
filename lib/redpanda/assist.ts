@@ -50,7 +50,14 @@ export function applyReading(plan: RpPlan, r: RpReading, s: RpSettings, hotelRoo
   }
   if (r.arrival) {
     p.arrival = r.arrival;
+    delete p.dateless;
+    delete p.rate_season;
     u.push(`arriving ${fmtD(r.arrival)}`);
+  } else if (r.dateless) {
+    // "dates not fixed": priced on the newest season's tariff until a date is given
+    p.dateless = true;
+    p.arrival = null;
+    u.push("dates not fixed yet (priced on the season's tariff)");
   }
   if (r.nights != null) {
     p.nights = r.nights;
@@ -116,7 +123,7 @@ export function applyReading(plan: RpPlan, r: RpReading, s: RpSettings, hotelRoo
 
 // The first thing still needed for a price, as a question.
 export function nextQuestion(p: RpPlan, r: RpReading, s: RpSettings, hotelRooms: { id: string; name: string }[] = [], delhiHotels: DelhiHotelOpt[] = []): { question: string | null; pending: RpPending } {
-  if (!p.arrival) return { question: "On which date do they arrive (the day they land)?", pending: "arrival" };
+  if (!p.arrival && !p.dateless) return { question: "On which date do they arrive (the day they land)? If the dates are not fixed yet, say \"dates not fixed\".", pending: "arrival" };
   if (!(p.guest.adults >= 1)) return { question: "How many adults?", pending: "adults" };
   if (r.children && !p.guest.child_ages.length) return { question: `How old ${r.children === 1 ? "is the child" : "are the children"}? (Red Panda Outpost takes guests from ${s.min_age} years.)`, pending: "ages" };
   if (!p.guest.country && p.guest.booked_by === "direct") return { question: "Are the guests Indian or foreign? (The tariff differs.)", pending: "nationality" };
@@ -149,9 +156,9 @@ export function tripSummary(p: RpPlan, s: RpSettings, hotelName: string | null, 
   lines.push({ key: "guests", text: `${plural(p.guest.adults, "adult")}${kids}${p.tour_leader ? ", with a tour leader" : ""}; ${p.guest.nationality === "indian" ? "Indian" : `foreign${p.guest.country ? ` (${p.guest.country})` : ""}`}; ${p.guest.booked_by === "agent" ? `through an agent${p.guest.agent_name ? ` (${p.guest.agent_name})` : ""}` : "direct guest"}.` });
   const dIn = p.delhi_before;
   if (dIn.flight) {
-    lines.push({ key: "delhi_before", text: `${fmtD(p.arrival)}: land in Delhi${dIn.nights ? `; ${plural(dIn.nights, "night")} in Delhi${delhiName(dIn.hotel_id) ? ` at ${delhiName(dIn.hotel_id)}` : ""}` : ", same-day connection"}.` });
+    lines.push({ key: "delhi_before", text: `${p.dateless ? "Dates not fixed yet" : fmtD(p.arrival)}: land in Delhi${dIn.nights ? `; ${plural(dIn.nights, "night")} in Delhi${delhiName(dIn.hotel_id) ? ` at ${delhiName(dIn.hotel_id)}` : ""}` : ", same-day connection"}.` });
     lines.push({ key: "arrive", text: `Fly Delhi to ${air(p.arrive_airport)}.` });
-  } else lines.push({ key: "arrive", text: `${fmtD(p.arrival)}: land at ${air(p.arrive_airport)}.` });
+  } else lines.push({ key: "arrive", text: `${p.dateless ? "Dates not fixed yet" : fmtD(p.arrival)}: land at ${air(p.arrive_airport)}.` });
   const hb = p.hotel_before.nights;
   if (hb > 0) lines.push({ key: "hotel_before", text: `${plural(hb, "night")} at ${hotelName ?? "the hotel near Bagdogra"}.` });
   lines.push({ key: "outpost", text: `${plural(p.nights, "night")} at Red Panda Outpost${p.guest.rooms ? `, ${plural(p.guest.rooms, "room")}` : ""}.` });
@@ -172,6 +179,7 @@ export function rpConfirmKey(p: RpPlan): string {
     p.guest.adults, p.guest.child_ages, p.guest.rooms ?? null, p.guest.nationality, p.guest.booked_by, p.arrival, p.nights,
     p.arrive_airport, p.depart_airport, p.tour_leader, p.hotel_before.nights, p.hotel_before.room_id, p.hotel_after.nights, p.hotel_after.room_id,
     ...(p.delhi_before?.flight || p.delhi_after?.flight ? [p.delhi_before, p.delhi_after] : []),
+    ...(p.dateless ? ["dateless", p.rate_season ?? null] : []), // (absent before: older confirmations stay)
   ]);
 }
 export const isRpConfirmed = (p: RpPlan) => !!p.confirmed && p.confirmed === rpConfirmKey(p);

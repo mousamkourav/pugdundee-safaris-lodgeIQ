@@ -13,9 +13,11 @@ import type { RpPending } from "@/lib/redpanda/reader";
 import { useRouter } from "next/navigation";
 import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
-import { priceRedPanda, MARKET_LABEL, standardRooms, guestCount } from "@/lib/redpanda/pricing";
+import { priceRedPanda, rpSeasons, MARKET_LABEL, standardRooms, guestCount } from "@/lib/redpanda/pricing";
 import { saveRpQuote } from "@/app/(dashboard)/red-panda/actions";
 import type { AirportCode, RpMaster, RpPlan } from "@/lib/redpanda/types";
+
+const monthYear = (d: string) => new Date(d + "T00:00:00Z").toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" });
 
 const inr = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n || 0);
 const DATE = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
@@ -69,7 +71,7 @@ const HELLO: RpChatMessage = {
 export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: { master: RpMaster; initial: RpPlan; queryId: string | null; queryNo: string | null; status: string | null }) {
   const router = useRouter();
   const [plan, setPlan] = useState<RpPlan>(initial);
-  const [step, setStep] = useState(isRpConfirmed(initial) ? 2 : initial.arrival ? 1 : 0);
+  const [step, setStep] = useState(isRpConfirmed(initial) ? 2 : initial.arrival || initial.dateless ? 1 : 0);
   const [messages, setMessages] = useState<RpChatMessage[]>([HELLO]);
   const [asking, setAsking] = useState<RpPending>(null);
   const [busy, setBusy] = useState(false);
@@ -77,6 +79,8 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
   const [msg, setMsg] = useState<{ error?: string; problems?: string[] } | null>(null);
   const [pending, start] = useTransition();
   const price = useMemo(() => priceRedPanda(plan, master), [plan, master]);
+  // the tariff seasons a quote without dates can be priced on (newest first)
+  const seasons = useMemo(() => rpSeasons(master), [master]);
   const s = master.settings;
   const set = (p: Partial<RpPlan>) => setPlan((x) => ({ ...x, ...p }));
   const setG = (g: Partial<RpPlan["guest"]>) => setPlan((x) => ({ ...x, guest: { ...x.guest, ...g } }));
@@ -87,7 +91,7 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
   const rooms = useMemo(() => (master.hotel?.rooms ?? []).map((r) => ({ id: r.id, name: r.name })), [master.hotel]);
   const confirmed = isRpConfirmed(plan);
   const content = useMemo(() => rpGuestContent(plan, price, s), [plan, price, s]);
-  const tripReady = !!plan.arrival && plan.guest.adults >= 1 && plan.nights >= 1;
+  const tripReady = (!!plan.arrival || !!plan.dateless) && plan.guest.adults >= 1 && plan.nights >= 1;
   const canGo = (n: number) => n === 0 || (n === 1 && tripReady) || (n >= 2 && tripReady && confirmed);
   const go = (n: number) => canGo(n) && setStep(n);
 
@@ -144,7 +148,7 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
             {price.guests} guest{price.guests === 1 ? "" : "s"} &middot; {inr(price.perPerson)} per person &middot; {price.rooms} room{price.rooms === 1 ? "" : "s"}
           </p>
           <p className="mt-1 text-xs text-sand-500">
-            {fmt(price.arrival)} to {fmt(price.departure)}
+            {price.dateless ? "Dates not fixed yet" : `${fmt(price.arrival)} to ${fmt(price.departure)}`}
             {price.season ? ` - Tariff ${price.season}` : ""}
           </p>
           <ul className="mt-4 space-y-2 border-t border-sand-200 pt-3 text-sm">
@@ -169,7 +173,7 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
           {price.payments.length > 0 && (
             <ul className="mt-3 space-y-1 text-xs text-sand-600">
               {price.payments.map((p) => (
-                <li key={p.label} className="flex justify-between"><span>{p.label} ({p.pct}%), {p.due ? `by ${fmt(p.due)}` : "at booking"}</span><span className="tabular">{inr(p.amount)}</span></li>
+                <li key={p.label} className="flex justify-between"><span>{p.label} ({p.pct}%), {p.due ? `by ${fmt(p.due)}` : (p.note ?? "at booking")}</span><span className="tabular">{inr(p.amount)}</span></li>
               ))}
             </ul>
           )}
@@ -286,7 +290,29 @@ export function RedPandaBuilder({ master, initial, queryId, queryNo, status }: {
           <h2 className="text-lg">Dates and airports</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Arrival (the day they land)">
-              <input className={ui.input} type="date" value={plan.arrival ?? ""} onChange={(e) => set({ arrival: e.target.value || null })} />
+              {plan.dateless ? (
+                <p className="rounded-lg border border-dashed border-sand-300 bg-sand-50 px-3 py-2 text-sm text-sand-600">Not fixed yet</p>
+              ) : (
+                <input className={ui.input} type="date" value={plan.arrival ?? ""} onChange={(e) => set({ arrival: e.target.value || null })} />
+              )}
+              <label className="mt-1.5 flex items-center gap-2 text-xs text-sand-600">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={!!plan.dateless}
+                  onChange={(e) => set(e.target.checked ? { dateless: true, arrival: null, rate_season: seasons[0]?.season ?? null } : { dateless: undefined, rate_season: undefined })}
+                />
+                Dates not fixed yet (price on a season&apos;s tariff)
+              </label>
+              {plan.dateless && (
+                <select className={`${ui.select} mt-1.5 w-full !py-1.5 text-xs`} aria-label="Tariff season" value={plan.rate_season ?? seasons[0]?.season ?? ""} onChange={(e) => set({ rate_season: e.target.value || null })}>
+                  {seasons.map((x) => (
+                    <option key={x.season} value={x.season}>
+                      Tariff {x.season} ({monthYear(x.from)} to {monthYear(x.to)})
+                    </option>
+                  ))}
+                </select>
+              )}
             </Field>
             <Field label="Nights at Red Panda Outpost" hint={`Package: ${s.package_nights} nights (sometimes ${s.min_nights}); other nights pro rata`}>
               <input className={ui.input} type="number" min={s.min_nights} max={s.max_nights} value={plan.nights} onChange={(e) => set({ nights: num(e.target.value) })} />
