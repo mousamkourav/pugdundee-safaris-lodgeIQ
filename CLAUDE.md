@@ -248,6 +248,16 @@ LodgeIQ installs on phones and computers (Add to Home screen / Install app). Fil
 - Query pages (Sales and Red Panda) show the new link (`clientLinkPath`) and "Turn the client link
   off / on" (the quote's member or a Sales admin; `link-actions.ts`).
 
+## Several room types at one lodge (13 Nov 2026)
+- PlanStop.room_mix: 2+ entries {room_category_id, rooms, adults, children (ages)}; the first is
+  room_category_id (`lib/sales/plan/room-mix.ts`). planToTrip makes one StayInput per room type
+  with `adults` / `children_idx`; the engine prices each on its own guests, checks the room types
+  hold exactly the trip's guests (error otherwise), counts a lodge's nights once for offers
+  (`nightsOnce`) and per-room add-ons on the lodge's rooms added up. A group quote ignores it.
+- Confirm step: "Another room type here" (RoomMixEditor). Chat: "1 cottage and 1 treehouse at
+  Pench" / "Pench ... with 1 cottage and 1 treehouse"; a later change of guests in the chat
+  spreads them over the same rooms again. Labels: "1 AC Cottage + 1 AC Treehouse" (roomLabel).
+
 ## AI assistant (Sales builder)
 One reading flow, AI first (`lib/sales/plan/reading.ts`):
 1. Memory: `sales_reading_patterns` (Master data > Reading memory), saved when a quote is

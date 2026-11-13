@@ -294,7 +294,7 @@ export function TripDetails({
                     value={s.property_id}
                     onChange={(e) => {
                       const room = roomsOf(ctx, e.target.value)[0];
-                      setStop(i, { property_id: e.target.value, room_category_id: room?.id ?? "", meal_plan: room ? mealPlansOf(ctx, room.id)[0] ?? "AP" : "AP" });
+                      setStop(i, { property_id: e.target.value, room_category_id: room?.id ?? "", meal_plan: room ? mealPlansOf(ctx, room.id)[0] ?? "AP" : "AP", room_mix: undefined });
                     }}
                     aria-label="Lodge"
                   >
@@ -306,7 +306,7 @@ export function TripDetails({
                     value={s.room_category_id}
                     onChange={(e) => {
                       const m = mealPlansOf(ctx, e.target.value);
-                      setStop(i, { room_category_id: e.target.value, meal_plan: m.includes(s.meal_plan) ? s.meal_plan : m[0] ?? "AP" });
+                      setStop(i, { room_category_id: e.target.value, meal_plan: m.includes(s.meal_plan) ? s.meal_plan : m[0] ?? "AP", ...(s.room_mix ? { room_mix: s.room_mix.map((x, k) => (k === 0 ? { ...x, room_category_id: e.target.value } : x)) } : {}) });
                     }}
                     aria-label="Room"
                   >

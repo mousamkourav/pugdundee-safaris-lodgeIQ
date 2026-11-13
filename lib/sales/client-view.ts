@@ -16,6 +16,7 @@ import { isShareSlug, isShareToken } from "@/lib/sales/share-slug";
 import { cache } from "react";
 import type { Instalment, ParkClosure, PriceResult } from "@/lib/sales/pricing/types";
 import { toGuest, type GroupGuest, type GroupSaved } from "@/lib/sales/group/costing";
+import { roomLabel } from "@/lib/sales/plan/room-mix";
 
 export interface Contact {
   name: string;
@@ -109,7 +110,7 @@ async function loadClientViewUncached(link: string): Promise<ClientView | null> 
   const propertyIds = [...new Set(plan.stops.map((s) => s.property_id))];
   const parkIds = [...new Set(plan.stops.map((s) => s.park_id))];
 
-  const roomIds = [...new Set(plan.stops.map((s) => s.room_category_id).filter(Boolean))];
+  const roomIds = [...new Set(plan.stops.flatMap((s) => [s.room_category_id, ...(s.room_mix ?? []).map((m) => m.room_category_id)]).filter(Boolean))];
   const locIds = [...new Set(plan.days.flatMap((d) => (d.transfer ? [d.transfer.from_location_id, d.transfer.to_location_id] : [])))];
   const [props, parks, media, brand, blocks, settings, consultant, rooms, parkMedia, closures, roads, places] = await Promise.all([
     db.from("sales_properties").select("id, name, short_desc, long_desc, website").in("id", propertyIds),
@@ -157,7 +158,8 @@ async function loadClientViewUncached(link: string): Promise<ClientView | null> 
   });
   const roomName = Object.fromEntries(rows(rooms).map((r) => [String(r.id), String(r.name)]));
   const MEAL: Record<string, string> = { AP: "All meals", MAP: "Breakfast and dinner", CP: "Breakfast", EP: "Room only" };
-  const stays = plan.stops.map((st) => ({ property_id: st.property_id, room: roomName[st.room_category_id] ?? "", meal: MEAL[st.meal_plan] ?? st.meal_plan, nights: st.nights }));
+  // several room types at a lodge: "1 AC Cottage + 1 AC Treehouse"
+  const stays = plan.stops.map((st) => ({ property_id: st.property_id, room: roomLabel(st, { rooms: Object.entries(roomName).map(([id, name]) => ({ id, name })) as never }), meal: MEAL[st.meal_plan] ?? st.meal_plan, nights: st.nights }));
   const driveHours: Record<string, number> = {};
   for (const r of rows(roads)) {
     const h = Number(r.drive_hours);

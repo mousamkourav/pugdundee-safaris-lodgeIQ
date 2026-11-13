@@ -86,6 +86,7 @@ export interface ParsedPark {
   naturalists?: number; // how many of them with a naturalist
   extras?: string[]; // experience keywords: "bush dinner", "boat safari"...
   room?: RoomWish;
+  roomMix?: { room: RoomWish; rooms: number }[]; // "1 cottage and 1 treehouse": several room types here
   roomName?: string; // a room named by its own word ("stilted" = Stilted River Facing Cottage)
   sessions?: "morning" | "afternoon"; // "morning safaris only"
   buffer?: number; // "2 buffer safaris", "a buffer safari": that many of the safaris in the buffer zone
@@ -103,6 +104,25 @@ export const ROOM_MATCH: Record<RoomWish, RegExp> = {
 };
 // Words in room names that do not pick one room on their own.
 const ROOM_GENERIC = new Set(["room", "rooms", "cottage", "cottages", "deluxe", "suite", "suites", "house", "houses", "facing", "luxury", "super", "premium", "standard", "family", "double", "twin", "jungle", "forest", "river", "garden", "valley"]);
+
+// "1 cottage and 1 treehouse", "2 cottages + one tree house": two room types or more, each with
+// its rooms (13 Nov 2026). null when the text names fewer than two different room types this way.
+const MIX_WORD = String.raw`(tree\s?houses?|cottages?|bungalows?|forest\s*suites?|suites?|deluxe\s*rooms?)`;
+const NUM_WORD: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6 };
+export function roomMixIn(text: string): { room: RoomWish; rooms: number }[] | null {
+  const t = text.toLowerCase().replace(/tree ?house hideaway/g, "");
+  const re = new RegExp(String.raw`\b(\d{1,2}|an?|one|two|three|four|five|six)\s+(?:x\s+)?${MIX_WORD}\b`, "g");
+  const out: { room: RoomWish; rooms: number }[] = [];
+  for (const m of t.matchAll(re)) {
+    const room = roomWishIn(m[2]);
+    const rooms = /^\d+$/.test(m[1]) ? Number(m[1]) : NUM_WORD[m[1]];
+    if (!room || !rooms || rooms > 20) continue;
+    const had = out.find((x) => x.room === room);
+    if (had) had.rooms += rooms;
+    else out.push({ room, rooms });
+  }
+  return out.length >= 2 ? out : null;
+}
 
 export function roomWishIn(text: string): RoomWish | null {
   const t = text.toLowerCase().replace(/tree ?house hideaway/g, "");
@@ -728,7 +748,18 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
   // only after the park's name, so these were lost and Pench stayed AC Cottage). That park takes
   // it, and the park before does not.
   const leadRoom = new Map<number, RoomWish>();
+  const leadMix = new Map<number, { room: RoomWish; rooms: number }[]>();
   order.forEach(({ at }, k) => {
+    // several room types just before the park: "1 cottage and 1 treehouse at Pench"
+    const near = low.slice(Math.max(0, at - 90), at);
+    const mm = near.match(new RegExp(String.raw`((?:\b(?:\d{1,2}|an?|one|two|three|four|five|six)\s+(?:x\s+)?${MIX_WORD}\b[\s,&+]*(?:and\s+)?){2,})(?:rooms?\s+)?(?:at|in|for)\s+(?:the\s+)?$`));
+    const mix = mm ? roomMixIn(mm[1]) : null;
+    if (mm && mix) {
+      leadMix.set(k, mix);
+      const from = at - near.length + mm.index!;
+      lowSeg = lowSeg.slice(0, from) + " ".repeat(at - from) + lowSeg.slice(at);
+      return;
+    }
     const before = low.slice(Math.max(0, at - 70), at);
     const m = before.match(/\b(tree\s?houses?|cottages?|bungalows?|forest\s*suites?|suites?|deluxe\s*rooms?)\b(?:\s+(?:category|categories|room|rooms|type|stay))?\s+(?:at|in|for)\s+(?:the\s+)?$/);
     const wish = m ? roomWishIn(m[1]) : null;
@@ -853,8 +884,10 @@ export function extractTrip(input: string, ctx: BuilderContext, today: ISODate, 
     if (extras.length) p.extras = extras;
     const cam = seg.match(/\bcameras?(?:\s*fees?)?\s*(?:x\s*)?(\d{1,2})\b|\b(\d{1,2})\s*cameras?\b/);
     if (cam) p.qty = { camera: Number(cam[1] ?? cam[2]) };
+    const mix = roomMixIn(seg) ?? leadMix.get(k) ?? null;
     const room = roomWishIn(seg) ?? leadRoom.get(k) ?? null;
-    if (room) p.room = room;
+    if (mix) p.roomMix = mix;
+    else if (room) p.room = room;
     // a room named by a word of its own ("stilted" = Stilted River Facing Cottage)
     const park = ctx.pricing.parks.find((x) => x.name === p.name);
     const lodgeIds = ctx.properties.filter((l) => l.park_id === park?.id && (!p.lodge || l.name === p.lodge)).map((l) => l.id);

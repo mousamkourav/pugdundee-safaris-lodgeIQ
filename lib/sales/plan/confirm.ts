@@ -13,6 +13,7 @@ import { itemStep, transferStep } from "./day-order";
 import { lodgesInPark, mealPlansOf, roomsOf, routeKey, routeKeyWithPrices, segments } from "./planner";
 import { sanitizePlan } from "./sanitize";
 import type { BuilderContext, Plan, PlanStop } from "./types";
+import { roomLabel } from "./room-mix";
 
 // ---------------- the confirmation ----------------
 
@@ -126,7 +127,7 @@ export function tripSummary(plan: Plan, ctx: BuilderContext): SummaryLine[] {
       return;
     }
     const st = s.stop;
-    const room = ctx.rooms.find((r) => r.id === st.room_category_id)?.name;
+    const room = roomLabel(st, ctx) || undefined;
     // the safaris of this stay, as the planner shares travel days: the evening of the day it
     // starts, the days in between, the morning of the day it leaves (all in its park)
     const days = plan.days.filter((d) => d.date >= s.checkIn && d.date <= s.checkOut);
@@ -208,10 +209,13 @@ export function editStop(plan: Plan, ctx: BuilderContext, i: number, edit: StopE
     const lodge = lodgesInPark(ctx, s.park_id).find((l) => l.id === edit.property_id) ?? ctx.properties.find((l) => l.id === edit.property_id);
     if (!lodge) return plan;
     const room = roomsOf(ctx, lodge.id)[0];
-    stops[i] = { ...s, park_id: lodge.park_id ?? s.park_id, property_id: lodge.id, room_category_id: room?.id ?? "", meal_plan: room ? mealPlansOf(ctx, room.id)[0] ?? s.meal_plan : s.meal_plan };
+    const { room_mix: _mix, ...rest } = s; // another lodge: its own rooms, one room type again
+    stops[i] = { ...rest, park_id: lodge.park_id ?? s.park_id, property_id: lodge.id, room_category_id: room?.id ?? "", meal_plan: room ? mealPlansOf(ctx, room.id)[0] ?? s.meal_plan : s.meal_plan };
   } else if ("room_category_id" in edit) {
     const meals = mealPlansOf(ctx, edit.room_category_id);
-    stops[i] = { ...s, room_category_id: edit.room_category_id, meal_plan: meals.includes(s.meal_plan) ? s.meal_plan : meals[0] ?? s.meal_plan } as PlanStop;
+    // several room types: the first one changes
+    const mix = s.room_mix?.map((m, k) => (k === 0 ? { ...m, room_category_id: edit.room_category_id } : m));
+    stops[i] = { ...s, room_category_id: edit.room_category_id, meal_plan: meals.includes(s.meal_plan) ? s.meal_plan : meals[0] ?? s.meal_plan, ...(mix ? { room_mix: mix } : {}) } as PlanStop;
   }
   return { ...plan, stops };
 }

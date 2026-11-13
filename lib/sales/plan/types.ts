@@ -34,6 +34,17 @@ export interface PlanStop {
   want_buffer?: number; // how many of the safaris in the buffer zone ("2 buffer safaris")
   want_jeeps?: number; // jeeps on every safari here ("2 jeeps per safari")
   want_qty?: Record<string, number>; // how many of an experience, by keyword ("camera": 1)
+  // More than one room type at this lodge ("1 AC Cottage + 1 AC Treehouse", 13 Nov 2026): each
+  // with its rooms and the guests in them. Two entries or more; the first is room_category_id.
+  // Absent: every room is room_category_id, all the guests in plan.guest.rooms rooms.
+  room_mix?: RoomMixEntry[];
+}
+
+export interface RoomMixEntry {
+  room_category_id: string;
+  rooms: number;
+  adults: number;
+  children: number[]; // the ages of the children in these rooms
 }
 
 // Nights outside our lodges: a city (Delhi before the safari, Khajuraho and Delhi

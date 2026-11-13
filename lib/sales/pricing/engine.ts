@@ -37,7 +37,7 @@ import type {
   SafariInput,
   SafariRate,
   TransferRate,
-  TripInput, PaxSplit } from "./types";
+  TripInput, PaxSplit, StayInput } from "./types";
 
 const round = (n: number) => Math.round(n);
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -59,6 +59,16 @@ function withTax(base: number, taxPct: number, included: boolean) {
   if (included) return { amount: round(base), tax: round(base - base / (1 + taxPct / 100)) };
   const tax = round((base * taxPct) / 100);
   return { amount: round(base) + tax, tax };
+}
+
+// Nights at the lodges, each lodge's nights once (two room types at one lodge are the same nights)
+function nightsOnce(stays: StayInput[]): number {
+  const seen = new Map<string, number>();
+  for (const s of stays) {
+    const k = `${s.property_id}|${s.check_in}`;
+    seen.set(k, Math.max(seen.get(k) ?? 0, s.nights));
+  }
+  return [...seen.values()].reduce((t, n) => t + n, 0);
 }
 
 // Guests spread as evenly as possible: 5 adults in 2 rooms -> [3, 2].
@@ -239,7 +249,10 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
   // ---------------- rooms ----------------
   // room lines: their description now, and the older wording their key is made from
   const keyDesc = new Map<string, string>();
-  const totalRooms = trip.stays.reduce((m, s) => Math.max(m, s.rooms), 0);
+  // the most rooms the guests take at one lodge (its room types added up)
+  const roomsAtLodge = new Map<string, number>();
+  for (const s of trip.stays) roomsAtLodge.set(`${s.property_id}|${s.check_in}`, (roomsAtLodge.get(`${s.property_id}|${s.check_in}`) ?? 0) + s.rooms);
+  const totalRooms = Math.max(0, ...roomsAtLodge.values());
   for (const stay of trip.stays) {
     const room = roomOf(stay.room_category_id);
     // what the line is: the lodge or hotel, the room and the meal plan ("Roseate House, AC Deluxe, B&B")
@@ -247,8 +260,11 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     // the line's key keeps the older wording, so prices corrected by hand on saved quotes still match
     const keyLabel = `${room?.name ?? "Room"} x${stay.rooms}, ${stay.meal_plan}`;
     keyDesc.set(label, keyLabel);
-    const occ = occupancy(trip.adults, stay.rooms);
-    if (occ.some((n) => n === 0)) warnings.push(`${propName(stay.property_id)}: more rooms than adults, so some rooms are priced as single.`);
+    // the guests in these rooms: all the trip's, or (several room types at the lodge) their own
+    const stayAdults = stay.adults ?? trip.adults;
+    const kidIdx = stay.children_idx ?? trip.children.map((_, i) => i);
+    const occ = occupancy(stayAdults, stay.rooms);
+    if (occ.some((n) => n === 0)) warnings.push(`${propName(stay.property_id)}: more rooms than adults${stay.adults != null ? ` in ${room?.name ?? "a room type"}` : ""}, so some rooms are priced as single.`);
     if (room) {
       const cap = room.max_adults + (room.extra_bed ? 1 : 0);
       if (occ.some((n) => n > cap)) errors.push(`${propName(stay.property_id)}: ${room.name} takes at most ${cap} adults per room. Add rooms.`);
@@ -301,7 +317,8 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
         base += n <= 1 ? single : double + Math.max(0, n - 2) * (rate.extra_adult ?? 0);
         extraPart += Math.max(0, n - 2) * (rate.extra_adult ?? 0);
       }
-      const childParts = trip.children.map((age) => {
+      const childParts = kidIdx.map((ci) => {
+        const age = trip.children[ci] ?? 0;
         const band = rate.child_rates.find((b) => age >= b.min_age && age <= b.max_age);
         // a child (5 and over) with no band would show as "no charge": say so once per stay.
         // Infants (under 5) without a band are free on purpose.
@@ -311,11 +328,29 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
       });
       for (const c of childParts) base += c;
       // who this night is for (the per-guest price): fractions of the line
-      const pax = base > 0 ? { adult: (base - extraPart - childParts.reduce((t, c) => t + c, 0)) / base, extra: extraPart / base, child: childParts.map((c) => c / base) } : undefined;
+      // (children by their place in the trip's list, 0 for those in another room type)
+      const childShare = trip.children.map((_, ci) => {
+        const k = kidIdx.indexOf(ci);
+        return k >= 0 && base > 0 ? childParts[k] / base : 0;
+      });
+      const pax = base > 0 ? { adult: (base - extraPart - childParts.reduce((t, c) => t + c, 0)) / base, extra: extraPart / base, child: childShare } : undefined;
       base = withHike(base, hikePct);
       const { amount, tax } = withTax(base, rate.tax_pct, rate.rates_include_tax);
       keyDesc.set(label + hikeLabel(hikePct), keyLabel + hikeLabel(hikePct));
       lines.push({ kind: "room", date: night, description: label + hikeLabel(hikePct), quantity: stay.rooms, unit_price: round(base / stay.rooms), amount, tax, tax_pct: rate.tax_pct, property_id: stay.property_id, ref_id: stay.room_category_id, ...(hikePct ? { hike: hikePct } : {}), ...(pax ? { pax } : {}) });
+    }
+  }
+
+  // Several room types at one lodge: together they hold exactly the trip's guests (else the
+  // price would leave a guest out, or count one twice)
+  const mixed = new Map<string, StayInput[]>();
+  for (const s of trip.stays) if (s.adults != null || s.children_idx) mixed.set(`${s.property_id}|${s.check_in}`, [...(mixed.get(`${s.property_id}|${s.check_in}`) ?? []), s]);
+  for (const group of mixed.values()) {
+    const a = group.reduce((t, s) => t + (s.adults ?? 0), 0);
+    const kids = group.flatMap((s) => s.children_idx ?? []).sort((x, y) => x - y);
+    const all = trip.children.map((_, i) => i);
+    if (a !== trip.adults || kids.join(",") !== all.join(",")) {
+      errors.push(`${propName(group[0].property_id)}: the room types hold ${a} adult${a === 1 ? "" : "s"}${kids.length ? ` and ${kids.length} child${kids.length === 1 ? "" : "ren"}` : ""}, the trip has ${trip.adults}${all.length ? ` and ${all.length} child${all.length === 1 ? "" : "ren"}` : ""}. Change the guests in the room types.`);
     }
   }
 
@@ -664,7 +699,7 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
     );
     // a multi-lodge offer counts the nights at our own lodges only (never Iora Retreat or a city hotel)
     const ownForNights = new Set(data.properties.filter((p) => (p.kind ?? "own_lodge") === "own_lodge").map((p) => p.id));
-    const nights = eligibleStays.filter((s) => offer.offer_type !== "multi_lodge" || ownForNights.has(s.property_id)).reduce((t, s) => t + s.nights, 0);
+    const nights = nightsOnce(eligibleStays.filter((s) => offer.offer_type !== "multi_lodge" || ownForNights.has(s.property_id)));
     if (offer.offer_type === "multi_lodge") {
       const own = ownForNights;
       const lodges = new Set(eligibleStays.filter((s) => own.has(s.property_id)).map((s) => s.property_id)).size;
@@ -728,7 +763,7 @@ export function priceTrip(trip: TripInput, data: PricingData): PriceResult {
   if (!toApply.length) {
     const own = new Set(data.properties.filter((p) => (p.kind ?? "own_lodge") === "own_lodge").map((p) => p.id));
     const lodges = new Set(trip.stays.filter((s) => own.has(s.property_id)).map((s) => s.property_id)).size;
-    const nightsAll = trip.stays.filter((s) => !s.outside && own.has(s.property_id)).reduce((t, s) => t + s.nights, 0); // our own lodges' nights
+    const nightsAll = nightsOnce(trip.stays.filter((s) => !s.outside && own.has(s.property_id))); // our own lodges' nights
     const best = data.offers
       .filter((o) => o.active && o.offer_type === "multi_lodge" && lodges >= (o.min_lodges ?? 2) && nightsAll >= o.min_nights && inRange(trip.booking_date, o.book_from, o.book_to))
       .sort((a, b) => (b.value ?? 0) - (a.value ?? 0))[0];
@@ -879,8 +914,13 @@ export function paxSplit(lines: PriceLine[], trip: TripInput, data: PricingData,
   const kids = trip.children;
   const seats = adults + kids.filter((a) => a >= INFANT_UNDER).length;
   const heads = adults + kids.length;
-  const occ = occupancy(trip.adults, trip.stays[0]?.rooms ?? 1);
-  const extraAdults = occ.reduce((t, n) => t + Math.max(0, n - 2), 0);
+  // extra adults (3 in a room) at the first lodge: over its room types when it has several
+  const first = trip.stays[0];
+  const firstGroup = first ? trip.stays.filter((s) => s.property_id === first.property_id && s.check_in === first.check_in && (s.adults != null) === (first.adults != null)) : [];
+  const extraAdults = (first?.adults != null ? firstGroup : first ? [first] : []).reduce(
+    (t, s) => t + occupancy(s.adults ?? trip.adults, s.rooms).reduce((u, n) => u + Math.max(0, n - 2), 0),
+    0
+  );
   const twin = Math.max(0, adults - extraAdults);
   let roomAdult = 0;
   let roomExtra = 0;

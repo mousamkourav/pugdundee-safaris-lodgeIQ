@@ -40,8 +40,21 @@ export function sanitizePlan(input: unknown): Plan | null {
           .map(([k, v]) => [k, Math.min(100, Number(v))] as const);
         return q.length ? { want_qty: Object.fromEntries(q) } : {};
       })(),
+      ...(() => {
+        // more than one room type at this lodge: 2 to 6 entries, whole numbers in range
+        const mix = (Array.isArray(s.room_mix) ? s.room_mix : []).slice(0, 6).map((e) => {
+          const m = obj(e);
+          return {
+            room_category_id: str(m.room_category_id, 100),
+            rooms: int(m.rooms, 1, 20, 1),
+            adults: int(m.adults, 0, 40, 0),
+            children: (Array.isArray(m.children) ? m.children : []).map((a) => Number(a)).filter((a) => Number.isInteger(a) && a >= 0 && a <= 17).slice(0, 20),
+          };
+        }).filter((m) => m.room_category_id);
+        return mix.length >= 2 ? { room_mix: mix } : {};
+      })(),
     };
-  });
+  }).map((st): PlanStop => (st.room_mix ? { ...(st as PlanStop), room_category_id: st.room_mix[0].room_category_id } : (st as PlanStop))); // the first room type is the stop's room
 
   const days: PlanDay[] = (Array.isArray(p.days) ? p.days : []).slice(0, 120).map((x) => {
     const d = obj(x);

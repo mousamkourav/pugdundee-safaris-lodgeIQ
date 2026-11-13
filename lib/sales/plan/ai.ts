@@ -12,6 +12,7 @@ import { EXTRA_WORDS, REQUESTS, aliasesOf, locationAliases, matchByName, scrubFo
 import type { BuilderContext, Plan, TravelMode } from "./types";
 import { cityHotels, safariOnly } from "./cities";
 import { formExperiences } from "./form";
+import { roomLabel } from "./room-mix";
 
 export const EXTRA_KEYWORDS = [...new Set(EXTRA_WORDS.map(([, k]) => k)), "special"];
 const ROOMS: RoomWish[] = ["cottage", "tree", "suite", "deluxe"];
@@ -280,7 +281,7 @@ export function planToExample(plan: Plan, ctx: BuilderContext): string {
   const stops = plan.stops.map((s) => {
     const days = plan.days.filter((d) => d.park_id === s.park_id).slice(0, s.nights + 1);
     const saf = days.flatMap((d) => d.safaris);
-    const room = ctx.rooms.find((r) => r.id === s.room_category_id)?.name ?? "";
+    const room = roomLabel(s, ctx);
     return {
       park: park(s.park_id),
       lodge: lodge(s.property_id),

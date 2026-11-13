@@ -8,6 +8,7 @@ import { ui } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { editStay, editStop, removeFlight, stopChoices, tripSummary, type SummaryLine } from "@/lib/sales/plan/confirm";
 import type { BuilderContext, Plan } from "@/lib/sales/plan/types";
+import { RoomMixEditor } from "./room-mix-editor";
 
 type SetPlan = (u: (p: Plan) => Plan) => void;
 
@@ -110,6 +111,7 @@ export function ConfirmStep({
                           {rooms.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
                         </select>
                       </label>
+                      <RoomMixEditor plan={plan} ctx={ctx} i={i} change={change} />
                       <span className="flex gap-1">
                         <button type="button" className={`${ui.btnSecondary} ${ui.btnSm}`} disabled={i === 0} onClick={() => change((p) => editStop(p, ctx, i, "up"))} aria-label="Move earlier">
                           <Icon name="chevronLeft" className="h-4 w-4 rotate-90" />

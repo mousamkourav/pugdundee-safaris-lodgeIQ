@@ -228,6 +228,11 @@ export interface StayInput {
   nights: number;
   rooms: number;
   outside?: boolean; // a city hotel (Roseate House): priced from its rates, never part of offers
+  // One of several room types at this lodge for these nights (13 Nov 2026): the guests in these
+  // rooms (adults, and the children by their place in the trip's list of children). Empty: all
+  // the trip's guests. The lodge's nights are counted once for offers, whatever the room types.
+  adults?: number;
+  children_idx?: number[];
 }
 
 export interface SafariInput {

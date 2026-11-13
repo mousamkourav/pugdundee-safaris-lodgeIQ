@@ -1237,14 +1237,25 @@ export function describe(ctx: BuilderContext, day: PlanDay, vehicle: string | nu
 // ---------------- plan -> pricing input ----------------
 
 export function planToTrip(plan: Plan, bookingDate: ISODate): TripInput {
-  const stays: StayInput[] = stopDates(plan).map(({ stop, checkIn }) => ({
-    property_id: stop.property_id,
-    room_category_id: stop.room_category_id,
-    meal_plan: stop.meal_plan,
-    check_in: checkIn,
-    nights: stop.nights,
-    rooms: plan.guest.rooms,
-  }));
+  const stays: StayInput[] = stopDates(plan).flatMap(({ stop, checkIn }) => {
+    const one = { property_id: stop.property_id, meal_plan: stop.meal_plan, check_in: checkIn, nights: stop.nights };
+    // several room types at this lodge (not in a group quote, priced per room on its own sheet):
+    // each room type with its own rooms and guests; the children by their place in the trip's list
+    if (stop.room_mix && stop.room_mix.length >= 2 && !plan.group) {
+      const left = plan.guest.children.map((age, i) => ({ age, i }));
+      return stop.room_mix.map((m) => ({
+        ...one,
+        room_category_id: m.room_category_id,
+        rooms: m.rooms,
+        adults: m.adults,
+        children_idx: m.children.flatMap((age) => {
+          const k = left.findIndex((c) => c.age === age);
+          return k >= 0 ? [left.splice(k, 1)[0].i] : [-1]; // a child not in the trip: caught by the engine's check
+        }),
+      }));
+    }
+    return [{ ...one, room_category_id: stop.room_category_id, rooms: plan.guest.rooms }];
+  });
   // nights at a Master data city hotel, priced from its rates like a lodge (never in offers)
   for (const d of plan.days) {
     const h = d.city_hotel;

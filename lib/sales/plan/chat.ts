@@ -21,6 +21,7 @@ import type { BuilderContext, Plan, PlanStop } from "./types";
 import { cityHotelNamed, cityHotels, safariOnly, sameCity, stayKey, stayWhere } from "./cities";
 import { tripChecklist, type CheckItem } from "./checklist";
 import { applyTravelRules, cityEnds, lodgeAirports } from "./travel-rules";
+import { roomLabel, splitGuests } from "./room-mix";
 
 export interface ChatFlags {
   dateSet: boolean;
@@ -549,7 +550,8 @@ export function chatTurn(
       const lodge = lodgesInPark(ctx, park.id).find((l) => l.name.toLowerCase() === p.lodge!.toLowerCase());
       if (lodge && lodge.id !== next.stops[i].property_id) {
         const room = roomsOf(ctx, lodge.id)[0];
-        next.stops[i] = { ...next.stops[i], property_id: lodge.id, room_category_id: room?.id ?? "", meal_plan: room ? mealPlansOf(ctx, room.id)[0] ?? "AP" : "AP" };
+        const { room_mix: _mix, ...was } = next.stops[i]; // another lodge: one room type again
+        next.stops[i] = { ...was, property_id: lodge.id, room_category_id: room?.id ?? "", meal_plan: room ? mealPlansOf(ctx, room.id)[0] ?? "AP" : "AP" };
       }
     }
     if (p.lodge) f.lodgeDecided = [...new Set([...(f.lodgeDecided ?? []), park.id])];
@@ -562,13 +564,27 @@ export function chatTurn(
     if (p.buffer) wish.want_buffer = p.buffer;
     if (p.jeeps) wish.want_jeeps = p.jeeps;
     if (p.qty) wish.want_qty = { ...(next.stops[i].want_qty ?? {}), ...p.qty };
-    if (p.room || p.roomName) {
+    if (p.roomMix) {
+      // several room types here ("1 cottage and 1 treehouse"): each found among the lodge's rooms,
+      // the guests spread over the rooms (the sales person changes it on the Confirm step)
+      const rooms = roomsOf(ctx, next.stops[i].property_id);
+      const found = p.roomMix.map((m) => ({ room: pickRoom(rooms, m.room), rooms: m.rooms }));
+      if (found.every((x) => x.room) && new Set(found.map((x) => x.room!.id)).size === found.length) {
+        const mix = splitGuests(found.map((x) => ({ room_category_id: x.room!.id, rooms: x.rooms })), next.guest);
+        const meals = mealPlansOf(ctx, mix[0].room_category_id);
+        wish.room_mix = mix;
+        wish.room_category_id = mix[0].room_category_id;
+        wish.meal_plan = meals.includes(next.stops[i].meal_plan) ? next.stops[i].meal_plan : meals[0] ?? next.stops[i].meal_plan;
+      } else warnings.push(`${park.name}: ${found.filter((x) => !x.room).length ? "one of those room types is not at this lodge" : "those are the same room"}, so the rooms there are unchanged.`);
+      f.roomDecided = [...new Set([...(f.roomDecided ?? []), park.id])];
+    } else if (p.room || p.roomName) {
       // a room named by its own word first ("stilted"), else the kind of room ("cottage")
       const rooms = roomsOf(ctx, next.stops[i].property_id);
       const want = rooms.find((r) => r.name === p.roomName) ?? (p.room ? pickRoom(rooms, p.room) : undefined);
       if (want) {
         const meals = mealPlansOf(ctx, want.id);
         wish.room_category_id = want.id;
+        wish.room_mix = undefined; // one room type for everyone again
         wish.meal_plan = meals.includes(next.stops[i].meal_plan) ? next.stops[i].meal_plan : meals[0] ?? next.stops[i].meal_plan;
       }
       f.roomDecided = [...new Set([...(f.roomDecided ?? []), park.id])];
@@ -584,7 +600,7 @@ export function chatTurn(
     // a lodge already in the trip, only named (e.g. "Kanha first"): nothing new to report
     if (idx >= 0 && !p.nights && !p.lodge && !Object.keys(wish).length) continue;
     const lodgeName = ctx.properties.find((x) => x.id === stop.property_id)?.name;
-    const roomName = p.room || p.roomName ? ctx.rooms.find((r) => r.id === stop.room_category_id)?.name : null;
+    const roomName = p.room || p.roomName || p.roomMix ? roomLabel(stop, ctx) : null;
     chips.push(
       `${park.name} ${p.nights ? `${stop.nights} night${stop.nights === 1 ? "" : "s"}${p.nightsFromDays ? ` (from "${p.nights} days")` : ""}` : "(nights to confirm)"}${lodgeName ? ` at ${lodgeName}` : ""}${roomName ? `, ${roomName}` : ""}`
     );
@@ -857,6 +873,15 @@ export function chatTurn(
   }
 
   // ---- rebuild the day plan when the route changed
+  // the guests changed in this message: the room types at a lodge keep their rooms, and the guests
+  // are spread over them again (else the price would leave someone out)
+  next.stops = next.stops.map((s) => {
+    if (!s.room_mix || s.room_mix.length < 2) return s;
+    const a = s.room_mix.reduce((t, m) => t + m.adults, 0);
+    const k = s.room_mix.flatMap((m) => m.children).sort((x, y) => x - y).join(",");
+    if (a === next.guest.adults && k === [...next.guest.children].sort((x, y) => x - y).join(",")) return s;
+    return { ...s, room_mix: splitGuests(s.room_mix, next.guest) };
+  });
   const routeChanged = routeKey(next) !== routeKey(plan);
   if (routeChanged) {
     // the days need every hotel (Roseate House for its rates and transfers), not only the safari lodges
